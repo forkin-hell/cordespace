@@ -27,15 +27,19 @@ function cordespace_greeting_themes(): array {
 		'dinosaurs' => [
 			'label'     => '🦕 Dinosaures',
 			'decor_css' => "
-				/* Fond peuplé de dinos derrière le bloc Bonjour (juste 🦕 et 🦖) */
+				/* Fond peuplé de dinos derrière le bloc Bonjour — pattern SVG tilé
+				   avec emojis à positions et rotations variées pour un rendu
+				   « scattered » plutôt qu'aligné en grille. */
 				.cordespace-theme-dinosaurs .cordespace-greeting-block { position:relative; overflow:hidden; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block > * { position:relative; z-index:1; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block::before {
-					content: '🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕';
+					content:'';
 					position:absolute; inset:0;
-					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
-					opacity:0.18; word-break:break-all; overflow:hidden;
-					pointer-events:none; padding:0.5rem 0.7rem; box-sizing:border-box;
+					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220'><text x='30' y='55' font-size='38' transform='rotate(-12 47 41)'>🦕</text><text x='150' y='40' font-size='32' transform='rotate(8 165 28)'>🦖</text><text x='250' y='75' font-size='40' transform='rotate(-6 270 60)'>🦕</text><text x='75' y='130' font-size='34' transform='rotate(15 92 117)'>🦖</text><text x='180' y='155' font-size='42' transform='rotate(-4 200 141)'>🦕</text><text x='285' y='180' font-size='30' transform='rotate(10 298 168)'>🦖</text><text x='20' y='200' font-size='34' transform='rotate(-15 35 188)'>🦕</text></svg>\");
+					background-size: 320px 220px;
+					background-repeat: repeat;
+					opacity:0.18;
+					pointer-events:none;
 				}
 				/* Petit diplodocus après chaque titre de section */
 				.cordespace-theme-dinosaurs section > h2::after {
@@ -50,15 +54,17 @@ function cordespace_greeting_themes(): array {
 		'unicorns' => [
 			'label'     => '🦄 Licornes',
 			'decor_css' => "
-				/* Fond peuplé de licornes derrière le bloc Bonjour */
+				/* Fond peuplé de licornes — pattern SVG tilé en scatter */
 				.cordespace-theme-unicorns .cordespace-greeting-block { position:relative; overflow:hidden; }
 				.cordespace-theme-unicorns .cordespace-greeting-block > * { position:relative; z-index:1; }
 				.cordespace-theme-unicorns .cordespace-greeting-block::before {
-					content: '🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄';
+					content:'';
 					position:absolute; inset:0;
-					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
-					opacity:0.18; word-break:break-all; overflow:hidden;
-					pointer-events:none; padding:0.5rem 0.7rem; box-sizing:border-box;
+					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220'><text x='30' y='50' font-size='38' transform='rotate(-10 47 36)'>🦄</text><text x='130' y='35' font-size='28' transform='rotate(12 145 25)'>✨</text><text x='200' y='65' font-size='34' transform='rotate(-5 218 51)'>🌈</text><text x='280' y='45' font-size='26' transform='rotate(8 290 35)'>✨</text><text x='65' y='115' font-size='32' transform='rotate(15 82 102)'>🌈</text><text x='160' y='140' font-size='40' transform='rotate(-8 180 124)'>🦄</text><text x='265' y='130' font-size='28' transform='rotate(10 277 120)'>✨</text><text x='35' y='195' font-size='30' transform='rotate(-12 50 183)'>🌈</text><text x='130' y='205' font-size='28' transform='rotate(6 144 195)'>✨</text><text x='225' y='185' font-size='36' transform='rotate(-4 244 169)'>🦄</text></svg>\");
+					background-size: 320px 220px;
+					background-repeat: repeat;
+					opacity:0.18;
+					pointer-events:none;
 				}
 				/* Petite étoile après chaque titre de section */
 				.cordespace-theme-unicorns section > h2::after {
@@ -70,10 +76,10 @@ function cordespace_greeting_themes(): array {
 			",
 		],
 
-		// Pour ajouter un thème : copier une des entrées et changer slug + label +
-		// chaîne d'emojis du fond + emoji après-h2. Pas de décorations dans les
-		// coins des cartes — ça surcharge visuellement. Convention : ~80 emojis
-		// dans le fond pour bien remplir le bloc (sinon trou à droite).
+		// Pour ajouter un thème : copier une des entrées et adapter le pattern SVG.
+		// Convention : SVG tile 320x220 avec ~7-10 emojis à positions variées et
+		// rotations entre -15° et +15°. Pas de décorations dans les coins des
+		// cartes (épuré).
 	];
 }
 
