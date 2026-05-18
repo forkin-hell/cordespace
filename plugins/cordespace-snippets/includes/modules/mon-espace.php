@@ -112,7 +112,7 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	?>
 
 	<div class="cordespace-greeting-block" style="background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%);color:#fff;padding:2rem;border-radius:10px;margin-bottom:1.5rem;">
-		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?> 👋</h1>
+		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?></h1>
 		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace Cordespace.</p>
 		<div style="margin-top:1.5rem;">
 			<div style="display:inline-block;background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;">
@@ -187,7 +187,7 @@ function cordespace_render_prof_view( $user, $has_linked ) {
 	<?php endif; ?>
 
 	<div class="cordespace-greeting-block" style="background:linear-gradient(135deg,#1d4d7e 0%,#1a1a2e 100%);color:#fff;padding:2rem;border-radius:10px;margin-bottom:1.5rem;">
-		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?> 👋</h1>
+		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?></h1>
 		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace enseignant·e. Retrouve ici tes élèves du jour et tes prochains cours.</p>
 	</div>
 

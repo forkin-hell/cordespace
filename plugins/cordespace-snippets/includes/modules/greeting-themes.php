@@ -27,30 +27,22 @@ function cordespace_greeting_themes(): array {
 		'dinosaurs' => [
 			'label'     => '🦕 Dinosaures',
 			'decor_css' => "
-				/* Fond peuplé de dinos derrière le bloc Bonjour */
+				/* Fond peuplé de dinos derrière le bloc Bonjour (juste 🦕 et 🦖, plus d'os) */
 				.cordespace-theme-dinosaurs .cordespace-greeting-block { position:relative; overflow:hidden; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block > * { position:relative; z-index:1; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block::before {
-					content: '🦕 🦖 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴';
+					content: '🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕';
 					position:absolute; inset:0;
 					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
 					opacity:0.18; word-break:break-all; overflow:hidden;
 					pointer-events:none; padding:0.5rem 0.7rem; box-sizing:border-box;
 				}
-				/* Petit ossement après chaque titre de section */
+				/* Petit diplodocus après chaque titre de section */
 				.cordespace-theme-dinosaurs section > h2::after {
-					content: ' 🦴';
+					content: ' 🦕';
 					margin-left:0.4rem;
-					opacity:0.45;
+					opacity:0.55;
 					font-size:0.85em;
-				}
-				/* Petit dino décoratif coin haut-droit de chaque carte cours */
-				.cordespace-theme-dinosaurs .cordespace-event-block { position:relative; }
-				.cordespace-theme-dinosaurs .cordespace-event-block::after {
-					content:'🦕';
-					position:absolute; top:0.5rem; right:0.6rem;
-					font-size:1.3rem; opacity:0.28;
-					pointer-events:none;
 				}
 			",
 		],
