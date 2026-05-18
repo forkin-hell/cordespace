@@ -266,7 +266,38 @@ add_action( 'rest_api_init', function () {
 			],
 		],
 	] );
+
+	// Endpoint léger pour le polling temps réel — retourne juste l'état actuel
+	// des bookings du prof connecté, format compact { booking_id: bool, ... }.
+	// Utilisé par le JS pour rafraîchir les toggles toutes les 5s sans reload.
+	register_rest_route( 'cordespace/v1', '/checkin-state', [
+		'methods'             => 'GET',
+		'callback'            => 'cordespace_rest_checkin_state',
+		'permission_callback' => function () { return is_user_logged_in(); },
+	] );
 } );
+
+/**
+ * GET /wp-json/cordespace/v1/checkin-state
+ * → { "117": true, "118": false, "122": true }
+ *
+ * Renvoie l'état checked-in actuel des bookings visibles dans la vue du
+ * prof connecté. Utilisé pour le polling JS qui rafraîchit les toggles.
+ */
+function cordespace_rest_checkin_state( $request ) {
+	$user_id = get_current_user_id();
+	if ( $user_id <= 0 ) {
+		return [];
+	}
+	$events = cordespace_get_prof_today_events( $user_id );
+	$state  = [];
+	foreach ( $events as $event ) {
+		foreach ( ( $event['bookings'] ?? [] ) as $b ) {
+			$state[ (string) $b['booking_id'] ] = (bool) $b['is_checked_in'];
+		}
+	}
+	return $state;
+}
 
 function cordespace_rest_toggle_checkin( $request ) {
 	$booking_id = (int) $request->get_param( 'booking_id' );
@@ -448,6 +479,87 @@ function cordespace_render_today_students( $atts ) {
 				if (c) c.textContent = pres + ' / ' + all + ' présent·e·s';
 			});
 		}
+
+		// ============================================================
+		// Polling temps réel — rafraîchit l'état des toggles toutes les 5s
+		// ============================================================
+		var stateEndpoint = <?php echo wp_json_encode( rest_url( 'cordespace/v1/checkin-state' ) ); ?>;
+		var POLL_INTERVAL_MS = 5000;
+		var pollTimer = null;
+		var pollFailures = 0;
+		var MAX_FAILURES = 5;
+
+		function applyState(state) {
+			if (!state || typeof state !== 'object') return;
+			document.querySelectorAll('.cordespace-checkin-btn').forEach(function (btn) {
+				var bookingId = String(btn.dataset.bookingId);
+				if (!(bookingId in state)) return;
+
+				// Ne pas écraser un toggle en mid-transition (track.opacity < 1)
+				var label = btn.closest('.cordespace-checkin-switch');
+				if (!label) return;
+				var track = label.querySelector('.cordespace-switch-track');
+				if (track && track.style.opacity && parseFloat(track.style.opacity) < 1) return;
+
+				var serverPresent = !!state[bookingId];
+				var domPresent = (btn.dataset.state === 'present');
+				if (serverPresent === domPresent) return; // déjà à jour
+
+				// Mise à jour silencieuse (pas d'appel REST, juste alignement DOM)
+				var labelText = label.querySelector('.cordespace-switch-label');
+				var thumb = track.querySelector('.cordespace-switch-thumb');
+				if (serverPresent) {
+					btn.dataset.state = 'present';
+					btn.checked = true;
+					labelText.textContent = '✅ Présent·e';
+					labelText.style.color = '#5b2c8f';
+					track.style.background = '#5b2c8f';
+					thumb.style.left = '25px';
+				} else {
+					btn.dataset.state = 'not_present';
+					btn.checked = false;
+					labelText.textContent = 'À venir';
+					labelText.style.color = '#888';
+					track.style.background = '#d0d0d0';
+					thumb.style.left = '3px';
+				}
+			});
+			updateCounters();
+		}
+
+		function poll() {
+			if (document.hidden) return; // onglet pas visible, on saute ce cycle
+			fetch(stateEndpoint, {
+				method: 'GET',
+				credentials: 'same-origin',
+				headers: { 'X-WP-Nonce': nonce },
+			})
+			.then(function (r) {
+				if (!r.ok) throw new Error('HTTP ' + r.status);
+				return r.json();
+			})
+			.then(function (state) {
+				pollFailures = 0;
+				applyState(state);
+			})
+			.catch(function () {
+				pollFailures++;
+				if (pollFailures >= MAX_FAILURES) {
+					// Arrêter le polling après 5 échecs consécutifs (évite de
+					// spammer un serveur en panne). Reload de page = repart à zéro.
+					clearInterval(pollTimer);
+					pollTimer = null;
+				}
+			});
+		}
+
+		// Démarre le polling. Pause auto via Page Visibility API : si l'onglet
+		// passe en background, la fonction poll() ne fait rien. À l'inverse,
+		// dès que la page redevient visible on poll tout de suite (rattrape).
+		pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+		document.addEventListener('visibilitychange', function () {
+			if (!document.hidden && pollTimer) poll();
+		});
 	})();
 	</script>
 	<?php
