@@ -416,6 +416,12 @@ function cordespace_render_today_students( $atts ) {
 		.cordespace-today-students-wrapper details.cordespace-event-block:not([open]) > summary { margin-bottom:0; padding-bottom:0; border-bottom:none; }
 	</style>
 
+	<!-- canvas-confetti pour l'animation quand le dernier élève d'un cours
+	     est marqué présent. Lib légère (4 KB) chargée depuis jsdelivr CDN.
+	     Si la lib échoue à charger (CDN down, hors-ligne), le toggle continue
+	     à fonctionner — juste pas de confetti. -->
+	<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.9.3/dist/confetti.browser.min.js" defer></script>
+
 	<script>
 	(function () {
 		var nonce    = <?php echo wp_json_encode( wp_create_nonce( 'wp_rest' ) ); ?>;
@@ -463,6 +469,10 @@ function cordespace_render_today_students( $atts ) {
 						thumb.style.left = '3px';
 					}
 					updateCounters();
+					// Si on vient de marquer la dernière personne du cours présente → confettis !
+					if (newPresent) {
+						maybeCelebrateEventCompletion(btn);
+					}
 				} else {
 					alert('Erreur : ' + (data && data.message ? data.message : 'inconnue'));
 				}
@@ -478,6 +488,55 @@ function cordespace_render_today_students( $atts ) {
 				var c = blk.querySelector('.cordespace-counter');
 				if (c) c.textContent = pres + ' / ' + all + ' présent·e·s';
 			});
+		}
+
+		// ============================================================
+		// Confettis quand un cours est complet (tous les élèves présents)
+		// ============================================================
+		function maybeCelebrateEventCompletion(triggerBtn) {
+			var eventBlock = triggerBtn.closest('.cordespace-event-block');
+			if (!eventBlock) return;
+			var all = eventBlock.querySelectorAll('.cordespace-checkin-btn').length;
+			var pres = eventBlock.querySelectorAll('.cordespace-checkin-btn[data-state="present"]').length;
+			if (all === 0 || pres < all) return;
+			// Cours complet ! On dégaine les confettis.
+			fireConfettiBurst(eventBlock);
+		}
+
+		function fireConfettiBurst(eventBlock) {
+			if (typeof confetti !== 'function') return; // lib pas (encore) chargée → silencieux
+			// Origine : coin haut-droit du compteur "X/Y présent·e·s"
+			var counter = eventBlock.querySelector('.cordespace-counter');
+			var origin = { x: 0.5, y: 0.5 };
+			if (counter) {
+				var rect = counter.getBoundingClientRect();
+				origin.x = Math.min(0.99, Math.max(0.01, (rect.left + rect.width / 2) / window.innerWidth));
+				origin.y = Math.min(0.99, Math.max(0.01, (rect.top  + rect.height / 2) / window.innerHeight));
+			}
+			var colors = ['#5b2c8f', '#f5b800', '#1d4d7e', '#ffffff', '#c084ed'];
+			// Premier burst : large et puissant
+			confetti({
+				particleCount: 90,
+				spread: 75,
+				origin: origin,
+				colors: colors,
+				ticks: 200,
+				gravity: 1.1,
+				scalar: 1.05,
+			});
+			// Deuxième burst 220ms plus tard pour un effet "double pop"
+			setTimeout(function () {
+				if (typeof confetti !== 'function') return;
+				confetti({
+					particleCount: 50,
+					spread: 110,
+					origin: origin,
+					colors: colors,
+					startVelocity: 38,
+					ticks: 220,
+					scalar: 0.85,
+				});
+			}, 220);
 		}
 
 		// ============================================================
