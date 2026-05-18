@@ -212,7 +212,17 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<div style="padding:1rem 1.4rem;background:#f0f7f0;border-radius:6px;margin-bottom:1.2rem;">
 			<span style="color:#3a7a3a;font-weight:600;">Solde actuel :</span> <strong style="font-size:1.2em;"><?php echo do_shortcode( '[mycred_my_balance show_zero=yes]' ); ?></strong>
 		</div>
-		<?php echo do_shortcode( '[mycred_history number=10]' ); ?>
+		<?php
+		// SÉCURITÉ : on injecte explicitement l'ID de l'utilisateur·trice
+		// connecté·e. Sans user_id, [mycred_history] retombe sur la vue
+		// admin et affiche l'historique de TOUS les comptes (fuite de
+		// données privées). show_user=0 cache la colonne "User" qui
+		// n'aurait aucun sens dans une vue perso.
+		$cs_uid = (int) get_current_user_id();
+		if ( $cs_uid > 0 ) {
+			echo do_shortcode( sprintf( '[mycred_history number=10 user_id=%d show_user=0]', $cs_uid ) );
+		}
+		?>
 	</section>
 	<?php
 }
