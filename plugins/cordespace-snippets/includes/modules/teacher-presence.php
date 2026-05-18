@@ -4,7 +4,10 @@
  *
  * Toggle présence prof + shortcode [cordespace_today_students].
  *
- * - Crée la table wp_cordespace_checkins (idempotent via dbDelta)
+ * - Source de vérité du check-in : le JSON `qrCodes` du booking Amelia, qui
+ *   stocke `qrCodes[].dates[YYYY-MM-DD] = true` pour chaque scan. Notre
+ *   toggle écrit exactement la même chose que ferait le scanner QR natif
+ *   d'Amelia, donc les deux flux sont parfaitement synchronisés.
  * - Endpoint REST POST /wp-json/cordespace/v1/checkin
  * - Shortcode [cordespace_today_students] = liste des élèves inscrit·es
  *   aux cours du prof connecté dans les 24h, avec switch iOS-style pour
@@ -13,71 +16,134 @@
  *
  * Dépendances : Amelia. Le helper cordespace_user_is_amelia_provider() vit
  * dans includes/core/helpers.php (toujours chargé).
+ *
+ * Historique : avant on stockait dans une table custom wp_cordespace_checkins.
+ * On a basculé sur le JSON Amelia pour avoir UNE source de vérité partagée
+ * avec le scanner natif. La table reste en place (no-op) pour ne pas casser
+ * d'éventuelles installations historiques — on peut la dropper plus tard.
  */
 
 defined( 'ABSPATH' ) || exit;
 
 // ============================================================================
-// 1) Table custom pour les check-ins
+// 1) Helpers de lecture/écriture du JSON qrCodes Amelia
 // ============================================================================
-function cordespace_checkin_table() {
-	global $wpdb;
-	return $wpdb->prefix . 'cordespace_checkins';
-}
 
-function cordespace_create_checkin_table() {
+/**
+ * Renvoie le JSON qrCodes décodé d'un booking Amelia (array ou []).
+ */
+function cordespace_get_booking_qrcodes( int $booking_id ): array {
 	global $wpdb;
-	$table = cordespace_checkin_table();
-	if ( $wpdb->get_var( "SHOW TABLES LIKE '{$table}'" ) === $table ) {
-		return;
-	}
-	$charset_collate = $wpdb->get_charset_collate();
-	$sql = "CREATE TABLE {$table} (
-		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-		amelia_booking_id INT NOT NULL,
-		checked_in_at DATETIME NOT NULL,
-		checked_in_by_user_id BIGINT UNSIGNED DEFAULT NULL,
-		PRIMARY KEY (id),
-		UNIQUE KEY uniq_booking (amelia_booking_id),
-		KEY idx_when (checked_in_at)
-	) {$charset_collate};";
-	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-	dbDelta( $sql );
-}
-add_action( 'init', 'cordespace_create_checkin_table' );
-
-// ============================================================================
-// 2) Helpers CRUD
-// ============================================================================
-function cordespace_is_checked_in( int $booking_id ): bool {
-	global $wpdb;
-	$table = cordespace_checkin_table();
-	return (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT COUNT(*) FROM {$table} WHERE amelia_booking_id = %d",
+	$json = $wpdb->get_var( $wpdb->prepare(
+		"SELECT qrCodes FROM {$wpdb->prefix}amelia_customer_bookings WHERE id = %d",
 		$booking_id
-	) ) > 0;
+	) );
+	if ( ! $json ) {
+		return [];
+	}
+	$data = json_decode( $json, true );
+	return is_array( $data ) ? $data : [];
 }
 
-function cordespace_check_in( int $booking_id, int $by_user_id ): void {
+/**
+ * Sauve le JSON qrCodes modifié dans le booking Amelia.
+ */
+function cordespace_save_booking_qrcodes( int $booking_id, array $qrCodes ): bool {
 	global $wpdb;
-	$wpdb->replace(
-		cordespace_checkin_table(),
-		[
-			'amelia_booking_id'     => $booking_id,
-			'checked_in_at'         => current_time( 'mysql', true ),
-			'checked_in_by_user_id' => $by_user_id,
-		],
-		[ '%d', '%s', '%d' ]
-	);
-}
-
-function cordespace_uncheck_in( int $booking_id ): void {
-	global $wpdb;
-	$wpdb->delete(
-		cordespace_checkin_table(),
-		[ 'amelia_booking_id' => $booking_id ],
+	$encoded = wp_json_encode( $qrCodes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES );
+	$result  = $wpdb->update(
+		$wpdb->prefix . 'amelia_customer_bookings',
+		[ 'qrCodes' => $encoded ],
+		[ 'id' => $booking_id ],
+		[ '%s' ],
 		[ '%d' ]
 	);
+	return $result !== false;
+}
+
+/**
+ * Convertit un periodStart Amelia (en UTC dans la DB) en date locale Y-m-d
+ * dans le fuseau WordPress. C'est la date qu'on inscrira comme clé dans
+ * qrCodes[].dates[$date] = true (cohérent avec ce que ferait le scanner Amelia).
+ */
+function cordespace_event_scan_date( string $period_start_utc ): string {
+	$ts = strtotime( $period_start_utc . ' UTC' );
+	if ( ! $ts ) {
+		return wp_date( 'Y-m-d' );
+	}
+	return wp_date( 'Y-m-d', $ts );
+}
+
+// ============================================================================
+// 2) Helpers CRUD check-in (lit/écrit dans qrCodes JSON Amelia)
+// ============================================================================
+
+/**
+ * Le booking est-il marqué comme présent pour la date donnée ?
+ *
+ * @param int    $booking_id ID du booking Amelia.
+ * @param string $scan_date  Date Y-m-d. Si vide, utilise la date locale du jour.
+ */
+function cordespace_is_checked_in( int $booking_id, string $scan_date = '' ): bool {
+	if ( $scan_date === '' ) {
+		$scan_date = wp_date( 'Y-m-d' );
+	}
+	$qrCodes = cordespace_get_booking_qrcodes( $booking_id );
+	foreach ( $qrCodes as $qr ) {
+		if ( isset( $qr['dates'][ $scan_date ] ) && $qr['dates'][ $scan_date ] === true ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Marque le booking présent pour la date donnée. Modifie tous les tickets du
+ * booking (cohérent avec le comportement de scan « booking » d'Amelia).
+ *
+ * @param int    $booking_id  ID du booking Amelia.
+ * @param int    $by_user_id  ID du WP user qui fait l'action (réservé pour usage futur).
+ * @param string $scan_date   Date Y-m-d. Si vide, date locale du jour.
+ */
+function cordespace_check_in( int $booking_id, int $by_user_id, string $scan_date = '' ): bool {
+	if ( $scan_date === '' ) {
+		$scan_date = wp_date( 'Y-m-d' );
+	}
+	$qrCodes = cordespace_get_booking_qrcodes( $booking_id );
+	if ( empty( $qrCodes ) ) {
+		return false;
+	}
+	foreach ( $qrCodes as &$qr ) {
+		if ( ! isset( $qr['dates'] ) || ! is_array( $qr['dates'] ) ) {
+			$qr['dates'] = [];
+		}
+		$qr['dates'][ $scan_date ] = true;
+	}
+	unset( $qr );
+	return cordespace_save_booking_qrcodes( $booking_id, $qrCodes );
+}
+
+/**
+ * Marque le booking comme NON présent pour la date donnée. Met à false plutôt
+ * que de supprimer la clé : Amelia traite `=== true` comme « scanné », donc
+ * `false` = « non scanné ». Permet aussi de garder une trace audit visuelle
+ * dans le JSON (« cette date a été touchée à un moment »).
+ */
+function cordespace_uncheck_in( int $booking_id, string $scan_date = '' ): bool {
+	if ( $scan_date === '' ) {
+		$scan_date = wp_date( 'Y-m-d' );
+	}
+	$qrCodes = cordespace_get_booking_qrcodes( $booking_id );
+	if ( empty( $qrCodes ) ) {
+		return false;
+	}
+	foreach ( $qrCodes as &$qr ) {
+		if ( isset( $qr['dates'][ $scan_date ] ) ) {
+			$qr['dates'][ $scan_date ] = false;
+		}
+	}
+	unset( $qr );
+	return cordespace_save_booking_qrcodes( $booking_id, $qrCodes );
 }
 
 // ============================================================================
@@ -133,8 +199,15 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 			$event['period_id']
 		), ARRAY_A );
 
+		// Date locale du périodStart : c'est cette date qu'on inscrit dans
+		// qrCodes[].dates pour rester cohérent avec ce que ferait le scanner
+		// Amelia natif.
+		$scan_date = cordespace_event_scan_date( $event['periodStart'] );
+		$event['scan_date'] = $scan_date;
+
 		foreach ( $bookings as &$b ) {
-			$b['is_checked_in'] = cordespace_is_checked_in( (int) $b['booking_id'] );
+			$b['is_checked_in'] = cordespace_is_checked_in( (int) $b['booking_id'], $scan_date );
+			$b['scan_date']     = $scan_date;
 		}
 		unset( $b );
 
@@ -182,6 +255,15 @@ add_action( 'rest_api_init', function () {
 		'args'                => [
 			'booking_id' => [ 'required' => true, 'type' => 'integer', 'sanitize_callback' => 'absint' ],
 			'present'    => [ 'required' => true, 'type' => 'boolean' ],
+			'scan_date'  => [
+				'required'          => false,
+				'type'               => 'string',
+				'sanitize_callback'  => function ( $v ) {
+					$v = is_string( $v ) ? trim( $v ) : '';
+					// Format Y-m-d strict, sinon on retombe sur "" (=> default côté handler)
+					return preg_match( '/^\d{4}-\d{2}-\d{2}$/', $v ) ? $v : '';
+				},
+			],
 		],
 	] );
 } );
@@ -189,6 +271,7 @@ add_action( 'rest_api_init', function () {
 function cordespace_rest_toggle_checkin( $request ) {
 	$booking_id = (int) $request->get_param( 'booking_id' );
 	$present    = (bool) $request->get_param( 'present' );
+	$scan_date  = (string) $request->get_param( 'scan_date' );
 	$user_id    = get_current_user_id();
 
 	if ( ! cordespace_user_can_check_in( $user_id, $booking_id ) ) {
@@ -196,10 +279,16 @@ function cordespace_rest_toggle_checkin( $request ) {
 	}
 
 	if ( $present ) {
-		cordespace_check_in( $booking_id, $user_id );
+		$ok = cordespace_check_in( $booking_id, $user_id, $scan_date );
+		if ( ! $ok ) {
+			return new WP_Error( 'qr_missing', 'Ce booking n\'a pas de QR codes Amelia générés.', [ 'status' => 422 ] );
+		}
 		return [ 'success' => true, 'state' => 'present' ];
 	} else {
-		cordespace_uncheck_in( $booking_id );
+		$ok = cordespace_uncheck_in( $booking_id, $scan_date );
+		if ( ! $ok ) {
+			return new WP_Error( 'qr_missing', 'Ce booking n\'a pas de QR codes Amelia générés.', [ 'status' => 422 ] );
+		}
 		return [ 'success' => true, 'state' => 'not_present' ];
 	}
 }
@@ -269,6 +358,7 @@ function cordespace_render_today_students( $atts ) {
 									<input type="checkbox"
 										   class="cordespace-checkin-btn"
 										   data-booking-id="<?php echo (int) $b['booking_id']; ?>"
+										   data-scan-date="<?php echo esc_attr( $b['scan_date'] ); ?>"
 										   data-state="<?php echo $is_present ? 'present' : 'not_present'; ?>"
 										   <?php checked( $is_present ); ?>
 										   style="position:absolute;opacity:0;pointer-events:none;">
@@ -310,6 +400,7 @@ function cordespace_render_today_students( $atts ) {
 			var track      = label.querySelector('.cordespace-switch-track');
 			var thumb      = track.querySelector('.cordespace-switch-thumb');
 			var bookingId  = parseInt(btn.dataset.bookingId, 10);
+			var scanDate   = btn.dataset.scanDate || '';
 			var current    = btn.dataset.state;
 			var newPresent = (current !== 'present');
 
@@ -320,7 +411,7 @@ function cordespace_render_today_students( $atts ) {
 				method: 'POST',
 				credentials: 'same-origin',
 				headers: { 'Content-Type': 'application/json', 'X-WP-Nonce': nonce },
-				body: JSON.stringify({ booking_id: bookingId, present: newPresent }),
+				body: JSON.stringify({ booking_id: bookingId, present: newPresent, scan_date: scanDate }),
 			})
 			.then(function (r) { return r.json(); })
 			.then(function (data) {
