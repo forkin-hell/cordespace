@@ -27,11 +27,11 @@ function cordespace_greeting_themes(): array {
 		'dinosaurs' => [
 			'label'     => '🦕 Dinosaures',
 			'decor_css' => "
-				/* Fond peuplé de dinos derrière le bloc Bonjour (juste 🦕 et 🦖, plus d'os) */
+				/* Fond peuplé de dinos derrière le bloc Bonjour (juste 🦕 et 🦖) */
 				.cordespace-theme-dinosaurs .cordespace-greeting-block { position:relative; overflow:hidden; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block > * { position:relative; z-index:1; }
 				.cordespace-theme-dinosaurs .cordespace-greeting-block::before {
-					content: '🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕';
+					content: '🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕 🦕 🦖 🦕 🦖 🦕 🦖 🦖 🦕 🦖 🦕';
 					position:absolute; inset:0;
 					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
 					opacity:0.18; word-break:break-all; overflow:hidden;
@@ -54,7 +54,7 @@ function cordespace_greeting_themes(): array {
 				.cordespace-theme-unicorns .cordespace-greeting-block { position:relative; overflow:hidden; }
 				.cordespace-theme-unicorns .cordespace-greeting-block > * { position:relative; z-index:1; }
 				.cordespace-theme-unicorns .cordespace-greeting-block::before {
-					content: '🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄';
+					content: '🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄';
 					position:absolute; inset:0;
 					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
 					opacity:0.18; word-break:break-all; overflow:hidden;
@@ -67,18 +67,13 @@ function cordespace_greeting_themes(): array {
 					opacity:0.55;
 					font-size:0.85em;
 				}
-				/* Petite licorne décorative coin haut-droit de chaque carte cours */
-				.cordespace-theme-unicorns .cordespace-event-block { position:relative; }
-				.cordespace-theme-unicorns .cordespace-event-block::after {
-					content:'🦄';
-					position:absolute; top:0.5rem; right:0.6rem;
-					font-size:1.3rem; opacity:0.28;
-					pointer-events:none;
-				}
 			",
 		],
 
-		// Pour ajouter un thème : copier l'une de ces entrées et changer slug + label + emojis.
+		// Pour ajouter un thème : copier une des entrées et changer slug + label +
+		// chaîne d'emojis du fond + emoji après-h2. Pas de décorations dans les
+		// coins des cartes — ça surcharge visuellement. Convention : ~80 emojis
+		// dans le fond pour bien remplir le bloc (sinon trou à droite).
 	];
 }
 
