@@ -68,6 +68,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/linked-accounts.php',
 			'default_active'  => true,
 		],
+		'mon-espace.greeting-themes' => [
+			'label'           => 'Thèmes de salutation personnalisés',
+			'description'     => 'Permet d\'appliquer un fond décoratif (dinosaures, etc.) derrière le « Bonjour Prénom » de chaque utilisateur·trice. Configurable par profil dans wp-admin → Utilisateurs.',
+			'category'        => 'mon-espace',
+			'type'            => 'php',
+			'file'            => 'includes/modules/greeting-themes.php',
+			'requires_plugin' => [],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/greeting-themes.php',
+			'default_active'  => true,
+		],
 		'payments.prof-warning' => [
 			'label'           => 'Bandeau d\'achat prof',
 			'description'     => 'Avertit les profs au moment du panier qu\'iels sont sur leur compte enseignant·e.',
