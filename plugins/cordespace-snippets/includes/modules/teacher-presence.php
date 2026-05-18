@@ -228,16 +228,19 @@ function cordespace_render_today_students( $atts ) {
 			$total = count( $event['bookings'] );
 			$pres  = count( array_filter( $event['bookings'], fn($b) => $b['is_checked_in'] ) );
 		?>
-			<div class="cordespace-event-block" style="margin-bottom:1.8rem;padding:1.2rem 1.4rem;background:#fafafa;border-radius:8px;border:1px solid #e0e0e0;">
-				<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.8rem;padding-bottom:0.8rem;border-bottom:1px solid #e5e5e5;">
-					<div>
-						<div style="font-size:1.1em;font-weight:700;color:#1d4d7e;"><?php echo esc_html( $event['name'] ); ?></div>
-						<div style="font-size:0.9em;color:#666;margin-top:0.2rem;">📅 <?php echo esc_html( $when ); ?> → <?php echo esc_html( $end ); ?></div>
+			<details class="cordespace-event-block" open style="margin-bottom:1.8rem;padding:1.2rem 1.4rem;background:#fafafa;border-radius:8px;border:1px solid #e0e0e0;">
+				<summary style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.8rem;padding-bottom:0.8rem;border-bottom:1px solid #e5e5e5;cursor:pointer;list-style:none;">
+					<div style="display:flex;align-items:center;gap:0.6rem;flex:1;min-width:200px;">
+						<span class="cordespace-disclosure" aria-hidden="true" style="font-size:0.85em;color:#999;display:inline-block;width:1em;text-align:center;transition:transform 0.18s ease;">▼</span>
+						<div>
+							<div style="font-size:1.1em;font-weight:700;color:#1d4d7e;"><?php echo esc_html( $event['name'] ); ?></div>
+							<div style="font-size:0.9em;color:#666;margin-top:0.2rem;">📅 <?php echo esc_html( $when ); ?> → <?php echo esc_html( $end ); ?></div>
+						</div>
 					</div>
 					<div class="cordespace-counter" style="background:#5b2c8f;color:#fff;padding:0.4rem 0.9rem;border-radius:99px;font-size:0.9em;font-weight:600;white-space:nowrap;">
 						<?php echo (int) $pres; ?> / <?php echo (int) $total; ?> présent·e·s
 					</div>
-				</div>
+				</summary>
 
 				<?php if ( empty( $event['bookings'] ) ) : ?>
 					<p style="color:#999;font-style:italic;margin:0.6rem 0 0;">Aucune inscription pour ce cours.</p>
@@ -277,9 +280,20 @@ function cordespace_render_today_students( $atts ) {
 						<?php endforeach; ?>
 					</ul>
 				<?php endif; ?>
-			</div>
+			</details>
 		<?php endforeach; ?>
 	</div>
+
+	<style>
+		/* Cache le marqueur natif de <details> dans tous les navigateurs */
+		.cordespace-today-students-wrapper details.cordespace-event-block > summary::-webkit-details-marker { display:none; }
+		.cordespace-today-students-wrapper details.cordespace-event-block > summary { list-style:none; }
+		/* Chevron qui pivote : pointe vers le bas quand ouvert, vers la droite quand fermé */
+		.cordespace-today-students-wrapper details.cordespace-event-block:not([open]) .cordespace-disclosure { transform: rotate(-90deg); }
+		.cordespace-today-students-wrapper details.cordespace-event-block[open] .cordespace-disclosure { transform: rotate(0deg); }
+		/* Réduit l'espacement vertical quand un cours est replié (pas de border-bottom sur summary) */
+		.cordespace-today-students-wrapper details.cordespace-event-block:not([open]) > summary { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+	</style>
 
 	<script>
 	(function () {

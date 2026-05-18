@@ -68,13 +68,15 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 		<p style="margin:0 0 1.2rem;opacity:0.92;font-size:0.95em;">Présente ces QR à ton arrivée pour le check-in.</p>
 
 		<?php foreach ( $bookings as $booking ) :
-			$is_pending = ( $booking['status'] === 'pending' );
-			$qr_data    = ! empty( $booking['qrCodes'] ) ? json_decode( $booking['qrCodes'], true ) : null;
-			$qr_string  = ( is_array( $qr_data ) && ! empty( $qr_data[0]['qrCodeData'] ) ) ? $qr_data[0]['qrCodeData'] : '';
-			$qr_url     = $qr_string
+			$is_pending  = ( $booking['status'] === 'pending' );
+			$qr_data     = ! empty( $booking['qrCodes'] ) ? json_decode( $booking['qrCodes'], true ) : null;
+			$qr_string   = ( is_array( $qr_data ) && ! empty( $qr_data[0]['qrCodeData'] ) ) ? $qr_data[0]['qrCodeData'] : '';
+			// Code manuel = ce que la personne peut taper à l'oral si le scan QR ne marche pas
+			$manual_code = ( is_array( $qr_data ) && ! empty( $qr_data[0]['ticketManualCode'] ) ) ? $qr_data[0]['ticketManualCode'] : '';
+			$qr_url      = $qr_string
 				? 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . urlencode( $qr_string )
 				: '';
-			$when       = mysql2date( 'l j F — H\hi', $booking['periodStart'] );
+			$when        = mysql2date( 'l j F — H\hi', $booking['periodStart'] );
 		?>
 			<div style="background:rgba(255,255,255,0.12);padding:1rem 1.2rem;border-radius:8px;margin-bottom:0.7rem;display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;<?php echo $is_pending ? 'outline:2px solid #f5b800;outline-offset:-2px;' : ''; ?>">
 				<div style="flex:1;min-width:200px;">
@@ -95,8 +97,15 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 				</div>
 
 				<?php if ( $qr_url ) : ?>
-					<div style="background:white;padding:0.5rem;border-radius:6px;<?php echo $is_pending ? 'opacity:0.85;' : ''; ?>">
-						<img src="<?php echo esc_url( $qr_url ); ?>" alt="QR code" width="130" height="130" style="display:block;">
+					<div style="display:flex;flex-direction:column;align-items:center;gap:0.4rem;<?php echo $is_pending ? 'opacity:0.85;' : ''; ?>">
+						<div style="background:white;padding:0.5rem;border-radius:6px;">
+							<img src="<?php echo esc_url( $qr_url ); ?>" alt="QR code" width="130" height="130" style="display:block;">
+						</div>
+						<?php if ( $manual_code !== '' ) : ?>
+							<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(0,0,0,0.25);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.9em;letter-spacing:0.06em;font-weight:600;" title="Code à taper si le scan QR ne marche pas">
+								<?php echo esc_html( $manual_code ); ?>
+							</div>
+						<?php endif; ?>
 					</div>
 				<?php else : ?>
 					<div style="background:rgba(255,255,255,0.1);padding:0.6rem 0.8rem;border-radius:4px;font-size:0.85em;">QR non dispo,<br>contacte l'équipe.</div>

@@ -129,6 +129,34 @@ if ( ! function_exists( 'cordespace_render_amelia_cookie_sync' ) ) {
 }
 
 /**
+ * Renvoie le prénom + nom de l'utilisateur·trice pour les salutations.
+ *
+ * Cascade de fallback :
+ *   1. first_name + last_name (meta WP, fournis en général par Amelia)
+ *   2. display_name (configuré dans le profil WP)
+ *   3. user_login (en dernier recours)
+ *
+ * @param WP_User|null $user Objet WP_User. Si null, retourne chaîne vide.
+ */
+if ( ! function_exists( 'cordespace_user_greeting_name' ) ) {
+	function cordespace_user_greeting_name( $user ): string {
+		if ( ! $user || ! isset( $user->ID ) ) {
+			return '';
+		}
+		$first = trim( (string) ( $user->first_name ?? '' ) );
+		$last  = trim( (string) ( $user->last_name ?? '' ) );
+		$name  = trim( $first . ' ' . $last );
+		if ( $name === '' ) {
+			$name = trim( (string) ( $user->display_name ?? '' ) );
+		}
+		if ( $name === '' ) {
+			$name = (string) ( $user->user_login ?? '' );
+		}
+		return $name;
+	}
+}
+
+/**
  * Renvoie true si le module donné est activé dans wp_options.
  *
  * Utilisé par l'enveloppe mon-espace.php pour décider d'émettre ou non

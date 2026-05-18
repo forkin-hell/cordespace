@@ -105,8 +105,9 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	do_action( 'cordespace_mon_espace_section_client_qr', $user );
 	?>
 
+	<?php $greet_name = cordespace_user_greeting_name( $user ); ?>
 	<div style="background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%);color:#fff;padding:2rem;border-radius:10px;margin-bottom:1.5rem;">
-		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour 👋</h1>
+		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?> 👋</h1>
 		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace Cordespace.</p>
 		<div style="margin-top:1.5rem;">
 			<div style="display:inline-block;background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;">
@@ -173,27 +174,28 @@ function cordespace_render_prof_view( $user, $has_linked ) {
 		</div>
 	<?php endif; ?>
 
+	<?php $greet_name = cordespace_user_greeting_name( $user ); ?>
 	<div style="background:linear-gradient(135deg,#1d4d7e 0%,#1a1a2e 100%);color:#fff;padding:2rem;border-radius:10px;margin-bottom:1.5rem;">
-		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour 👋</h1>
-		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace enseignant·e. Retrouve ici tes prochains cours à donner.</p>
+		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?> 👋</h1>
+		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace enseignant·e. Retrouve ici tes élèves du jour et tes prochains cours.</p>
 	</div>
 
 	<nav style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;padding:0.8rem;background:#f7f7f7;border-radius:6px;">
-		<a href="#section-cours-prof" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📅 Mes cours à enseigner</a>
 		<a href="#section-eleves" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">👥 Mes élèves</a>
+		<a href="#section-cours-prof" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📅 Mes cours à enseigner</a>
 		<a href="#section-outils" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🛠️ Outils</a>
 	</nav>
-
-	<section id="section-cours-prof" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
-		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📅 Mes prochains cours à enseigner</h2>
-		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Les ateliers et événements où tu es enseignant·e assigné·e (1 an à l'avance).</p>
-		<?php echo do_shortcode( '[ameliaemployeepanel events=1]' ); ?>
-	</section>
 
 	<section id="section-eleves" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
 		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">👥 Mes élèves du jour</h2>
 		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Clique sur le bouton à droite de chaque personne pour marquer sa présence (24h de cours autour).</p>
 		<?php echo do_shortcode( '[cordespace_today_students]' ); ?>
+	</section>
+
+	<section id="section-cours-prof" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
+		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📅 Mes prochains cours à enseigner</h2>
+		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Les ateliers et événements où tu es enseignant·e assigné·e (1 an à l'avance).</p>
+		<?php echo do_shortcode( '[ameliaemployeepanel events=1]' ); ?>
 	</section>
 
 	<section id="section-outils" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
