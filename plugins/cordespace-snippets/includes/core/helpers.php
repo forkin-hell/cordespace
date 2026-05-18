@@ -58,6 +58,27 @@ if ( ! function_exists( 'cordespace_get_mon_espace_url' ) ) {
 }
 
 /**
+ * Invalide la cache transient de cordespace_get_mon_espace_url() dès qu'une
+ * page est sauvegardée ou (dé)trashée. Si l'admin renomme la page « Mon
+ * espace » / « Mon compte », le helper renvoie tout de suite la nouvelle URL
+ * au lieu d'attendre l'expiration de 1h.
+ *
+ * Cible toutes les pages, pas seulement celle qui contient le shortcode :
+ * détecter laquelle contient le shortcode coûterait une requête supplémentaire
+ * à chaque save_post, alors qu'invalider la cache et la rebuilder à la
+ * prochaine lecture coûte presque rien.
+ */
+add_action( 'save_post_page', 'cordespace_invalidate_mon_espace_url_cache' );
+add_action( 'trashed_post', 'cordespace_invalidate_mon_espace_url_cache' );
+add_action( 'untrashed_post', 'cordespace_invalidate_mon_espace_url_cache' );
+
+if ( ! function_exists( 'cordespace_invalidate_mon_espace_url_cache' ) ) {
+	function cordespace_invalidate_mon_espace_url_cache(): void {
+		delete_transient( 'cordespace_mon_espace_url' );
+	}
+}
+
+/**
  * Force la plage de dates par défaut des panels Amelia à 1 an dans le futur.
  */
 if ( ! function_exists( 'cordespace_render_amelia_default_range' ) ) {
