@@ -1,0 +1,88 @@
+/**
+ * Callouts éditoriaux .cordespace-note (ex-WPCode snippet 1241).
+ *
+ * Utilisé pour les encadrés d'information dans le contenu des pages.
+ * Variantes : .info, .warn, .ok
+ */
+
+/* Cordespace — Notes / Callouts éditables style Obsidian
+   Usage : sur n'importe quel bloc Gutenberg (Groupe ou Paragraphe),
+   ajouter la classe CSS correspondante dans Avancé → "Classes CSS sup.".
+   Variantes : .cs-note (jaune), .cs-info (bleu), .cs-success (vert), .cs-danger (rouge) */
+
+.cs-note,
+.cs-info,
+.cs-success,
+.cs-danger {
+	padding: 1rem 1.4rem 1rem 3rem;
+	border-radius: 8px;
+	margin: 1.5rem 0;
+	position: relative;
+	line-height: 1.55;
+}
+
+.cs-note p:first-child,
+.cs-info p:first-child,
+.cs-success p:first-child,
+.cs-danger p:first-child {
+	margin-top: 0;
+}
+
+.cs-note p:last-child,
+.cs-info p:last-child,
+.cs-success p:last-child,
+.cs-danger p:last-child {
+	margin-bottom: 0;
+}
+
+.cs-note::before,
+.cs-info::before,
+.cs-success::before,
+.cs-danger::before {
+	content: '';
+	position: absolute;
+	left: 0.9rem;
+	top: 1rem;
+	font-size: 1.2em;
+	line-height: 1;
+}
+
+/* Jaune — Note / Attention */
+.cs-note {
+	background: #fff8e6;
+	border-left: 4px solid #f5b800;
+	color: #5a4400;
+}
+.cs-note::before { content: '⚠️'; }
+.cs-note strong { color: #7a5d00; }
+.cs-note a { color: #7a5d00; text-decoration: underline; }
+
+/* Bleu — Info */
+.cs-info {
+	background: #eef5fd;
+	border-left: 4px solid #2c70b8;
+	color: #1d4d7e;
+}
+.cs-info::before { content: '💡'; }
+.cs-info strong { color: #1d4d7e; }
+.cs-info a { color: #1d4d7e; text-decoration: underline; }
+
+/* Vert — Success / Confirmation */
+.cs-success {
+	background: #eef7ee;
+	border-left: 4px solid #3a7a3a;
+	color: #244e24;
+}
+.cs-success::before { content: '✅'; }
+.cs-success strong { color: #244e24; }
+.cs-success a { color: #244e24; text-decoration: underline; }
+
+/* Rouge — Important / Danger */
+.cs-danger {
+	background: #fdecea;
+	border-left: 4px solid #c62828;
+	color: #6b1c1c;
+}
+.cs-danger::before { content: '🚨'; }
+.cs-danger strong { color: #6b1c1c; }
+.cs-danger a { color: #6b1c1c; text-decoration: underline; }

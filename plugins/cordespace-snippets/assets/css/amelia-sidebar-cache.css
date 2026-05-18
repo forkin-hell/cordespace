@@ -1,0 +1,38 @@
+/**
+ * Cache l'ancienne sidebar du calendrier Amelia (ex-WPCode snippet 1237).
+ *
+ * Pose une couche de masquage pour éviter d'avoir à toucher au CSS
+ * d'Amelia lui-même (qui changerait à chaque MAJ du plugin).
+ */
+
+/* Cordespace — Cache la barre latérale "Événements à venir" du calendrier
+   Amelia. Détecté via DevTools : classe .am-ecs__side */
+
+.am-ecs__side {
+	display: none !important;
+}
+
+/* Force le calendrier principal à prendre toute la largeur disponible
+   (le .am-ecs__page est probablement en flex 2-cols, on annule) */
+.am-ecs__page {
+	display: block !important;
+	width: 100% !important;
+}
+
+.am-ecs__page > *:not(.am-ecs__side) {
+	max-width: 100% !important;
+	width: 100% !important;
+}
+
+/* Force le contenu interne (selon les versions Amelia) */
+.am-ecf, .am-ecs__page__main {
+	width: 100% !important;
+	max-width: 100% !important;
+}
+
+/* Espace entre la fin de la liste d'événements et le footer */
+.entry-content > .wp-block-amelia-events-list-booking-gutenberg-block:last-child,
+.entry-content > [class*="ameliaeventslist"]:last-child,
+.entry-content > .amelia-v2-booking:last-child {
+	margin-bottom: 4rem !important;
+}

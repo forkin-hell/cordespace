@@ -1,0 +1,30 @@
+/**
+ * Icône bonhomme dans le menu de navigation (ex-WPCode snippet 1228).
+ *
+ * À appliquer à un item de menu en lui donnant la classe CSS
+ * .cordespace-menu-icon (Apparence → Menus → déplier l'item → Classes CSS).
+ */
+
+/* Cordespace — Icône bonhomme blanc à la place du texte "Mon espace" */
+.cordespace-menu-icon > a {
+  font-size: 0;          /* cache le texte du label */
+  line-height: 1;
+}
+
+.cordespace-menu-icon > a::before {
+  content: '';
+  display: inline-block;
+  width: 22px;
+  height: 22px;
+  vertical-align: middle;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ffffff'><path d='M12 2C9.79 2 8 3.79 8 6s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 12c-4.42 0-8 1.79-8 4v2h16v-2c0-2.21-3.58-4-8-4z'/></svg>");
+  background-size: contain;
+  background-repeat: no-repeat;
+}
+
+/* Réactive la taille de police pour les enfants et flèche dropdown */
+.cordespace-menu-icon > a::after,
+.cordespace-menu-icon > a > * {
+  font-size: 14px;
+}
+}

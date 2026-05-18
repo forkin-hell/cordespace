@@ -1,0 +1,47 @@
+# .gitignore pour la branche public-main (forkin-hell/cordespace)
+#
+# Cette branche ne contient QUE le plugin cordespace-snippets/.
+
+# Exclusions explicites (tout ce qui n'est PAS plugins/cordespace-snippets/, README.md, .gitignore)
+/BACKLOG.md
+/CLAUDE.md
+/DATA-MODEL.md
+/HACKING.md
+/composer.json
+/composer.lock
+/docs/
+/local-wp/
+/migration-data/
+/scripts/
+/cordespace_export/
+/rope365_export/
+/.claude/
+/.venv/
+/__pycache__/
+
+# Dans plugins/, exclure tout sauf cordespace-snippets/
+/plugins/cordespace-core/
+/plugins/.DS_Store
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Editors
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+
+# Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Fichier de transition (sera retiré quand on aura migré complètement)
+/.gitignore-private
