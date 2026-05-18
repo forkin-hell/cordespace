@@ -212,7 +212,7 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<div style="padding:1rem 1.4rem;background:#f0f7f0;border-radius:6px;margin-bottom:1.2rem;">
 			<span style="color:#3a7a3a;font-weight:600;">Solde actuel :</span> <strong style="font-size:1.2em;"><?php echo do_shortcode( '[mycred_my_balance show_zero=yes]' ); ?></strong>
 		</div>
-		<?php echo do_shortcode( '[mycred_my_history number=10]' ); ?>
+		<?php echo do_shortcode( '[mycred_history number=10]' ); ?>
 	</section>
 	<?php
 }

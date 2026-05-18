@@ -50,43 +50,55 @@ Ce document décrit comment passer de **« 6 snippets dans WPCode »** à
 À faire sur le **site de prod-clone** (`cordespace-prod-local` en LocalWP)
 d'abord, comme dry-run, puis sur la vraie prod.
 
-### Étape 1 : activer le plugin
+### Étape 1 : désactiver les snippets WPCode PHP D'ABORD
+
+Dans wp-admin → **Code Snippets**, **désactiver** (toggle « Active » → gris)
+ces **3 snippets PHP** :
+
+| ID   | Titre                                | Sera remplacé par                              |
+|------|--------------------------------------|------------------------------------------------|
+| 1224 | Switch entre comptes liés           | `includes/switch-accounts.php`                 |
+| 1232 | Shortcode [cordespace_mon_espace]   | `includes/mon-espace-shortcode.php`            |
+| 1249 | Toggle présence prof                | `includes/toggle-presence-prof.php`            |
+
+À ce moment, `/mon-espace/` ne fonctionne **temporairement plus** (les
+shortcodes apparaissent en texte brut). C'est normal — on enchaîne tout de
+suite avec l'étape 2.
+
+> ⚠️ **Pourquoi cet ordre ?** Si on activait le plugin AVANT de désactiver
+> les snippets, les mêmes fonctions seraient déclarées 2× et PHP planterait
+> avec un fatal « Cannot redeclare function ». WPCode auto-désactiverait
+> alors le snippet « fautif » et la cache se retrouverait dans un état
+> incohérent qu'il faut réparer en SQL.
+
+### Étape 2 : activer le plugin
 
 wp-admin → **Extensions** → **Cordespace Snippets** → **Activer**.
 
-À ce stade, **les snippets WPCode tournent ENCORE** : il y a donc
-double-exécution potentielle (et risque de fatal « Cannot redeclare
-function »).
+Vérifier en **navigation privée** :
 
-→ **Si fatal immédiat** : désactiver le plugin et lire la section
-« Troubleshooting » en bas.
+- `/mon-espace/` rend le panel (vue client·e ou prof selon le compte)
+- Pour un compte avec deux comptes liés : le bouton de bascule fonctionne
+- Pour un prof avec des cours dans les 24h : le toggle iOS-style apparaît
 
-### Étape 2 : désactiver les snippets WPCode un par un
+### Étape 3 : désactiver les snippets WPCode CSS
 
-Dans wp-admin → **Code Snippets**, **désactiver** (toggle « Active » →
-gris) chacun de ces six dans l'ordre :
+Les CSS ne provoquent pas de fatal (rien à redéclarer), mais tant qu'ils
+sont actifs en même temps que le plugin, on a deux fois la même règle CSS
+qui s'applique (pas de bug visible, mais c'est sale).
 
-| ID  | Titre                                    | Remplacé par                                |
-|-----|------------------------------------------|---------------------------------------------|
-| 1228 | Icône menu                              | `assets/css/menu-icon.css`                  |
-| 1237 | Cache sidebar calendrier Amelia         | `assets/css/amelia-sidebar-cache.css`       |
-| 1241 | Notes / Callouts éditoriaux             | `assets/css/callouts.css`                   |
-| 1224 | Switch entre comptes liés               | `includes/switch-accounts.php`              |
-| 1232 | Shortcode [cordespace_mon_espace]       | `includes/mon-espace-shortcode.php`         |
-| 1249 | Toggle présence prof                    | `includes/toggle-presence-prof.php`         |
+Dans wp-admin → **Code Snippets**, **désactiver** :
 
-Après chaque désactivation, **vérifier en navigation privée** :
+| ID   | Titre                            | Remplacé par                          |
+|------|----------------------------------|---------------------------------------|
+| 1228 | Icône menu                       | `assets/css/menu-icon.css`            |
+| 1237 | Cache sidebar calendrier Amelia  | `assets/css/amelia-sidebar-cache.css` |
+| 1241 | Notes / Callouts éditoriaux      | `assets/css/callouts.css`             |
 
-- Après les 3 CSS : `/mon-espace/` ne perd pas son style (callouts, icône
-  menu, sidebar Amelia masquée)
-- Après `1224` : se relogger sur un compte lié, le bouton de bascule
-  fonctionne
-- Après `1232` : `/mon-espace/` rend bien le panel (client·e ou prof selon
-  le compte)
-- Après `1249` : le toggle iOS-style apparaît pour un prof avec des cours
-  dans les 24h
+Re-vérifier en navigation privée : l'icône bonhomme dans le menu, les
+callouts dans les pages, la sidebar Amelia masquée.
 
-### Étape 3 : laisser tomber WPCode si on n'en a plus besoin
+### Étape 4 : laisser tomber WPCode si on n'en a plus besoin
 
 Une fois la migration validée et stable plusieurs jours, on peut désinstaller
 WPCode pour réduire la surface d'attaque. Garder un export de la DB
