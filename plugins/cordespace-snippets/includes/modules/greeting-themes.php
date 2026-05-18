@@ -41,11 +41,10 @@ function cordespace_greeting_themes(): array {
 					opacity:0.18;
 					pointer-events:none;
 				}
-				/* Petit diplodocus après chaque titre de section */
+				/* Petit diplodocus après chaque titre de section (pleine opacité) */
 				.cordespace-theme-dinosaurs section > h2::after {
 					content: ' 🦕';
 					margin-left:0.4rem;
-					opacity:0.55;
 					font-size:0.85em;
 				}
 			",
@@ -66,11 +65,10 @@ function cordespace_greeting_themes(): array {
 					opacity:0.18;
 					pointer-events:none;
 				}
-				/* Petite étoile après chaque titre de section */
+				/* Petite étoile après chaque titre de section (pleine opacité) */
 				.cordespace-theme-unicorns section > h2::after {
 					content: ' ✨';
 					margin-left:0.4rem;
-					opacity:0.55;
 					font-size:0.85em;
 				}
 			",
