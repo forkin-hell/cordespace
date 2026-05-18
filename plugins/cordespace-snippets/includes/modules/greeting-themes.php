@@ -2,61 +2,96 @@
 /**
  * Module : mon-espace.greeting-themes
  *
- * Permet d'appliquer un fond visuel personnalisé derrière l'en-tête
- * « Bonjour <prénom> » de la page /mon-espace/. Configurable par utilisateur·trice
- * via un champ dans le profil WP (wp-admin → Utilisateurs).
+ * Permet d'appliquer un thème visuel personnalisé sur la page /mon-espace/
+ * d'un user particulier : fond décoratif derrière le « Bonjour » + petites
+ * touches éparpillées (sprinkles) sur les sections et blocs.
  *
  * Décorrélé du nom : le thème est lié au USER ID (post meta), pas au prénom.
- * Donc Hanna conserve son fond dinosaures même si elle change de prénom
- * affiché.
  *
- * Comment ajouter un nouveau thème :
- *   1. Ajouter une entrée dans cordespace_greeting_themes() (slug + label + CSS)
- *   2. C'est tout — l'admin verra automatiquement le nouveau choix dans le profil
+ * Comment ajouter un nouveau thème : copier une entrée dans
+ * cordespace_greeting_themes() et changer slug + label + 'decor_css'.
+ * C'est tout — l'admin verra automatiquement le nouveau choix dans le profil.
  *
- * Hook d'intégration : filter `cordespace_greeting_theme_class`, appelé par
- * l'enveloppe mon-espace.shortcode pour récupérer la classe CSS à mettre
- * sur le bloc « Bonjour ». Si ce module est désactivé, le filter n'a pas
- * de listener → la classe est vide → fond par défaut pour tout le monde.
+ * Convention CSS : chaque thème scope toutes ses règles sous
+ * `.cordespace-theme-<slug>` (classe posée sur le wrapper de la vue par
+ * mon-espace.shortcode via le filter cordespace_greeting_theme_class).
  */
 
 defined( 'ABSPATH' ) || exit;
 
 /**
  * Catalogue des thèmes disponibles.
- *
- * Pour en ajouter un, copier un bloc et changer slug + label + decor_css.
- * Le `decor_css` est injecté tel quel dans une <style> sur la page front.
  */
 function cordespace_greeting_themes(): array {
 	return [
 		'dinosaurs' => [
 			'label'     => '🦕 Dinosaures',
 			'decor_css' => "
-				.cordespace-greeting-theme-dinosaurs { position:relative; overflow:hidden; }
-				.cordespace-greeting-theme-dinosaurs > * { position:relative; z-index:1; }
-				.cordespace-greeting-theme-dinosaurs::before {
+				/* Fond peuplé de dinos derrière le bloc Bonjour */
+				.cordespace-theme-dinosaurs .cordespace-greeting-block { position:relative; overflow:hidden; }
+				.cordespace-theme-dinosaurs .cordespace-greeting-block > * { position:relative; z-index:1; }
+				.cordespace-theme-dinosaurs .cordespace-greeting-block::before {
 					content: '🦕 🦖 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴 🦖 🦕 🦴 🦴 🦕 🦖 🦴 🦖 🦕 🦴';
-					position: absolute;
-					top: 0; left: 0; right: 0; bottom: 0;
-					font-size: 2.3rem;
-					line-height: 1.4;
-					letter-spacing: 0.4em;
-					opacity: 0.18;
-					word-break: break-all;
-					overflow: hidden;
-					pointer-events: none;
-					padding: 0.5rem 0.7rem;
-					box-sizing: border-box;
+					position:absolute; inset:0;
+					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
+					opacity:0.18; word-break:break-all; overflow:hidden;
+					pointer-events:none; padding:0.5rem 0.7rem; box-sizing:border-box;
+				}
+				/* Petit ossement après chaque titre de section */
+				.cordespace-theme-dinosaurs section > h2::after {
+					content: ' 🦴';
+					margin-left:0.4rem;
+					opacity:0.45;
+					font-size:0.85em;
+				}
+				/* Petit dino décoratif coin haut-droit de chaque carte cours */
+				.cordespace-theme-dinosaurs .cordespace-event-block { position:relative; }
+				.cordespace-theme-dinosaurs .cordespace-event-block::after {
+					content:'🦕';
+					position:absolute; top:0.5rem; right:0.6rem;
+					font-size:1.3rem; opacity:0.28;
+					pointer-events:none;
 				}
 			",
 		],
-		// Ajouter ici : 'unicorns', 'cats', etc. Mêmes 3 propriétés.
+
+		'unicorns' => [
+			'label'     => '🦄 Licornes',
+			'decor_css' => "
+				/* Fond peuplé de licornes derrière le bloc Bonjour */
+				.cordespace-theme-unicorns .cordespace-greeting-block { position:relative; overflow:hidden; }
+				.cordespace-theme-unicorns .cordespace-greeting-block > * { position:relative; z-index:1; }
+				.cordespace-theme-unicorns .cordespace-greeting-block::before {
+					content: '🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄 ✨ 🌈 ✨ 🦄 🌈 ✨ 🦄 🌈 🦄 ✨ 🌈 🦄';
+					position:absolute; inset:0;
+					font-size:2.3rem; line-height:1.4; letter-spacing:0.4em;
+					opacity:0.18; word-break:break-all; overflow:hidden;
+					pointer-events:none; padding:0.5rem 0.7rem; box-sizing:border-box;
+				}
+				/* Petite étoile après chaque titre de section */
+				.cordespace-theme-unicorns section > h2::after {
+					content: ' ✨';
+					margin-left:0.4rem;
+					opacity:0.55;
+					font-size:0.85em;
+				}
+				/* Petite licorne décorative coin haut-droit de chaque carte cours */
+				.cordespace-theme-unicorns .cordespace-event-block { position:relative; }
+				.cordespace-theme-unicorns .cordespace-event-block::after {
+					content:'🦄';
+					position:absolute; top:0.5rem; right:0.6rem;
+					font-size:1.3rem; opacity:0.28;
+					pointer-events:none;
+				}
+			",
+		],
+
+		// Pour ajouter un thème : copier l'une de ces entrées et changer slug + label + emojis.
 	];
 }
 
 /**
- * Récupère le slug du thème assigné à un user (ex: 'dinosaurs' ou '').
+ * Slug du thème assigné à un user (ex: 'dinosaurs', 'unicorns', ou '' si aucun).
  */
 function cordespace_get_user_greeting_theme( int $user_id ): string {
 	if ( $user_id <= 0 ) return '';
@@ -67,7 +102,9 @@ function cordespace_get_user_greeting_theme( int $user_id ): string {
 }
 
 // ============================================================================
-// 1) Filter consommé par mon-espace.shortcode pour appliquer la classe CSS
+// 1) Filter consommé par mon-espace.shortcode : applique la classe CSS sur le
+//    wrapper de toute la vue (pas juste le Bonjour). Permet aux thèmes de
+//    cibler descendants : .cordespace-theme-XYZ section h2, .event-block, etc.
 // ============================================================================
 add_filter( 'cordespace_greeting_theme_class', 'cordespace_apply_greeting_theme_class', 10, 2 );
 
@@ -75,13 +112,14 @@ function cordespace_apply_greeting_theme_class( string $class, $user ): string {
 	if ( ! $user || ! isset( $user->ID ) ) return $class;
 	$theme = cordespace_get_user_greeting_theme( (int) $user->ID );
 	if ( $theme === '' ) return $class;
-	// Lazy : on print le CSS du thème UNE seule fois par requête, et seulement
-	// si un user en a vraiment besoin (évite de polluer toutes les pages avec
-	// du CSS inutile)
 	cordespace_print_greeting_theme_css_once( $theme );
-	return trim( $class . ' cordespace-greeting-theme-' . sanitize_html_class( $theme ) );
+	return trim( $class . ' cordespace-theme-' . sanitize_html_class( $theme ) );
 }
 
+/**
+ * Print le CSS du thème UNE seule fois par requête (lazy). Évite de polluer
+ * les pages où aucun user n'a de thème actif.
+ */
 function cordespace_print_greeting_theme_css_once( string $theme ): void {
 	static $printed = [];
 	if ( isset( $printed[ $theme ] ) ) return;
@@ -89,8 +127,8 @@ function cordespace_print_greeting_theme_css_once( string $theme ): void {
 	if ( ! isset( $themes[ $theme ]['decor_css'] ) ) return;
 	$printed[ $theme ] = true;
 	$css = $themes[ $theme ]['decor_css'];
-	add_action( 'wp_footer', function () use ( $css ) {
-		echo "<style id='cordespace-greeting-theme-decor'>{$css}</style>";
+	add_action( 'wp_footer', function () use ( $css, $theme ) {
+		echo "<style id='cordespace-greeting-theme-{$theme}-decor'>{$css}</style>";
 	}, 5 );
 }
 
@@ -110,10 +148,10 @@ function cordespace_greeting_theme_user_field( $user ): void {
 	<h2>Cordespace — Thème de salutation</h2>
 	<table class="form-table">
 		<tr>
-			<th><label for="cordespace_greeting_theme">Fond derrière le « Bonjour »</label></th>
+			<th><label for="cordespace_greeting_theme">Fond et décorations</label></th>
 			<td>
 				<select name="cordespace_greeting_theme" id="cordespace_greeting_theme">
-					<option value="" <?php selected( $current, '' ); ?>>— Par défaut (aucun fond personnalisé) —</option>
+					<option value="" <?php selected( $current, '' ); ?>>— Par défaut (aucune décoration) —</option>
 					<?php foreach ( $themes as $slug => $theme ) : ?>
 						<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( $current, $slug ); ?>>
 							<?php echo esc_html( $theme['label'] ); ?>
@@ -121,8 +159,10 @@ function cordespace_greeting_theme_user_field( $user ): void {
 					<?php endforeach; ?>
 				</select>
 				<p class="description">
-					Choisit un fond décoratif derrière l'en-tête « Bonjour Prénom » de la page <code>/mon-espace/</code>.
-					Lié au compte, pas au prénom : si la personne change de nom, le thème suit.
+					Applique un thème visuel discret sur la page <code>/mon-espace/</code> :
+					fond derrière le « Bonjour », petits émoji décoratifs sur les titres de
+					section et un émoji dans le coin de chaque carte de cours. Lié au compte,
+					pas au prénom.
 				</p>
 			</td>
 		</tr>
@@ -140,7 +180,7 @@ function cordespace_greeting_theme_save_field( int $user_id ): void {
 	$raw    = isset( $_POST['cordespace_greeting_theme'] ) ? sanitize_text_field( wp_unslash( $_POST['cordespace_greeting_theme'] ) ) : '';
 	$themes = cordespace_greeting_themes();
 	if ( $raw !== '' && ! isset( $themes[ $raw ] ) ) {
-		// Valeur inconnue → on retombe sur défaut
+		// Slug inconnu → on retombe sur défaut
 		$raw = '';
 	}
 	if ( $raw === '' ) {
