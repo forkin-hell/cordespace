@@ -202,13 +202,27 @@ if ( ! function_exists( 'cordespace_admin_render_modules_page' ) ) {
 			function notice( type, message ) {
 				var wrap = document.querySelector('.cordespace-modules-page h1');
 				if ( ! wrap ) return;
+				// Retire les notices précédentes pour éviter qu'elles s'empilent.
+				document.querySelectorAll('.cordespace-modules-page > .notice.cordespace-notice')
+					.forEach(function (old) { old.remove(); });
 				var n = document.createElement('div');
-				n.className = 'notice notice-' + type + ' is-dismissible';
+				n.className = 'notice notice-' + type + ' is-dismissible cordespace-notice';
 				var p = document.createElement('p');
 				p.textContent = String( message );
 				n.appendChild( p );
+				// WP n'attache le bouton × qu'au DOMContentLoaded, pas aux notices
+				// injectées dynamiquement. On le pose à la main.
+				var btn = document.createElement('button');
+				btn.type = 'button';
+				btn.className = 'notice-dismiss';
+				var sr = document.createElement('span');
+				sr.className = 'screen-reader-text';
+				sr.textContent = <?php echo wp_json_encode( __( 'Ignorer ce message.', 'cordespace-snippets' ) ); ?>;
+				btn.appendChild( sr );
+				btn.addEventListener('click', function () { n.remove(); });
+				n.appendChild( btn );
 				wrap.parentNode.insertBefore( n, wrap.nextSibling );
-				setTimeout( function () { n.remove(); }, 4000 );
+				setTimeout( function () { if ( n.parentNode ) n.remove(); }, 4000 );
 			}
 
 			document.querySelectorAll('.cordespace-toggle').forEach(function (cb) {
