@@ -129,7 +129,7 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 							<span style="display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.2rem 0.55rem;border-radius:4px;margin-left:0.4rem;font-weight:700;vertical-align:middle;letter-spacing:0.3px;">⏳ PAIEMENT À VALIDER</span>
 						<?php endif; ?>
 					</div>
-					<div class="cordespace-qr-when" style="opacity:0.9;font-size:0.95em;">📅 <?php echo esc_html( $when ); ?></div>
+					<div class="cordespace-qr-when" style="opacity:0.9;font-size:0.95em;"><?php echo esc_html( $when ); ?></div>
 
 					<?php if ( $is_pending ) : ?>
 						<div style="margin-top:0.6rem;font-size:0.85em;background:rgba(245,184,0,0.18);padding:0.5rem 0.7rem;border-radius:4px;line-height:1.4;">

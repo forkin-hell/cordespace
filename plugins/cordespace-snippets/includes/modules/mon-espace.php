@@ -58,6 +58,24 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 function cordespace_render_mon_espace_mobile_css() {
 	?>
 	<style>
+		/* ===================== Tous viewports ===================== */
+		/* Amelia injecte ses shortcodes dans des wrappers <div id="ameliaXXX">
+		   ou <div class="amelia-..."> qui ont leur propre marge top — ça crée
+		   un grand espace vide entre notre <p> de description et le panel.
+		   On supprime cette marge pour coller le panel à notre texte. */
+		.cordespace-page section > div[id^="amelia"],
+		.cordespace-page section > div[class*="amelia"],
+		.cordespace-page section > div[id^="ameliaa"] {
+			margin-top: 0 !important;
+		}
+		/* WP peut injecter des <p> vides via wpautop autour des shortcodes,
+		   ce qui ajoute aussi de l'espace. On les masque. */
+		.cordespace-page section > p:empty {
+			display: none !important;
+			margin: 0 !important;
+		}
+
+		/* ===================== Mobile (<= 600px) ===================== */
 		@media (max-width: 600px) {
 			.cordespace-page section {
 				padding: 1.1rem 1.1rem !important;
