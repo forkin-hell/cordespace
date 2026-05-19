@@ -68,6 +68,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/linked-accounts.php',
 			'default_active'  => true,
 		],
+		'mon-espace.amelia-role-context' => [
+			'label'           => 'Découplage rôle Amelia ↔ contexte',
+			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet (auto-login WP_USER). Permet aussi à un administrateur de voir tous les events depuis wp-admin → Amelia (au lieu de seulement les siens en tant que prof). Modifie uniquement l\'objet user en mémoire, jamais la DB.',
+			'category'        => 'mon-espace',
+			'type'            => 'php',
+			'file'            => 'includes/modules/amelia-role-context.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/amelia-role-context.php',
+			'default_active'  => true,
+		],
 		'mon-espace.greeting-themes' => [
 			'label'           => 'Thèmes de salutation personnalisés',
 			'description'     => 'Permet d\'appliquer un fond décoratif (dinosaures, etc.) derrière le « Bonjour Prénom » de chaque utilisateur·trice. Configurable par profil dans wp-admin → Utilisateurs.',
