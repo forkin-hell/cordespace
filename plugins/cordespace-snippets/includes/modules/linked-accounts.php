@@ -264,20 +264,19 @@ function cordespace_admin_render_link_accounts_page(): void {
 	<div class="wrap cordespace-link-accounts-page">
 		<h1>🪢 Cordespace — Lier des comptes</h1>
 		<p>
-			Pour chaque compte enseignant·e (provider ou manager dans Amelia), choisis le compte client·e à lui associer.
+			Pour chaque compte enseignant·e Cordespace, choisis le compte client·e à lui associer.
 			La liaison est <strong>bi-directionnelle et automatique</strong> : pas besoin d'aller modifier les deux profils à la main.
 			Le bouton de bascule entre les deux comptes apparaîtra alors sur <code>/mon-espace/</code>.
 		</p>
 
 		<?php if ( empty( $profs ) ) : ?>
-			<div class="notice notice-warning"><p>Aucun·e prof Amelia trouvé·e (type=provider/manager). Vérifier la configuration Amelia.</p></div>
+			<div class="notice notice-warning"><p>Aucun·e enseignant·e trouvé·e. Vérifier la configuration des comptes profs (wp-admin → Amelia → Users).</p></div>
 		<?php else : ?>
 			<table class="widefat fixed striped cordespace-la-table" style="margin-top:1rem;">
 				<thead>
 					<tr>
-						<th style="width:35%;">Compte enseignant·e</th>
-						<th style="width:10%;">Type Amelia</th>
-						<th style="width:45%;">Compte client·e lié</th>
+						<th style="width:38%;">Compte enseignant·e</th>
+						<th style="width:52%;">Compte client·e lié</th>
 						<th style="width:10%;">État</th>
 					</tr>
 				</thead>
@@ -294,7 +293,6 @@ function cordespace_admin_render_link_accounts_page(): void {
 							<span style="color:#666;font-size:0.9em;"><?php echo esc_html( $prof['email'] ); ?></span><br>
 							<span style="color:#999;font-size:0.8em;">WP user ID : <?php echo $prof_wp_id; ?></span>
 						</td>
-						<td><code><?php echo esc_html( $prof['type'] ); ?></code></td>
 						<td>
 							<select class="cordespace-la-select" data-prof-id="<?php echo $prof_wp_id; ?>" style="max-width:100%;width:100%;">
 								<option value="0">— Aucun (pas de liaison) —</option>
