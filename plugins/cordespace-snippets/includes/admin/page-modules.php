@@ -39,6 +39,16 @@ if ( ! function_exists( 'cordespace_admin_render_modules_page' ) ) {
 				<?php esc_html_e( "Active ou désactive chaque morceau de code du plugin. Les changements sont appliqués immédiatement, sans rechargement.", 'cordespace-snippets' ); ?>
 			</p>
 
+			<?php if ( defined( 'CORDESPACE_SAFE_INSTALL' ) && CORDESPACE_SAFE_INSTALL ) : ?>
+				<div class="notice notice-info" style="margin:1rem 0;padding:0.8rem 1rem;border-left-color:#5b2c8f;">
+					<p style="margin:0;">
+						🛡️ <strong>Mode safe-install actif</strong> — La constante <code>CORDESPACE_SAFE_INSTALL</code> est définie dans <code>wp-config.php</code>.
+						Les nouveaux modules ne sont <strong>jamais auto-activés</strong> ; tu dois toggler chaque module à la main.
+						Retire la constante de wp-config.php pour revenir au comportement par défaut (auto-activation des modules ayant <code>default_active: true</code>).
+					</p>
+				</div>
+			<?php endif; ?>
+
 			<?php foreach ( $categories as $cat_id => $cat ) :
 				// Modules de cette catégorie.
 				$cat_modules = array_filter(
