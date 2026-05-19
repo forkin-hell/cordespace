@@ -44,16 +44,10 @@ if ( ! function_exists( 'cordespace_admin_render_modules_page' ) ) {
 					<p style="margin:0;">
 						🛡️ <strong>Mode safe-install actif</strong> — La constante <code>CORDESPACE_SAFE_INSTALL</code> est définie dans <code>wp-config.php</code>.
 						Les nouveaux modules ne sont <strong>jamais auto-activés</strong> ; tu dois toggler chaque module à la main.
+						Retire la constante de wp-config.php pour revenir au comportement par défaut (auto-activation des modules ayant <code>default_active: true</code>).
 					</p>
 				</div>
 			<?php endif; ?>
-
-			<div class="cordespace-bulk-actions" style="display:flex;gap:0.5rem;align-items:center;margin:1rem 0;padding:0.7rem 1rem;background:#f7f7f7;border-radius:6px;border:1px solid #e0e0e0;">
-				<span style="color:#666;font-size:0.9em;margin-right:0.3rem;">Actions groupées :</span>
-				<button type="button" class="button cordespace-bulk-disable">🛡️ Tout désactiver</button>
-				<button type="button" class="button cordespace-bulk-defaults">🔄 Réactiver les modules par défaut</button>
-				<span style="color:#999;font-size:0.85em;margin-left:auto;">Utile pour un premier déploiement prudent.</span>
-			</div>
 
 			<?php foreach ( $categories as $cat_id => $cat ) :
 				// Modules de cette catégorie.
@@ -239,50 +233,6 @@ if ( ! function_exists( 'cordespace_admin_render_modules_page' ) ) {
 				n.appendChild( btn );
 				wrap.parentNode.insertBefore( n, wrap.nextSibling );
 				setTimeout( function () { if ( n.parentNode ) n.remove(); }, 4000 );
-			}
-
-			function bulk( mode, confirmMsg ) {
-				if ( ! confirm( confirmMsg ) ) return;
-				var body = new URLSearchParams();
-				body.append( 'action',   'cordespace_bulk_modules' );
-				body.append( '_wpnonce', nonce );
-				body.append( 'mode',     mode );
-
-				fetch( ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body } )
-					.then( function ( r ) { return r.json(); } )
-					.then( function ( res ) {
-						if ( res && res.success ) {
-							notice( 'success', res.data && res.data.message ? res.data.message : 'OK' );
-							// Synchroniser les toggles à l'état renvoyé par le serveur.
-							var newState = ( res.data && res.data.state ) || [];
-							document.querySelectorAll('.cordespace-toggle').forEach(function (cb) {
-								var on = newState.indexOf( cb.dataset.moduleId ) !== -1;
-								cb.checked = on;
-								var card = cb.closest('.cordespace-card');
-								if ( card ) card.classList.toggle( 'is-active', on );
-							});
-						} else {
-							notice( 'error', ( res && res.data && res.data.message ) || 'Erreur inattendue.' );
-						}
-					} )
-					.catch( function () {
-						notice( 'error', 'Erreur réseau.' );
-					} );
-			}
-
-			var btnDisable = document.querySelector('.cordespace-bulk-disable');
-			if ( btnDisable ) {
-				btnDisable.addEventListener('click', function () {
-					bulk( 'disable_all',
-						'Désactiver TOUS les modules ? Tu pourras les réactiver un par un ensuite.' );
-				});
-			}
-			var btnDefaults = document.querySelector('.cordespace-bulk-defaults');
-			if ( btnDefaults ) {
-				btnDefaults.addEventListener('click', function () {
-					bulk( 'enable_defaults',
-						'Réactiver tous les modules « actifs par défaut » ? Tu reviens au comportement initial du plugin.' );
-				});
 			}
 
 			document.querySelectorAll('.cordespace-toggle').forEach(function (cb) {
