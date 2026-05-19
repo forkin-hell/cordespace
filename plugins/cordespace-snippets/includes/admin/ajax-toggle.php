@@ -97,3 +97,66 @@ if ( ! function_exists( 'cordespace_ajax_toggle_module' ) ) {
 	}
 }
 add_action( 'wp_ajax_cordespace_toggle_module', 'cordespace_ajax_toggle_module' );
+
+
+/**
+ * Endpoint AJAX bulk : tout désactiver, ou tout réactiver selon les
+ * default_active du registry. Action WP : cordespace_bulk_modules
+ * Paramètres :
+ *   - _wpnonce : nonce 'cordespace_toggle_module' (réutilisé)
+ *   - mode     : 'disable_all' | 'enable_defaults'
+ */
+if ( ! function_exists( 'cordespace_ajax_bulk_modules' ) ) {
+	function cordespace_ajax_bulk_modules(): void {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error(
+				[ 'message' => __( 'Accès refusé.', 'cordespace-snippets' ) ],
+				403
+			);
+		}
+
+		if ( ! check_ajax_referer( 'cordespace_toggle_module', '_wpnonce', false ) ) {
+			wp_send_json_error(
+				[ 'message' => __( 'Nonce invalide ou expiré. Recharge la page.', 'cordespace-snippets' ) ],
+				400
+			);
+		}
+
+		$mode = isset( $_POST['mode'] )
+			? sanitize_text_field( wp_unslash( (string) $_POST['mode'] ) )
+			: '';
+
+		$registry = cordespace_modules_registry();
+
+		switch ( $mode ) {
+			case 'disable_all':
+				$new_state = [];
+				$message   = __( 'Tous les modules ont été désactivés.', 'cordespace-snippets' );
+				break;
+
+			case 'enable_defaults':
+				$new_state = [];
+				foreach ( $registry['modules'] as $id => $module ) {
+					if ( ! empty( $module['default_active'] ) ) {
+						$new_state[] = (string) $id;
+					}
+				}
+				$message = __( 'Tous les modules « actifs par défaut » ont été réactivés.', 'cordespace-snippets' );
+				break;
+
+			default:
+				wp_send_json_error(
+					[ 'message' => __( 'Mode bulk inconnu.', 'cordespace-snippets' ) ],
+					400
+				);
+		}
+
+		update_option( 'cordespace_modules_active', $new_state );
+
+		wp_send_json_success( [
+			'message' => $message,
+			'state'   => $new_state,
+		] );
+	}
+}
+add_action( 'wp_ajax_cordespace_bulk_modules', 'cordespace_ajax_bulk_modules' );
