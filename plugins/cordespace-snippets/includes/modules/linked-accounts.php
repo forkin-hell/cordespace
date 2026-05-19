@@ -180,6 +180,52 @@ function cordespace_clear_amelia_cookies() {
 }
 
 // ============================================================================
+// 6.5) Sync auto du rôle WP → type Amelia
+//      Quand un·e admin change le rôle WP (wp-admin → Utilisateurs → édition),
+//      on met à jour wphu_amelia_users.type pour rester cohérent. Évite
+//      la désync classique « WP dit manager, Amelia dit provider » qui
+//      casse le panel [ameliaemployeepanel].
+//
+//      Hook set_user_role : firé par WP_User::set_role() et add_role().
+// ============================================================================
+add_action( 'set_user_role', 'cordespace_sync_amelia_type_to_wp_role', 10, 3 );
+
+function cordespace_sync_amelia_type_to_wp_role( int $user_id, string $new_role, array $old_roles ): void {
+	// Map rôle WP Amelia → type Amelia (table wphu_amelia_users.type)
+	$map = [
+		'wpamelia-provider' => 'provider',
+		'wpamelia-manager'  => 'manager',
+		'wpamelia-customer' => 'customer',
+		'customer'          => 'customer', // rôle WooCommerce, fréquent
+	];
+
+	if ( ! isset( $map[ $new_role ] ) ) {
+		return; // rôle non Amelia-pertinent (admin, editor, etc.)
+	}
+
+	global $wpdb;
+	$updated = $wpdb->update(
+		$wpdb->prefix . 'amelia_users',
+		[ 'type' => $map[ $new_role ] ],
+		[ 'externalId' => $user_id ],
+		[ '%s' ],
+		[ '%d' ]
+	);
+
+	// On log silencieusement pour debug si quelqu'un se demande pourquoi un
+	// type a changé tout seul. (Visible avec WP_DEBUG_LOG actif.)
+	if ( $updated !== false && function_exists( 'error_log' ) ) {
+		error_log( sprintf(
+			'[cordespace] WP role change for user %d: %s → type Amelia "%s" (%d rows updated)',
+			$user_id,
+			$new_role,
+			$map[ $new_role ],
+			(int) $updated
+		) );
+	}
+}
+
+// ============================================================================
 // 7) Page admin « Lier des comptes »
 //    Centralise la liaison prof ↔ cliente : tableau avec un dropdown par
 //    prof pour choisir le compte client·e associé, sauvegarde AJAX
