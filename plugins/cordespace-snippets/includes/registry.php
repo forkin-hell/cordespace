@@ -48,6 +48,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/credit-history.php',
 			'default_active'  => true,
 		],
+		'mon-espace.orders' => [
+			'label'           => 'Mes commandes',
+			'description'     => 'Section tableau des 10 dernières commandes WooCommerce dans la vue cliente, avec lien vers le détail natif WC pour chaque commande.',
+			'category'        => 'mon-espace',
+			'type'            => 'php',
+			'file'            => 'includes/modules/orders.php',
+			'requires_plugin' => [ 'woocommerce/woocommerce.php' => 'WooCommerce' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/orders.php',
+			'default_active'  => true,
+		],
 		'mon-espace.teacher-presence' => [
 			'label'           => 'Présence des élèves',
 			'description'     => 'Toggle iOS-style pour marquer les élèves présent·es (vue prof) + endpoint REST + table SQL.',

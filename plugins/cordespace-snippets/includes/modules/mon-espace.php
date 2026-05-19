@@ -207,7 +207,7 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<a href="#section-cours" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📅 Mes cours</a>
 		<a href="#section-waivers" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📋 Mes waivers</a>
 		<a href="#section-credits" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">💰 Historique crédits</a>
-		<a href="/mon-compte/orders/" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🛒 Mes commandes</a>
+		<a href="#section-commandes" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🛒 Mes commandes</a>
 	</nav>
 
 	<section id="section-cours" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
@@ -230,6 +230,11 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	 * Slot : historique des crédits MyCred (sous-module mon-espace.credit-history).
 	 */
 	do_action( 'cordespace_mon_espace_section_client_credits', $user );
+
+	/**
+	 * Slot : tableau des commandes WooCommerce (sous-module mon-espace.orders).
+	 */
+	do_action( 'cordespace_mon_espace_section_client_orders', $user );
 	?>
 	</div><?php // /.cordespace-page ?>
 	<?php
