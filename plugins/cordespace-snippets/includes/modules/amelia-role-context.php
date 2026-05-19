@@ -61,7 +61,7 @@ defined( 'ABSPATH' ) || exit;
 add_action( 'init', 'cordespace_strip_manager_role_on_frontend', 1 );
 
 function cordespace_strip_manager_role_on_frontend() {
-	if ( is_admin() ) {
+	if ( cordespace_is_amelia_admin_context() ) {
 		return;
 	}
 	$user = wp_get_current_user();
@@ -85,7 +85,7 @@ function cordespace_strip_manager_role_on_frontend() {
 add_action( 'init', 'cordespace_demote_admin_on_amelia_pages', 1 );
 
 function cordespace_demote_admin_on_amelia_pages() {
-	if ( ! cordespace_is_amelia_admin_page() ) {
+	if ( ! cordespace_is_amelia_admin_context() ) {
 		return;
 	}
 	$user = wp_get_current_user();
@@ -109,7 +109,7 @@ function cordespace_demote_admin_on_amelia_pages() {
 add_filter( 'user_has_cap', 'cordespace_drop_delete_users_on_amelia_pages', 99, 4 );
 
 function cordespace_drop_delete_users_on_amelia_pages( $allcaps, $caps, $args, $user ) {
-	if ( ! cordespace_is_amelia_admin_page() ) {
+	if ( ! cordespace_is_amelia_admin_context() ) {
 		return $allcaps;
 	}
 	// Seulement pour les users qui sont (ou étaient) administrators.
@@ -123,15 +123,33 @@ function cordespace_drop_delete_users_on_amelia_pages( $allcaps, $caps, $args, $
 }
 
 /**
- * True si on est sur une page wp-admin dont le ?page= commence par "wpamelia".
- * Couvre wpamelia-events, wpamelia-calendar, wpamelia-services, etc.
+ * True si la requête courante appartient à un contexte wp-admin Amelia.
+ *
+ * Couvre :
+ * - les pages wp-admin dont le ?page= commence par "wpamelia"
+ *   (wpamelia-events, wpamelia-calendar, wpamelia-services…)
+ * - les requêtes AJAX vers /wp-admin/admin-ajax.php déclenchées depuis
+ *   ces pages (HTTP_REFERER contient "page=wpamelia"). Sans ce 2e cas,
+ *   les events affichés dans la table sont filtrés par provider parce
+ *   que le hook ne fire pas sur les XHR qui peuplent la liste.
  */
-function cordespace_is_amelia_admin_page(): bool {
+function cordespace_is_amelia_admin_context(): bool {
 	if ( ! is_admin() ) {
 		return false;
 	}
-	if ( empty( $_GET['page'] ) ) {
-		return false;
+
+	// Cas 1 : page wp-admin Amelia (chargement direct).
+	if ( ! empty( $_GET['page'] ) && strpos( (string) $_GET['page'], 'wpamelia' ) === 0 ) {
+		return true;
 	}
-	return strpos( (string) $_GET['page'], 'wpamelia' ) === 0;
+
+	// Cas 2 : AJAX déclenché depuis une page wp-admin Amelia.
+	if ( wp_doing_ajax() ) {
+		$referer = wp_get_referer();
+		if ( $referer && strpos( $referer, 'page=wpamelia' ) !== false ) {
+			return true;
+		}
+	}
+
+	return false;
 }
