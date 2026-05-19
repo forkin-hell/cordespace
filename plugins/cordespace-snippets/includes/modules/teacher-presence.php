@@ -414,6 +414,48 @@ function cordespace_render_today_students( $atts ) {
 		.cordespace-today-students-wrapper details.cordespace-event-block[open] .cordespace-disclosure { transform: rotate(0deg); }
 		/* Réduit l'espacement vertical quand un cours est replié (pas de border-bottom sur summary) */
 		.cordespace-today-students-wrapper details.cordespace-event-block:not([open]) > summary { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+
+		/* ===================== Mobile (<= 600px) ===================== */
+		@media (max-width: 600px) {
+			/* Bloc cours plus compact */
+			.cordespace-today-students-wrapper details.cordespace-event-block {
+				padding: 0.8rem 1rem !important;
+				margin-bottom: 1rem !important;
+			}
+			/* Compteur "X/Y présent·e·s" un peu plus petit */
+			.cordespace-today-students-wrapper .cordespace-counter {
+				font-size: 0.8em !important;
+				padding: 0.3rem 0.7rem !important;
+			}
+			/* Ligne élève compacte : nom à gauche + toggle à droite, JAMAIS de wrap */
+			.cordespace-today-students-wrapper li {
+				padding: 0.55rem 0 !important;
+				gap: 0.7rem !important;
+				flex-wrap: nowrap !important;
+			}
+			.cordespace-today-students-wrapper li > div:first-child {
+				min-width: 0 !important;
+				flex: 1 1 auto !important;
+				overflow: hidden;
+			}
+			/* Nom + email serrés, tronqués si trop longs */
+			.cordespace-today-students-wrapper li > div:first-child > div:first-child {
+				font-size: 0.95em !important;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			.cordespace-today-students-wrapper li > div:first-child > div:last-child {
+				font-size: 0.78em !important;
+				white-space: nowrap;
+				overflow: hidden;
+				text-overflow: ellipsis;
+			}
+			/* Cache le label texte "À venir / Présent·e" — le toggle parle de lui-même */
+			.cordespace-today-students-wrapper .cordespace-switch-label {
+				display: none !important;
+			}
+		}
 	</style>
 
 	<!-- canvas-confetti pour l'animation quand le dernier élève d'un cours

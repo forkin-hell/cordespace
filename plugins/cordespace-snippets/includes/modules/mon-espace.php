@@ -27,6 +27,7 @@ add_shortcode( 'cordespace_mon_espace', 'cordespace_render_mon_espace_shortcode'
 function cordespace_render_mon_espace_shortcode( $atts ) {
 	ob_start();
 	cordespace_render_amelia_default_range();
+	cordespace_render_mon_espace_mobile_css();
 
 	if ( ! is_user_logged_in() ) {
 		echo cordespace_render_logged_out_view();
@@ -46,6 +47,54 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 		cordespace_render_client_view( $user, $has_linked );
 	}
 	return ob_get_clean();
+}
+
+/**
+ * CSS responsive global pour la page /mon-espace/. Réduit l'encombrement
+ * vertical sur mobile (≤ 600px) : padding des sections, taille des titres,
+ * espacement du Bonjour. Les sections internes (today_students, upcoming-qr)
+ * ont leurs propres règles mobile dans leurs modules respectifs.
+ */
+function cordespace_render_mon_espace_mobile_css() {
+	?>
+	<style>
+		@media (max-width: 600px) {
+			.cordespace-page section {
+				padding: 1.1rem 1.1rem !important;
+				margin-bottom: 1.5rem !important;
+				border-radius: 8px !important;
+			}
+			.cordespace-page section > h2 {
+				font-size: 1.15em !important;
+				margin-bottom: 0.3rem !important;
+			}
+			.cordespace-page section > p {
+				font-size: 0.85em !important;
+				margin-bottom: 0.8rem !important;
+			}
+			/* Bloc Bonjour plus compact */
+			.cordespace-page .cordespace-greeting-block {
+				padding: 1.3rem 1.2rem !important;
+				margin-bottom: 1rem !important;
+			}
+			.cordespace-page .cordespace-greeting-block h1 {
+				font-size: 1.4rem !important;
+			}
+			.cordespace-page .cordespace-greeting-block p {
+				font-size: 0.95em !important;
+			}
+			/* Navigation par ancres : items plus petits */
+			.cordespace-page nav {
+				gap: 0.35rem !important;
+				padding: 0.5rem !important;
+			}
+			.cordespace-page nav a {
+				padding: 0.4rem 0.7rem !important;
+				font-size: 0.85em !important;
+			}
+		}
+	</style>
+	<?php
 }
 
 /**

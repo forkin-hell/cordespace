@@ -63,7 +63,50 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 	}
 
 	?>
-	<div style="background:linear-gradient(135deg,#5b2c8f 0%,#3a1a5e 100%);color:#fff;padding:1.5rem 1.8rem;border-radius:10px;margin-bottom:1.5rem;border:2px solid #f5b800;">
+	<style>
+		/* ===================== Mobile (<= 600px) — vue cliente QR ===================== */
+		@media (max-width: 600px) {
+			/* Wrapper plus compact */
+			.cordespace-upcoming-qr {
+				padding: 1rem 1.1rem !important;
+			}
+			.cordespace-upcoming-qr h2 {
+				font-size: 1.15em !important;
+			}
+			.cordespace-upcoming-qr > p {
+				font-size: 0.85em !important;
+				margin-bottom: 0.8rem !important;
+			}
+			/* Card QR plus compacte */
+			.cordespace-qr-card {
+				padding: 0.8rem 0.9rem !important;
+				gap: 0.8rem !important;
+				flex-wrap: nowrap !important;
+				align-items: flex-start !important;
+			}
+			.cordespace-qr-card > div:first-child {
+				min-width: 0 !important;
+				flex: 1 1 auto !important;
+			}
+			/* Nom de l'event tronqué si trop long */
+			.cordespace-qr-card .cordespace-qr-event-name {
+				font-size: 1em !important;
+			}
+			.cordespace-qr-card .cordespace-qr-when {
+				font-size: 0.85em !important;
+			}
+			/* QR plus petit pour économiser la largeur */
+			.cordespace-qr-card img {
+				width: 95px !important;
+				height: 95px !important;
+			}
+			.cordespace-qr-card .cordespace-qr-manual-code {
+				font-size: 0.78em !important;
+				padding: 0.2rem 0.5rem !important;
+			}
+		}
+	</style>
+	<div class="cordespace-upcoming-qr" style="background:linear-gradient(135deg,#5b2c8f 0%,#3a1a5e 100%);color:#fff;padding:1.5rem 1.8rem;border-radius:10px;margin-bottom:1.5rem;border:2px solid #f5b800;">
 		<h2 style="margin:0 0 0.4rem;color:#fff;font-size:1.4rem;">🎫 <?php echo count( $bookings ) > 1 ? 'Tes prochains cours (24h)' : 'Ton prochain cours'; ?></h2>
 		<p style="margin:0 0 1.2rem;opacity:0.92;font-size:0.95em;">Présente ces QR à ton arrivée pour le check-in.</p>
 
@@ -78,15 +121,15 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 				: '';
 			$when        = mysql2date( 'l j F — H\hi', $booking['periodStart'] );
 		?>
-			<div style="background:rgba(255,255,255,0.12);padding:1rem 1.2rem;border-radius:8px;margin-bottom:0.7rem;display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;<?php echo $is_pending ? 'outline:2px solid #f5b800;outline-offset:-2px;' : ''; ?>">
+			<div class="cordespace-qr-card" style="background:rgba(255,255,255,0.12);padding:1rem 1.2rem;border-radius:8px;margin-bottom:0.7rem;display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;<?php echo $is_pending ? 'outline:2px solid #f5b800;outline-offset:-2px;' : ''; ?>">
 				<div style="flex:1;min-width:200px;">
-					<div style="font-size:1.1em;font-weight:600;margin-bottom:0.3rem;line-height:1.4;">
+					<div class="cordespace-qr-event-name" style="font-size:1.1em;font-weight:600;margin-bottom:0.3rem;line-height:1.4;">
 						<?php echo esc_html( $booking['event_name'] ); ?>
 						<?php if ( $is_pending ) : ?>
 							<span style="display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.2rem 0.55rem;border-radius:4px;margin-left:0.4rem;font-weight:700;vertical-align:middle;letter-spacing:0.3px;">⏳ PAIEMENT À VALIDER</span>
 						<?php endif; ?>
 					</div>
-					<div style="opacity:0.9;font-size:0.95em;">📅 <?php echo esc_html( $when ); ?></div>
+					<div class="cordespace-qr-when" style="opacity:0.9;font-size:0.95em;">📅 <?php echo esc_html( $when ); ?></div>
 
 					<?php if ( $is_pending ) : ?>
 						<div style="margin-top:0.6rem;font-size:0.85em;background:rgba(245,184,0,0.18);padding:0.5rem 0.7rem;border-radius:4px;line-height:1.4;">
@@ -102,7 +145,7 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 							<img src="<?php echo esc_url( $qr_url ); ?>" alt="QR code" width="130" height="130" style="display:block;">
 						</div>
 						<?php if ( $manual_code !== '' ) : ?>
-							<div style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(0,0,0,0.25);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.9em;letter-spacing:0.06em;font-weight:600;" title="Code à taper si le scan QR ne marche pas">
+							<div class="cordespace-qr-manual-code" style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:rgba(0,0,0,0.25);padding:0.3rem 0.7rem;border-radius:4px;font-size:0.9em;letter-spacing:0.06em;font-weight:600;" title="Code à taper si le scan QR ne marche pas">
 								<?php echo esc_html( $manual_code ); ?>
 							</div>
 						<?php endif; ?>
