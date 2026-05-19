@@ -39,6 +39,19 @@ if ( ! function_exists( 'cordespace_admin_register_menu' ) ) {
 			'cordespace_admin_render_modules_page'
 		);
 
+		// Sous-menu "Lier des comptes" : enregistré seulement si le module
+		// mon-espace.linked-accounts est actif (la fonction existe).
+		if ( function_exists( 'cordespace_admin_render_link_accounts_page' ) ) {
+			add_submenu_page(
+				'cordespace-modules',
+				__( 'Lier des comptes', 'cordespace-snippets' ),
+				__( 'Lier des comptes', 'cordespace-snippets' ),
+				'manage_options',
+				'cordespace-link-accounts',
+				'cordespace_admin_render_link_accounts_page'
+			);
+		}
+
 		// Sous-menu "Voir sur GitHub" : pointe vers le repo public.
 		add_submenu_page(
 			'cordespace-modules',
