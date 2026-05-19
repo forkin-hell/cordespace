@@ -59,17 +59,31 @@ function cordespace_render_mon_espace_mobile_css() {
 	?>
 	<style>
 		/* ===================== Tous viewports ===================== */
-		/* Amelia injecte ses shortcodes dans des wrappers <div id="ameliaXXX">
-		   ou <div class="amelia-..."> qui ont leur propre marge top — ça crée
-		   un grand espace vide entre notre <p> de description et le panel.
-		   On supprime cette marge pour coller le panel à notre texte. */
+		/* Réduit le grand espace entre notre <p> de description et le panel Amelia.
+		   Amelia sort un <div id="amelia-v2-booking-X" class="amelia-v2-booking">
+		   qui contient un <customer-panel-wrapper> ou <employee-panel-wrapper>
+		   (custom element Vue). On neutralise les margin/padding/min-height
+		   sur tous ces niveaux. */
 		.cordespace-page section > div[id^="amelia"],
 		.cordespace-page section > div[class*="amelia"],
-		.cordespace-page section > div[id^="ameliaa"] {
+		.cordespace-page section .amelia-v2-booking {
+			margin-top: 0 !important;
+			padding-top: 0 !important;
+			min-height: 0 !important;
+		}
+		.cordespace-page section customer-panel-wrapper,
+		.cordespace-page section employee-panel-wrapper {
+			display: block;
+			margin-top: 0 !important;
+			padding-top: 0 !important;
+		}
+		/* Premier enfant rendu par le Vue app — souvent porteur d'un margin-top. */
+		.cordespace-page section .amelia-v2-booking > *:first-child,
+		.cordespace-page section customer-panel-wrapper > *:first-child,
+		.cordespace-page section employee-panel-wrapper > *:first-child {
 			margin-top: 0 !important;
 		}
-		/* WP peut injecter des <p> vides via wpautop autour des shortcodes,
-		   ce qui ajoute aussi de l'espace. On les masque. */
+		/* <p> vides éventuels injectés par wpautop. */
 		.cordespace-page section > p:empty {
 			display: none !important;
 			margin: 0 !important;
