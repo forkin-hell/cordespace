@@ -36,6 +36,19 @@
  *  le formulaire de login Amelia (comme avant), Tess reverra 9 events.
  *  Aucun risque de casse cachée ou de fuite. À adapter si ça arrive.
  *
+ *  ── Pourquoi `init` et pas `set_current_user` ─────────────────────────
+ *  `set_current_user` action fire au moment où WP résout l'utilisateur·trice
+ *  courant, ce qui arrive AVANT que notre loader (plugins_loaded p5) ait
+ *  inclus ce fichier (un autre plugin appelle vraisemblablement
+ *  wp_get_current_user() pendant le chargement). Conséquence : nos
+ *  add_action ne sont pas encore enregistrés quand l'action se déclenche,
+ *  donc nos hooks ne s'exécutent jamais (silencieusement). Vérifié via
+ *  un mu-plugin de diagnostic.
+ *
+ *  Le hook `init` priorité 1 s'exécute APRÈS plugins_loaded (nos add_action
+ *  sont en place) ET AVANT que Amelia lise $user->roles dans ses handlers
+ *  AJAX/page render. C'est le bon point d'accroche.
+ *
  *  Référence du code Amelia :
  *  - src/Infrastructure/WP/UserRoles/UserRoles.php : getUserAmeliaRole()
  *  - src/Application/Commands/User/LoginCabinetCommandHandler.php L72-74
@@ -45,7 +58,7 @@
 defined( 'ABSPATH' ) || exit;
 
 // ─── Frontend : strip wpamelia-manager pour permettre l'auto-login cabinet ───
-add_action( 'set_current_user', 'cordespace_strip_manager_role_on_frontend', 99 );
+add_action( 'init', 'cordespace_strip_manager_role_on_frontend', 1 );
 
 function cordespace_strip_manager_role_on_frontend() {
 	if ( is_admin() ) {
@@ -69,7 +82,7 @@ function cordespace_strip_manager_role_on_frontend() {
 }
 
 // ─── wp-admin Amelia : déclasse administrator → manager pour la vue events ──
-add_action( 'set_current_user', 'cordespace_demote_admin_on_amelia_pages', 99 );
+add_action( 'init', 'cordespace_demote_admin_on_amelia_pages', 1 );
 
 function cordespace_demote_admin_on_amelia_pages() {
 	if ( ! cordespace_is_amelia_admin_page() ) {
