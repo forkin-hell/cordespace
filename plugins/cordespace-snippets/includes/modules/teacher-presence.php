@@ -343,8 +343,10 @@ function cordespace_render_today_students( $atts ) {
 	?>
 	<div class="cordespace-today-students-wrapper">
 		<?php foreach ( $events as $event ) :
-			$when  = mysql2date( 'l j F — H\hi', $event['periodStart'] );
-			$end   = mysql2date( 'H\hi', $event['periodEnd'] );
+			// Amelia stocke periodStart/End en UTC. On convertit en timezone WP
+			// (Montréal) avant de formater pour afficher les heures locales.
+			$when  = mysql2date( 'l j F — H\hi', get_date_from_gmt( $event['periodStart'] ) );
+			$end   = mysql2date( 'H\hi',          get_date_from_gmt( $event['periodEnd']   ) );
 			$total = count( $event['bookings'] );
 			$pres  = count( array_filter( $event['bookings'], fn($b) => $b['is_checked_in'] ) );
 		?>

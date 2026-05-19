@@ -119,7 +119,9 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 			$qr_url      = $qr_string
 				? 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&data=' . urlencode( $qr_string )
 				: '';
-			$when        = mysql2date( 'l j F — H\hi', $booking['periodStart'] );
+			// Amelia stocke periodStart en UTC. On convertit vers la timezone WP
+			// (Montréal) avant de formater pour afficher l'heure locale réelle.
+			$when        = mysql2date( 'l j F — H\hi', get_date_from_gmt( $booking['periodStart'] ) );
 		?>
 			<div class="cordespace-qr-card" style="background:rgba(255,255,255,0.12);padding:1rem 1.2rem;border-radius:8px;margin-bottom:0.7rem;display:flex;gap:1.2rem;align-items:center;flex-wrap:wrap;<?php echo $is_pending ? 'outline:2px solid #f5b800;outline-offset:-2px;' : ''; ?>">
 				<div style="flex:1;min-width:200px;">
