@@ -38,13 +38,22 @@ function cordespace_greeting_themes(): array {
 			'label'        => '🦕 Dinosaures',
 			'title_suffix' => '🦕',
 			'emojis'       => [
-				[ 'emoji' => '🦕', 'top' => '10%', 'left' => '5%',  'rotate' => -12, 'size' => 38 ],
-				[ 'emoji' => '🦖', 'top' => '8%',  'left' => '40%', 'rotate' => 8,   'size' => 32 ],
-				[ 'emoji' => '🦕', 'top' => '20%', 'left' => '75%', 'rotate' => -6,  'size' => 40 ],
-				[ 'emoji' => '🦖', 'top' => '50%', 'left' => '15%', 'rotate' => 15,  'size' => 34 ],
-				[ 'emoji' => '🦕', 'top' => '60%', 'left' => '50%', 'rotate' => -4,  'size' => 42 ],
-				[ 'emoji' => '🦖', 'top' => '70%', 'left' => '85%', 'rotate' => 10,  'size' => 30 ],
-				[ 'emoji' => '🦕', 'top' => '85%', 'left' => '8%',  'rotate' => -15, 'size' => 34 ],
+				[ 'emoji' => '🦕', 'top' => '5%',  'left' => '4%',  'rotate' => -12, 'size' => 36 ],
+				[ 'emoji' => '🦖', 'top' => '3%',  'left' => '28%', 'rotate' => 8,   'size' => 30 ],
+				[ 'emoji' => '🦕', 'top' => '8%',  'left' => '55%', 'rotate' => -6,  'size' => 38 ],
+				[ 'emoji' => '🦖', 'top' => '6%',  'left' => '80%', 'rotate' => 12,  'size' => 32 ],
+				[ 'emoji' => '🦕', 'top' => '30%', 'left' => '15%', 'rotate' => 10,  'size' => 32 ],
+				[ 'emoji' => '🦖', 'top' => '28%', 'left' => '42%', 'rotate' => -8,  'size' => 36 ],
+				[ 'emoji' => '🦕', 'top' => '32%', 'left' => '68%', 'rotate' => 5,   'size' => 30 ],
+				[ 'emoji' => '🦖', 'top' => '35%', 'left' => '90%', 'rotate' => -14, 'size' => 28 ],
+				[ 'emoji' => '🦕', 'top' => '55%', 'left' => '6%',  'rotate' => 15,  'size' => 34 ],
+				[ 'emoji' => '🦖', 'top' => '58%', 'left' => '30%', 'rotate' => -4,  'size' => 38 ],
+				[ 'emoji' => '🦕', 'top' => '52%', 'left' => '55%', 'rotate' => 9,   'size' => 32 ],
+				[ 'emoji' => '🦖', 'top' => '60%', 'left' => '82%', 'rotate' => -10, 'size' => 30 ],
+				[ 'emoji' => '🦕', 'top' => '82%', 'left' => '12%', 'rotate' => -8,  'size' => 36 ],
+				[ 'emoji' => '🦖', 'top' => '85%', 'left' => '40%', 'rotate' => 11,  'size' => 30 ],
+				[ 'emoji' => '🦕', 'top' => '80%', 'left' => '65%', 'rotate' => -15, 'size' => 34 ],
+				[ 'emoji' => '🦖', 'top' => '88%', 'left' => '88%', 'rotate' => 6,   'size' => 28 ],
 			],
 		],
 
@@ -52,16 +61,23 @@ function cordespace_greeting_themes(): array {
 			'label'        => '🦄 Licornes',
 			'title_suffix' => '✨',
 			'emojis'       => [
-				[ 'emoji' => '🦄', 'top' => '8%',  'left' => '5%',  'rotate' => -10, 'size' => 38 ],
-				[ 'emoji' => '✨', 'top' => '5%',  'left' => '40%', 'rotate' => 12,  'size' => 28 ],
-				[ 'emoji' => '🌈', 'top' => '18%', 'left' => '60%', 'rotate' => -5,  'size' => 34 ],
-				[ 'emoji' => '✨', 'top' => '10%', 'left' => '85%', 'rotate' => 8,   'size' => 26 ],
-				[ 'emoji' => '🌈', 'top' => '45%', 'left' => '15%', 'rotate' => 15,  'size' => 32 ],
-				[ 'emoji' => '🦄', 'top' => '55%', 'left' => '50%', 'rotate' => -8,  'size' => 40 ],
-				[ 'emoji' => '✨', 'top' => '50%', 'left' => '82%', 'rotate' => 10,  'size' => 28 ],
-				[ 'emoji' => '🌈', 'top' => '82%', 'left' => '8%',  'rotate' => -12, 'size' => 30 ],
-				[ 'emoji' => '✨', 'top' => '88%', 'left' => '40%', 'rotate' => 6,   'size' => 28 ],
-				[ 'emoji' => '🦄', 'top' => '78%', 'left' => '70%', 'rotate' => -4,  'size' => 36 ],
+				[ 'emoji' => '🦄', 'top' => '4%',  'left' => '4%',  'rotate' => -10, 'size' => 36 ],
+				[ 'emoji' => '✨', 'top' => '3%',  'left' => '28%', 'rotate' => 12,  'size' => 26 ],
+				[ 'emoji' => '🌈', 'top' => '6%',  'left' => '50%', 'rotate' => -5,  'size' => 32 ],
+				[ 'emoji' => '✨', 'top' => '4%',  'left' => '75%', 'rotate' => 8,   'size' => 24 ],
+				[ 'emoji' => '🦄', 'top' => '8%',  'left' => '90%', 'rotate' => -8,  'size' => 32 ],
+				[ 'emoji' => '🌈', 'top' => '30%', 'left' => '12%', 'rotate' => 15,  'size' => 30 ],
+				[ 'emoji' => '✨', 'top' => '32%', 'left' => '36%', 'rotate' => -6,  'size' => 26 ],
+				[ 'emoji' => '🦄', 'top' => '30%', 'left' => '60%', 'rotate' => 10,  'size' => 36 ],
+				[ 'emoji' => '✨', 'top' => '34%', 'left' => '85%', 'rotate' => -12, 'size' => 26 ],
+				[ 'emoji' => '🌈', 'top' => '55%', 'left' => '5%',  'rotate' => 8,   'size' => 32 ],
+				[ 'emoji' => '🦄', 'top' => '58%', 'left' => '30%', 'rotate' => -4,  'size' => 34 ],
+				[ 'emoji' => '✨', 'top' => '55%', 'left' => '52%', 'rotate' => 12,  'size' => 28 ],
+				[ 'emoji' => '🌈', 'top' => '60%', 'left' => '78%', 'rotate' => -10, 'size' => 30 ],
+				[ 'emoji' => '🦄', 'top' => '82%', 'left' => '14%', 'rotate' => 6,   'size' => 32 ],
+				[ 'emoji' => '✨', 'top' => '85%', 'left' => '38%', 'rotate' => -8,  'size' => 26 ],
+				[ 'emoji' => '🌈', 'top' => '80%', 'left' => '62%', 'rotate' => 14,  'size' => 30 ],
+				[ 'emoji' => '🦄', 'top' => '88%', 'left' => '86%', 'rotate' => -6,  'size' => 32 ],
 			],
 		],
 
@@ -69,16 +85,23 @@ function cordespace_greeting_themes(): array {
 			'label'        => '🐣 Poussins',
 			'title_suffix' => '🐣',
 			'emojis'       => [
-				[ 'emoji' => '🐣', 'top' => '8%',  'left' => '5%',  'rotate' => -12, 'size' => 38 ],
-				[ 'emoji' => '💛', 'top' => '5%',  'left' => '40%', 'rotate' => 10,  'size' => 28 ],
-				[ 'emoji' => '🍔', 'top' => '18%', 'left' => '65%', 'rotate' => -6,  'size' => 34 ],
-				[ 'emoji' => '🐣', 'top' => '8%',  'left' => '88%', 'rotate' => 14,  'size' => 30 ],
-				[ 'emoji' => '💛', 'top' => '45%', 'left' => '15%', 'rotate' => 8,   'size' => 32 ],
-				[ 'emoji' => '🐣', 'top' => '55%', 'left' => '48%', 'rotate' => -10, 'size' => 40 ],
-				[ 'emoji' => '💛', 'top' => '50%', 'left' => '82%', 'rotate' => 12,  'size' => 28 ],
-				[ 'emoji' => '🍔', 'top' => '85%', 'left' => '8%',  'rotate' => -8,  'size' => 30 ],
-				[ 'emoji' => '🐣', 'top' => '88%', 'left' => '40%', 'rotate' => 6,   'size' => 34 ],
-				[ 'emoji' => '🍔', 'top' => '80%', 'left' => '70%', 'rotate' => -6,  'size' => 32 ],
+				[ 'emoji' => '🐣', 'top' => '4%',  'left' => '4%',  'rotate' => -12, 'size' => 36 ],
+				[ 'emoji' => '💛', 'top' => '3%',  'left' => '28%', 'rotate' => 10,  'size' => 26 ],
+				[ 'emoji' => '🍔', 'top' => '7%',  'left' => '50%', 'rotate' => -6,  'size' => 30 ],
+				[ 'emoji' => '🐣', 'top' => '4%',  'left' => '75%', 'rotate' => 14,  'size' => 28 ],
+				[ 'emoji' => '💛', 'top' => '8%',  'left' => '90%', 'rotate' => -8,  'size' => 26 ],
+				[ 'emoji' => '🐣', 'top' => '30%', 'left' => '10%', 'rotate' => 8,   'size' => 32 ],
+				[ 'emoji' => '🍔', 'top' => '32%', 'left' => '36%', 'rotate' => -10, 'size' => 28 ],
+				[ 'emoji' => '🐣', 'top' => '30%', 'left' => '58%', 'rotate' => 12,  'size' => 36 ],
+				[ 'emoji' => '💛', 'top' => '34%', 'left' => '82%', 'rotate' => -4,  'size' => 28 ],
+				[ 'emoji' => '🍔', 'top' => '55%', 'left' => '5%',  'rotate' => 6,   'size' => 30 ],
+				[ 'emoji' => '🐣', 'top' => '58%', 'left' => '28%', 'rotate' => -10, 'size' => 34 ],
+				[ 'emoji' => '💛', 'top' => '55%', 'left' => '52%', 'rotate' => 8,   'size' => 28 ],
+				[ 'emoji' => '🐣', 'top' => '60%', 'left' => '78%', 'rotate' => -6,  'size' => 32 ],
+				[ 'emoji' => '🍔', 'top' => '82%', 'left' => '14%', 'rotate' => 12,  'size' => 30 ],
+				[ 'emoji' => '🐣', 'top' => '85%', 'left' => '38%', 'rotate' => -8,  'size' => 32 ],
+				[ 'emoji' => '💛', 'top' => '80%', 'left' => '62%', 'rotate' => 14,  'size' => 28 ],
+				[ 'emoji' => '🐣', 'top' => '88%', 'left' => '86%', 'rotate' => -10, 'size' => 30 ],
 			],
 		],
 
@@ -105,7 +128,7 @@ function cordespace_greeting_themes_base_css(): string {
 		.cordespace-greeting-decor {
 			position:absolute; inset:0;
 			pointer-events:none;
-			opacity:0.18;
+			opacity:0.30;
 			z-index:0;
 			overflow:hidden;
 		}
@@ -117,12 +140,17 @@ function cordespace_greeting_themes_base_css(): string {
 	";
 
 	// Suffixe emoji après h2 de section, par thème.
+	// On force la stack emoji système sur ::after parce que le thème WP a
+	// souvent une font-family qui n'inclut pas Apple Color Emoji / Noto Color
+	// Emoji, ce qui faisait retomber l'emoji sur la font de fallback grise.
+	$emoji_font = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'EmojiOne Color', 'Twemoji Mozilla', sans-serif";
 	foreach ( cordespace_greeting_themes() as $slug => $theme ) {
 		if ( empty( $theme['title_suffix'] ) ) continue;
 		$css .= sprintf(
-			".cordespace-theme-%s section > h2::after { content: ' %s'; margin-left:0.4rem; font-size:0.85em; }\n",
+			".cordespace-theme-%s section > h2::after { content: ' %s'; margin-left:0.4rem; font-size:0.95em; font-family:%s; }\n",
 			esc_attr( $slug ),
-			esc_html( $theme['title_suffix'] )
+			esc_html( $theme['title_suffix'] ),
+			$emoji_font
 		);
 	}
 
