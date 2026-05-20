@@ -249,6 +249,32 @@ function cordespace_la_get_customers(): array {
 }
 
 /**
+ * Liaisons orphelines réparables : entités Amelia customer avec externalId
+ * NULL mais dont l'email correspond à un user WP existant. Pour chaque ligne
+ * retournée, un UPDATE externalId = wp_id corrige la liaison.
+ *
+ * Symptôme côté UX sans réparation : la personne n'apparaît pas dans le
+ * dropdown des clients de la page « Lier des comptes » → impossible de la
+ * lier à son compte prof.
+ */
+function cordespace_la_get_orphan_customers(): array {
+	global $wpdb;
+	return $wpdb->get_results(
+		"SELECT au.id AS amelia_id, au.email, au.firstName, au.lastName,
+		        u.ID AS wp_user_id, u.user_login
+		   FROM {$wpdb->prefix}amelia_users au
+		   JOIN {$wpdb->users} u ON u.user_email = au.email
+		  WHERE au.type = 'customer'
+		    AND au.status = 'visible'
+		    AND au.externalId IS NULL
+		    AND au.email IS NOT NULL
+		    AND au.email != ''
+		  ORDER BY au.firstName, au.lastName",
+		ARRAY_A
+	) ?: [];
+}
+
+/**
  * Renderer de la page wp-admin « Lier des comptes ».
  */
 function cordespace_admin_render_link_accounts_page(): void {
@@ -258,6 +284,7 @@ function cordespace_admin_render_link_accounts_page(): void {
 
 	$profs     = cordespace_la_get_profs();
 	$customers = cordespace_la_get_customers();
+	$orphans   = cordespace_la_get_orphan_customers();
 	$nonce     = wp_create_nonce( 'cordespace_link_accounts' );
 	$ajax_url  = admin_url( 'admin-ajax.php' );
 	?>
@@ -268,6 +295,44 @@ function cordespace_admin_render_link_accounts_page(): void {
 			La liaison est <strong>bi-directionnelle et automatique</strong> : pas besoin d'aller modifier les deux profils à la main.
 			Le bouton de bascule entre les deux comptes apparaîtra alors sur <code>/mon-espace/</code>.
 		</p>
+
+		<?php if ( ! empty( $orphans ) ) : ?>
+			<div class="notice notice-warning cordespace-la-orphans" style="margin:1.2rem 0;padding:1rem 1.2rem;">
+				<p style="margin:0 0 0.6rem;">
+					<strong>🔧 Liaisons orphelines détectées</strong> —
+					Ces entités Amelia client·e ont un email qui correspond à un compte WordPress existant, mais le lien interne (<code>externalId</code>) est cassé. Tant que ce lien n'est pas réparé, la personne <strong>n'apparaît pas dans le dropdown</strong> du tableau ci-dessous.
+				</p>
+				<table class="widefat" style="background:#fffaf0;margin-top:0.6rem;">
+					<thead>
+						<tr>
+							<th style="width:50%;">Personne</th>
+							<th style="width:30%;">Match WordPress</th>
+							<th style="width:20%;">Action</th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $orphans as $orphan ) :
+						$orphan_name = trim( ( $orphan['firstName'] ?? '' ) . ' ' . ( $orphan['lastName'] ?? '' ) ) ?: $orphan['email'];
+					?>
+						<tr data-amelia-id="<?php echo (int) $orphan['amelia_id']; ?>" data-wp-user-id="<?php echo (int) $orphan['wp_user_id']; ?>">
+							<td>
+								<strong><?php echo esc_html( $orphan_name ); ?></strong><br>
+								<span style="color:#666;font-size:0.9em;"><?php echo esc_html( $orphan['email'] ); ?></span><br>
+								<span style="color:#999;font-size:0.8em;">Amelia #<?php echo (int) $orphan['amelia_id']; ?> (externalId = NULL)</span>
+							</td>
+							<td>
+								<strong><?php echo esc_html( $orphan['user_login'] ); ?></strong><br>
+								<span style="color:#999;font-size:0.8em;">WP #<?php echo (int) $orphan['wp_user_id']; ?></span>
+							</td>
+							<td>
+								<button class="button button-primary cordespace-la-repair-btn">🔧 Lier automatiquement</button>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+			</div>
+		<?php endif; ?>
 
 		<?php if ( empty( $profs ) ) : ?>
 			<div class="notice notice-warning"><p>Aucun·e enseignant·e trouvé·e. Vérifier la configuration des comptes profs (wp-admin → Amelia → Users).</p></div>
@@ -348,6 +413,47 @@ function cordespace_admin_render_link_accounts_page(): void {
 				}
 				cell.appendChild(span);
 			}
+
+			// Réparation des orphelins (bouton « Lier automatiquement »)
+			document.querySelectorAll('.cordespace-la-repair-btn').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var row        = btn.closest('tr');
+					if (!row) return;
+					var ameliaId   = parseInt(row.dataset.ameliaId, 10);
+					var wpUserId   = parseInt(row.dataset.wpUserId, 10);
+					if (!ameliaId || !wpUserId) return;
+
+					btn.disabled = true;
+					btn.textContent = '⏳ Réparation...';
+
+					var body = new FormData();
+					body.append('action',     'cordespace_repair_orphan_customer');
+					body.append('_wpnonce',   nonce);
+					body.append('amelia_id',  ameliaId);
+					body.append('wp_user_id', wpUserId);
+
+					fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+						.then(function (r) { return r.json(); })
+						.then(function (data) {
+							if (data && data.success) {
+								cordespaceLaNotice('success', (data.data && data.data.message) || 'Liaison réparée.');
+								row.style.opacity = '0.4';
+								btn.textContent = '✓ Réparé — recharge la page';
+								// Auto reload pour rafraîchir la liste des orphelins et le dropdown
+								setTimeout(function () { window.location.reload(); }, 1500);
+							} else {
+								btn.disabled = false;
+								btn.textContent = '🔧 Lier automatiquement';
+								cordespaceLaNotice('error', (data && data.data && data.data.message) || 'Erreur de réparation.');
+							}
+						})
+						.catch(function (err) {
+							btn.disabled = false;
+							btn.textContent = '🔧 Lier automatiquement';
+							cordespaceLaNotice('error', 'Erreur réseau : ' + err.message);
+						});
+				});
+			});
 
 			document.querySelectorAll('.cordespace-la-select').forEach(function (sel) {
 				sel.dataset.previousValue = sel.value;
@@ -489,4 +595,78 @@ function cordespace_ajax_save_link_accounts(): void {
 	update_user_meta( $customer_id, '_cordespace_linked_user_id', $prof_id );
 
 	wp_send_json_success( [ 'message' => 'Liaison enregistrée des deux côtés.' ] );
+}
+
+/**
+ * AJAX : réparer une liaison orpheline (UPDATE externalId).
+ *
+ * Action WP : cordespace_repair_orphan_customer
+ * Params : amelia_id (entité Amelia customer à réparer), wp_user_id (WP user à lier)
+ */
+add_action( 'wp_ajax_cordespace_repair_orphan_customer', 'cordespace_ajax_repair_orphan_customer' );
+
+function cordespace_ajax_repair_orphan_customer(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => 'Permission refusée.' ], 403 );
+	}
+	if ( ! check_ajax_referer( 'cordespace_link_accounts', '_wpnonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Nonce invalide. Recharge la page.' ], 400 );
+	}
+
+	$amelia_id   = isset( $_POST['amelia_id'] ) ? (int) $_POST['amelia_id'] : 0;
+	$wp_user_id  = isset( $_POST['wp_user_id'] ) ? (int) $_POST['wp_user_id'] : 0;
+
+	if ( $amelia_id <= 0 || $wp_user_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'IDs invalides.' ], 400 );
+	}
+
+	global $wpdb;
+
+	// Vérifier que l'entité Amelia existe, est bien customer, et que son
+	// externalId est NULL (sinon refuser pour éviter d'écraser une liaison
+	// déjà OK par erreur).
+	$row = $wpdb->get_row( $wpdb->prepare(
+		"SELECT id, type, externalId, email
+		   FROM {$wpdb->prefix}amelia_users
+		  WHERE id = %d",
+		$amelia_id
+	), ARRAY_A );
+
+	if ( ! $row ) {
+		wp_send_json_error( [ 'message' => 'Entité Amelia introuvable.' ], 404 );
+	}
+	if ( $row['type'] !== 'customer' ) {
+		wp_send_json_error( [ 'message' => 'Cette entité n\'est pas un·e client·e.' ], 400 );
+	}
+	if ( $row['externalId'] !== null ) {
+		wp_send_json_error( [ 'message' => 'Cette entité a déjà une liaison.' ], 400 );
+	}
+
+	// Vérifier que le WP user existe ET qu'il match l'email (sécurité).
+	$wp_user = get_user_by( 'ID', $wp_user_id );
+	if ( ! $wp_user ) {
+		wp_send_json_error( [ 'message' => 'User WP introuvable.' ], 404 );
+	}
+	if ( strcasecmp( $wp_user->user_email, (string) $row['email'] ) !== 0 ) {
+		wp_send_json_error( [ 'message' => 'Les emails ne correspondent pas (sécurité).' ], 400 );
+	}
+
+	// UPDATE
+	$updated = $wpdb->update(
+		$wpdb->prefix . 'amelia_users',
+		[ 'externalId' => $wp_user_id ],
+		[ 'id' => $amelia_id ],
+		[ '%d' ],
+		[ '%d' ]
+	);
+
+	if ( $updated === false ) {
+		wp_send_json_error( [ 'message' => 'Échec de l\'UPDATE en DB.' ], 500 );
+	}
+
+	wp_send_json_success( [
+		'message'    => sprintf( 'Liaison réparée : Amelia #%d ↔ WP #%d (%s).', $amelia_id, $wp_user_id, $wp_user->user_email ),
+		'amelia_id'  => $amelia_id,
+		'wp_user_id' => $wp_user_id,
+	] );
 }

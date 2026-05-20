@@ -57,25 +57,33 @@
 
 defined( 'ABSPATH' ) || exit;
 
-// ─── Frontend : strip wpamelia-manager pour permettre l'auto-login cabinet ───
-add_action( 'init', 'cordespace_strip_manager_role_on_frontend', 1 );
+// ─── Frontend : strip wpamelia-manager ET administrator pour auto-login cabinet ───
+// Sans ça, un user admin (Tess/Ayik) visitant /mon-espace doit se relogger sur
+// le cabinet parce qu'Amelia détecte 'admin' mais le cabinet attend 'provider'.
+add_action( 'init', 'cordespace_strip_admin_roles_on_frontend', 1 );
 
-function cordespace_strip_manager_role_on_frontend() {
-	if ( cordespace_is_amelia_admin_context() ) {
+function cordespace_strip_admin_roles_on_frontend() {
+	if ( ! cordespace_is_frontend_request() ) {
 		return;
 	}
 	$user = wp_get_current_user();
 	if ( ! $user || ! $user->ID ) {
 		return;
 	}
-	if ( ! in_array( 'wpamelia-manager', (array) $user->roles, true ) ) {
+
+	$had_admin   = in_array( 'administrator', (array) $user->roles, true );
+	$had_manager = in_array( 'wpamelia-manager', (array) $user->roles, true );
+	if ( ! $had_admin && ! $had_manager ) {
 		return;
 	}
 
-	$user->roles = array_values( array_diff( (array) $user->roles, [ 'wpamelia-manager' ] ) );
+	$user->roles = array_values( array_diff(
+		(array) $user->roles,
+		[ 'administrator', 'wpamelia-manager' ]
+	) );
 
-	// S'assure que wpamelia-provider est présent (sinon Amelia tombe sur null
-	// → 'customer' par défaut → cabinet provider refuse le match).
+	// S'assure que wpamelia-provider est présent (sinon Amelia tombe sur
+	// 'customer' par défaut → cabinet provider refuse le match auto-login).
 	if ( ! in_array( 'wpamelia-provider', $user->roles, true ) ) {
 		$user->roles[] = 'wpamelia-provider';
 	}
@@ -103,13 +111,16 @@ function cordespace_demote_admin_on_amelia_pages() {
 	}
 }
 
-// Le filtre user_has_cap pour neutraliser is_super_admin() sur les pages Amelia.
-// Sans ça, getUserAmeliaRole() détecte 'admin' via is_super_admin() même si
-// 'administrator' a été retiré du tableau roles.
-add_filter( 'user_has_cap', 'cordespace_drop_delete_users_on_amelia_pages', 99, 4 );
+// Filtre user_has_cap : neutralise is_super_admin() partout sauf vrai wp-admin
+// non-Amelia, pour qu'Amelia ne détecte plus 'admin' via la cap delete_users.
+// Couvre à la fois le contexte wp-admin Amelia (vue events 86) ET le frontend
+// (cabinet auto-login pour admin avec entité provider).
+add_filter( 'user_has_cap', 'cordespace_drop_delete_users_outside_real_admin', 99, 4 );
 
-function cordespace_drop_delete_users_on_amelia_pages( $allcaps, $caps, $args, $user ) {
-	if ( ! cordespace_is_amelia_admin_context() ) {
+function cordespace_drop_delete_users_outside_real_admin( $allcaps, $caps, $args, $user ) {
+	$amelia_admin = cordespace_is_amelia_admin_context();
+	$frontend     = cordespace_is_frontend_request();
+	if ( ! $amelia_admin && ! $frontend ) {
 		return $allcaps;
 	}
 	// Seulement pour les users qui sont (ou étaient) administrators.
@@ -120,6 +131,30 @@ function cordespace_drop_delete_users_on_amelia_pages( $allcaps, $caps, $args, $
 	}
 	unset( $allcaps['delete_users'] );
 	return $allcaps;
+}
+
+/**
+ * True si la requête courante est "côté frontend" : page publique OU appel
+ * AJAX déclenché depuis le frontend (admin-ajax.php avec referer hors wp-admin).
+ *
+ * Sert à distinguer une vraie page wp-admin (où on garde les rôles admin
+ * intacts) d'une page publique (où on les retire pour que le cabinet Amelia
+ * fasse l'auto-login WP_USER au lieu de demander email + password).
+ */
+function cordespace_is_frontend_request(): bool {
+	if ( ! is_admin() ) {
+		return true;
+	}
+	// AJAX : on regarde le referer pour savoir d'où vient la requête.
+	if ( wp_doing_ajax() ) {
+		$referer = wp_get_referer();
+		// Pas de referer = on n'est sûr de rien, on suppose wp-admin (plus sécurisant).
+		if ( ! $referer ) {
+			return false;
+		}
+		return strpos( $referer, '/wp-admin/' ) === false;
+	}
+	return false; // vraie page wp-admin
 }
 
 /**
