@@ -79,21 +79,26 @@ if ( ! function_exists( 'cordespace_invalidate_mon_espace_url_cache' ) ) {
 }
 
 /**
- * Force la plage de dates par défaut des panels Amelia à 1 an dans le futur.
+ * Force la plage de dates par défaut des panels Amelia (cookie ameliaRangeFuture).
+ *
+ * @param int $days Nombre de jours dans le futur à afficher. Par défaut 365
+ *                  (1 an, utile pour la vue cliente qui veut voir tous ses
+ *                  cours à venir). Pour la vue prof, on appelle avec 92
+ *                  (≈3 mois) pour ne pas overlap avec des events trop lointains.
+ *
+ * Le cookie est écrasé à chaque appel : permet d'avoir une range différente
+ * selon la vue rendue (prof vs cliente), sans état persistant qui colle.
  */
 if ( ! function_exists( 'cordespace_render_amelia_default_range' ) ) {
-	function cordespace_render_amelia_default_range() {
+	function cordespace_render_amelia_default_range( int $days = 365 ) {
+		$days = max( 1, $days ); // garde-fou
 		?>
 		<script>
 		(function () {
-			function setMinCookie(name, minVal) {
-				var m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
-				var current = m ? parseInt(m[1], 10) : 0;
-				if (isNaN(current) || current < minVal) {
-					document.cookie = name + '=' + minVal + '; path=/; max-age=31536000';
-				}
-			}
-			setMinCookie('ameliaRangeFuture', 365);
+			// Écrase systématiquement la cookie pour cette vue (3 mois prof,
+			// 1 an cliente, etc.). Si l'user va dans une autre vue, l'autre
+			// appel écrasera à nouveau avec sa propre valeur.
+			document.cookie = 'ameliaRangeFuture=<?php echo (int) $days; ?>; path=/; max-age=31536000';
 		})();
 		</script>
 		<?php

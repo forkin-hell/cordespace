@@ -26,10 +26,12 @@ add_shortcode( 'cordespace_mon_espace', 'cordespace_render_mon_espace_shortcode'
 
 function cordespace_render_mon_espace_shortcode( $atts ) {
 	ob_start();
-	cordespace_render_amelia_default_range();
 	cordespace_render_mon_espace_mobile_css();
 
 	if ( ! is_user_logged_in() ) {
+		// Vue déconnectée : range par défaut 1 an (au cas où l'user se connecte
+		// ensuite et voit la cliente).
+		cordespace_render_amelia_default_range( 365 );
 		echo cordespace_render_logged_out_view();
 		return ob_get_clean();
 	}
@@ -38,6 +40,11 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 	$linked_id  = (int) get_user_meta( $user->ID, '_cordespace_linked_user_id', true );
 	$has_linked = $linked_id > 0;
 	$is_prof    = cordespace_user_is_amelia_provider( $user->ID );
+
+	// Range Amelia adaptée à la vue : 3 mois pour les profs (events à venir
+	// à enseigner sont en général dans le mois ou les 2 mois), 1 an pour les
+	// client·es (souhaite voir leurs réservations à venir loin).
+	cordespace_render_amelia_default_range( $is_prof ? 92 : 365 );
 
 	cordespace_render_amelia_cookie_sync( $user );
 
