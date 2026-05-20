@@ -29,13 +29,17 @@ function cordespace_render_orders_section( $user ) {
 		return;
 	}
 
-	$limit  = 10;
+	$limit = 10;
+	// On filtre sur les statuts "vraies commandes" (wc_get_order_statuses)
+	// pour exclure 'checkout-draft' (paniers abandonnés, créés auto par WC
+	// quand quelqu'un commence un checkout sans finaliser — pas un achat).
 	$orders = wc_get_orders( [
 		'customer_id' => $user->ID,
 		'limit'       => $limit,
 		'orderby'     => 'date',
 		'order'       => 'DESC',
 		'paginate'    => false,
+		'status'      => array_keys( wc_get_order_statuses() ),
 	] );
 	?>
 	<section id="section-commandes" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
