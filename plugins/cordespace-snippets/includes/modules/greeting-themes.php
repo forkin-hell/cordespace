@@ -115,8 +115,16 @@ function cordespace_greeting_themes(): array {
 /**
  * CSS de base commun à tous les thèmes — positionne le décor en arrière-plan
  * du bloc Bonjour et ajoute le suffixe emoji après chaque <h2> de section.
+ *
+ * On force la police « Noto Color Emoji » (style Google/Android — choix
+ * de Cordespace pour une cohérence visuelle indépendante de l'OS de l'user).
+ * Chargée via Google Fonts dans cordespace_enqueue_greeting_theme_assets().
  */
 function cordespace_greeting_themes_base_css(): string {
+	// Stack avec Noto Color Emoji en priorité, puis fallback aux fonts
+	// natives au cas où Google Fonts ne charge pas.
+	$emoji_font = "'Noto Color Emoji', 'Apple Color Emoji', 'Segoe UI Emoji', 'EmojiOne Color', 'Twemoji Mozilla', sans-serif";
+
 	$css = "
 		/* Wrapper Bonjour : conteneur pour le décor absolu */
 		.cordespace-page .cordespace-greeting-block { position:relative; overflow:hidden; }
@@ -136,18 +144,18 @@ function cordespace_greeting_themes_base_css(): string {
 			position:absolute;
 			line-height:1;
 			user-select:none;
+			font-family: {$emoji_font};
 		}
 	";
 
 	// Suffixe emoji après h2 de section, par thème.
-	// On force la stack emoji système sur ::after parce que le thème WP a
-	// souvent une font-family qui n'inclut pas Apple Color Emoji / Noto Color
-	// Emoji, ce qui faisait retomber l'emoji sur la font de fallback grise.
-	$emoji_font = "'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', 'EmojiOne Color', 'Twemoji Mozilla', sans-serif";
+	// `content` SANS espace devant — on utilise margin-left pour gérer
+	// l'espacement. La police Noto Color Emoji a des métriques qui rendent
+	// le caractère espace plus large que prévu, donc on l'évite.
 	foreach ( cordespace_greeting_themes() as $slug => $theme ) {
 		if ( empty( $theme['title_suffix'] ) ) continue;
 		$css .= sprintf(
-			".cordespace-theme-%s section > h2::after { content: ' %s'; margin-left:0.4rem; font-size:0.95em; font-family:%s; }\n",
+			".cordespace-theme-%s section > h2::after { content: '%s'; margin-left:0.3rem; font-size:0.9em; font-family:%s; }\n",
 			esc_attr( $slug ),
 			esc_html( $theme['title_suffix'] ),
 			$emoji_font
@@ -155,6 +163,21 @@ function cordespace_greeting_themes_base_css(): string {
 	}
 
 	return $css;
+}
+
+/**
+ * Enqueue Noto Color Emoji depuis Google Fonts. Chargée sur tout le site
+ * pour que l'effet soit disponible partout où on l'utilise (cabinet,
+ * boutique, etc. — pas seulement /mon-espace).
+ */
+add_action( 'wp_enqueue_scripts', 'cordespace_enqueue_greeting_theme_assets' );
+function cordespace_enqueue_greeting_theme_assets() {
+	wp_enqueue_style(
+		'cordespace-noto-color-emoji',
+		'https://fonts.googleapis.com/css2?family=Noto+Color+Emoji&display=swap',
+		[],
+		null
+	);
 }
 
 /**
