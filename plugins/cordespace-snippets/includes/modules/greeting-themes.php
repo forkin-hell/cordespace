@@ -74,6 +74,31 @@ function cordespace_greeting_themes(): array {
 			",
 		],
 
+		'chicks' => [
+			'label'     => '🐣 Poussins',
+			'decor_css' => "
+				/* Fond peuplé de poussins, cœurs jaunes et burgers — pattern
+				   SVG tilé en scatter. Demandé par une utilisatrice. */
+				.cordespace-theme-chicks .cordespace-greeting-block { position:relative; overflow:hidden; }
+				.cordespace-theme-chicks .cordespace-greeting-block > * { position:relative; z-index:1; }
+				.cordespace-theme-chicks .cordespace-greeting-block::before {
+					content:'';
+					position:absolute; inset:0;
+					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220'><text x='30' y='50' font-size='38' transform='rotate(-12 47 36)'>🐣</text><text x='130' y='38' font-size='28' transform='rotate(10 145 28)'>💛</text><text x='210' y='62' font-size='34' transform='rotate(-6 228 48)'>🍔</text><text x='285' y='42' font-size='30' transform='rotate(14 298 32)'>🐣</text><text x='60' y='115' font-size='32' transform='rotate(8 78 102)'>💛</text><text x='155' y='140' font-size='40' transform='rotate(-10 175 124)'>🐣</text><text x='265' y='135' font-size='28' transform='rotate(12 277 125)'>💛</text><text x='30' y='200' font-size='30' transform='rotate(-8 45 188)'>🍔</text><text x='130' y='205' font-size='34' transform='rotate(6 148 191)'>🐣</text><text x='230' y='190' font-size='32' transform='rotate(-6 246 176)'>🍔</text></svg>\");
+					background-size: 320px 220px;
+					background-repeat: repeat;
+					opacity:0.18;
+					pointer-events:none;
+				}
+				/* Petit poussin après chaque titre de section (pleine opacité) */
+				.cordespace-theme-chicks section > h2::after {
+					content: ' 🐣';
+					margin-left:0.4rem;
+					font-size:0.85em;
+				}
+			",
+		],
+
 		// Pour ajouter un thème : copier une des entrées et adapter le pattern SVG.
 		// Convention : SVG tile 320x220 avec ~7-10 emojis à positions variées et
 		// rotations entre -15° et +15°. Pas de décorations dans les coins des
