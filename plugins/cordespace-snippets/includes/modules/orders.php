@@ -64,21 +64,35 @@ function cordespace_render_orders_section( $user ) {
 							$status_label = wc_get_order_status_name( $status_slug );
 							$pastille     = cordespace_order_status_color( $status_slug );
 							$created_ts   = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : 0;
+
+							// Liste des articles : on récupère les noms des line items WC
+							// (typiquement des produits qui représentent des billets d'événements).
+							$item_names = [];
+							foreach ( $order->get_items() as $item ) {
+								$item_names[] = $item->get_name();
+							}
 						?>
 							<tr style="border-bottom:1px solid #f0f0f0;">
-								<td style="padding:0.7rem 0.5rem;font-weight:600;white-space:nowrap;">#<?php echo esc_html( $order->get_order_number() ); ?></td>
-								<td style="padding:0.7rem 0.5rem;color:#666;white-space:nowrap;">
+								<td style="padding:0.7rem 0.5rem;">
+									<div style="font-weight:600;white-space:nowrap;">#<?php echo esc_html( $order->get_order_number() ); ?></div>
+									<?php if ( ! empty( $item_names ) ) : ?>
+										<div style="color:#666;font-size:0.85em;font-weight:400;margin-top:0.2rem;line-height:1.3;">
+											<?php echo esc_html( implode( ', ', $item_names ) ); ?>
+										</div>
+									<?php endif; ?>
+								</td>
+								<td style="padding:0.7rem 0.5rem;color:#666;white-space:nowrap;vertical-align:top;">
 									<?php echo $created_ts ? esc_html( wp_date( 'j M Y', $created_ts ) ) : '—'; ?>
 								</td>
-								<td style="padding:0.7rem 0.5rem;">
+								<td style="padding:0.7rem 0.5rem;vertical-align:top;">
 									<span style="display:inline-block;padding:0.2rem 0.6rem;border-radius:12px;background:<?php echo esc_attr( $pastille['bg'] ); ?>;color:<?php echo esc_attr( $pastille['fg'] ); ?>;font-size:0.85em;font-weight:500;white-space:nowrap;">
 										<?php echo esc_html( $status_label ); ?>
 									</span>
 								</td>
-								<td style="padding:0.7rem 0.5rem;font-weight:600;white-space:nowrap;">
+								<td style="padding:0.7rem 0.5rem;font-weight:600;white-space:nowrap;vertical-align:top;">
 									<?php echo wp_kses_post( $order->get_formatted_order_total() ); ?>
 								</td>
-								<td style="padding:0.7rem 0.5rem;text-align:right;white-space:nowrap;">
+								<td style="padding:0.7rem 0.5rem;text-align:right;white-space:nowrap;vertical-align:top;">
 									<a href="<?php echo esc_url( $order->get_view_order_url() ); ?>" style="color:#2c70b8;text-decoration:none;font-size:0.95em;">Voir →</a>
 								</td>
 							</tr>
