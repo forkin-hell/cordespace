@@ -206,6 +206,35 @@ function cordespace_enqueue_greeting_theme_assets() {
 }
 
 /**
+ * Désactive le module wpemoji de WordPress core qui convertit
+ * automatiquement les emojis HTML (dans le texte des pages) en images
+ * Twemoji (s.w.org/images/core/emoji/...). C'est utile pour IE11 mais
+ * tous les navigateurs modernes (≥ 2018) gèrent les emojis nativement.
+ *
+ * Sans cette désactivation, les emojis du décor de bandeau étaient
+ * remplacés en images Twemoji par WordPress → rendu Twitter-style au
+ * lieu du Noto Color Emoji qu'on demande via font-family. Les suffixes
+ * de h2 (via CSS ::after content) n'étaient pas affectés parce que
+ * wpemoji ne scanne pas les pseudo-éléments CSS.
+ *
+ * Bonus de cette désactivation : ~3 ko de JS et 1 ko de CSS en moins
+ * sur chaque page du site (optimisation perf classique recommandée par
+ * tous les outils Lighthouse / PageSpeed).
+ */
+remove_action( 'wp_head', 'print_emoji_detection_script', 7 );
+remove_action( 'admin_print_scripts', 'print_emoji_detection_script' );
+remove_action( 'wp_print_styles', 'print_emoji_styles' );
+remove_action( 'admin_print_styles', 'print_emoji_styles' );
+remove_filter( 'the_content_feed', 'wp_staticize_emoji' );
+remove_filter( 'comment_text_rss', 'wp_staticize_emoji' );
+remove_filter( 'wp_mail', 'wp_staticize_emoji_for_email' );
+
+// Empêche aussi que TinyMCE recharge wpemoji (au cas où).
+add_filter( 'tiny_mce_plugins', function ( $plugins ) {
+	return is_array( $plugins ) ? array_diff( $plugins, [ 'wpemoji' ] ) : [];
+} );
+
+/**
  * Rend le HTML décor d'un thème (à appeler à l'intérieur du bloc Bonjour).
  * Renvoie une chaîne ou rien si le thème n'a pas d'emojis configurés.
  */
