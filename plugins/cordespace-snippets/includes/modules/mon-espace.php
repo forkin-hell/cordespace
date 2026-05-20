@@ -22,35 +22,15 @@
 
 defined( 'ABSPATH' ) || exit;
 
-// Set le cookie ameliaRangeFuture AVANT le rendu de la page, côté serveur,
-// pour éviter la race condition où Amelia initialiserait son interface avec
-// son défaut (1 semaine pour le provider cabinet) avant que notre JS inline
-// ne fire. Symptôme observé sans ce fix : sur un navigateur/device neuf,
-// la vue prof affichait seulement 7 jours d'events au lieu de 92.
-add_action( 'template_redirect', 'cordespace_set_amelia_range_cookie_early', 5 );
-
-function cordespace_set_amelia_range_cookie_early() {
-	if ( ! is_user_logged_in() ) {
-		return;
-	}
-	global $post;
-	if ( ! $post || ! has_shortcode( (string) $post->post_content, 'cordespace_mon_espace' ) ) {
-		return;
-	}
-	$user    = wp_get_current_user();
-	$is_prof = cordespace_user_is_amelia_provider( $user->ID );
-	$days    = $is_prof ? 92 : 365;
-
-	// Set le cookie via HTTP header. Amelia le verra dès le premier render
-	// (le browser stocke à réception de la réponse, AVANT d'exécuter le JS
-	// d'Amelia). Notre JS inline reste en place comme deuxième couche.
-	setcookie( 'ameliaRangeFuture', (string) $days, [
-		'expires'  => time() + YEAR_IN_SECONDS,
-		'path'     => '/',
-		'secure'   => is_ssl(),
-		'samesite' => 'Lax',
-	] );
-}
+// Note historique : on a tenté de set le cookie ameliaRangeFuture (côté JS
+// puis côté PHP via template_redirect) pour étendre la fenêtre d'events
+// affichée par défaut dans le cabinet. Après diagnostic, ce cookie n'est
+// lu QUE par le formulaire de booking public (stepForm.js) — les cabinets
+// customer et provider ont leurs propres défauts hardcodés dans leur
+// Vue.js (1 an pour customer, 7 jours pour provider). Donc on a retiré
+// les appels qui essayaient de forcer la range : ça n'avait aucun effet.
+// Les profs cliquent sur le date picker du cabinet pour étendre s'iels
+// veulent voir plus loin que la semaine en cours.
 
 add_shortcode( 'cordespace_mon_espace', 'cordespace_render_mon_espace_shortcode' );
 
@@ -59,9 +39,6 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 	cordespace_render_mon_espace_mobile_css();
 
 	if ( ! is_user_logged_in() ) {
-		// Vue déconnectée : range par défaut 1 an (au cas où l'user se connecte
-		// ensuite et voit la cliente).
-		cordespace_render_amelia_default_range( 365 );
 		echo cordespace_render_logged_out_view();
 		return ob_get_clean();
 	}
@@ -70,11 +47,6 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 	$linked_id  = (int) get_user_meta( $user->ID, '_cordespace_linked_user_id', true );
 	$has_linked = $linked_id > 0;
 	$is_prof    = cordespace_user_is_amelia_provider( $user->ID );
-
-	// Range Amelia adaptée à la vue : 3 mois pour les profs (events à venir
-	// à enseigner sont en général dans le mois ou les 2 mois), 1 an pour les
-	// client·es (souhaite voir leurs réservations à venir loin).
-	cordespace_render_amelia_default_range( $is_prof ? 92 : 365 );
 
 	cordespace_render_amelia_cookie_sync( $user );
 
