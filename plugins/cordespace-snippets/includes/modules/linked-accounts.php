@@ -275,6 +275,86 @@ function cordespace_la_get_orphan_customers(): array {
 }
 
 /**
+ * Anomalies WP role ↔ Amelia type : détecte les users dont le rôle WP ne
+ * correspond pas à une combo "valide" pour Cordespace, et propose un type
+ * Amelia corrigé.
+ *
+ * Combos valides chez Cordespace :
+ * - WP customer + Amelia customer
+ * - WP provider + Amelia provider
+ * - WP manager  + Amelia manager (manager pur, sans enseignement)
+ * - WP manager  + Amelia provider (prof admin, pattern Cordespace courant)
+ * - WP admin (administrator)     + tout type Amelia (Tess, Ayik)
+ *
+ * Tout le reste est flaggé comme anomalie réparable.
+ */
+function cordespace_la_get_anomalies(): array {
+	global $wpdb;
+	$caps_meta_key = $wpdb->prefix . 'capabilities';
+
+	$rows = $wpdb->get_results( $wpdb->prepare(
+		"SELECT au.id AS amelia_id, au.type AS amelia_type,
+		        u.ID AS wp_id, u.user_login, u.user_email,
+		        um.meta_value AS caps_raw
+		   FROM {$wpdb->prefix}amelia_users au
+		   JOIN {$wpdb->users} u ON u.ID = au.externalId
+		   LEFT JOIN {$wpdb->usermeta} um ON um.user_id = u.ID AND um.meta_key = %s
+		  WHERE au.status = 'visible'",
+		$caps_meta_key
+	), ARRAY_A );
+
+	$anomalies = [];
+
+	foreach ( $rows as $r ) {
+		$caps = (string) ( $r['caps_raw'] ?? '' );
+
+		// Déterminer le rôle WP "principal" par priorité décroissante.
+		// (Même logique que UserRoles::getUserAmeliaRole d'Amelia.)
+		$wp_role = null;
+		if ( stripos( $caps, '"administrator"' ) !== false ) {
+			$wp_role = 'admin';
+		} elseif ( stripos( $caps, '"wpamelia-manager"' ) !== false ) {
+			$wp_role = 'manager';
+		} elseif ( stripos( $caps, '"wpamelia-provider"' ) !== false ) {
+			$wp_role = 'provider';
+		} elseif ( stripos( $caps, '"wpamelia-customer"' ) !== false ) {
+			$wp_role = 'customer';
+		}
+
+		if ( ! $wp_role ) continue; // rôle WP non reconnu, on skip
+
+		$amelia_type = $r['amelia_type'];
+
+		// Combos valides — pas d'anomalie.
+		$valid = [
+			'customer' => [ 'customer' ],
+			'provider' => [ 'provider' ],
+			'manager'  => [ 'manager', 'provider' ], // pattern profs admin Cordespace
+			'admin'    => [ 'admin', 'manager', 'provider', 'customer' ], // admin = libre
+		];
+
+		if ( in_array( $amelia_type, $valid[ $wp_role ] ?? [], true ) ) {
+			continue; // OK
+		}
+
+		// Anomalie détectée. Proposer le type Amelia "naturel" pour ce rôle WP.
+		$suggested = $wp_role; // ex: WP customer → suggère Amelia customer
+
+		$anomalies[] = [
+			'amelia_id'   => (int) $r['amelia_id'],
+			'amelia_type' => $amelia_type,
+			'wp_id'       => (int) $r['wp_id'],
+			'wp_login'    => $r['user_login'],
+			'wp_email'    => $r['user_email'],
+			'wp_role'     => $wp_role,
+			'suggested'   => $suggested,
+		];
+	}
+
+	return $anomalies;
+}
+
+/**
  * Renderer de la page wp-admin « Lier des comptes ».
  */
 function cordespace_admin_render_link_accounts_page(): void {
@@ -285,6 +365,7 @@ function cordespace_admin_render_link_accounts_page(): void {
 	$profs     = cordespace_la_get_profs();
 	$customers = cordespace_la_get_customers();
 	$orphans   = cordespace_la_get_orphan_customers();
+	$anomalies = cordespace_la_get_anomalies();
 	$nonce     = wp_create_nonce( 'cordespace_link_accounts' );
 	$ajax_url  = admin_url( 'admin-ajax.php' );
 	?>
@@ -331,6 +412,45 @@ function cordespace_admin_render_link_accounts_page(): void {
 					<?php endforeach; ?>
 					</tbody>
 				</table>
+			</div>
+		<?php endif; ?>
+
+		<?php if ( ! empty( $anomalies ) ) : ?>
+			<div class="notice notice-error cordespace-la-anomalies" style="margin:1.2rem 0;padding:1rem 1.2rem;">
+				<p style="margin:0 0 0.6rem;">
+					<strong>⚠️ Désalignements rôle WP ↔ type Amelia</strong> —
+					Ces user·euses ont un rôle WordPress qui ne correspond pas à leur type Amelia. Ça arrive typiquement quand on change le rôle WP d'un compte existant sans le re-synchroniser côté Amelia (Amelia ne le fait pas auto). Symptôme : iels peuvent apparaître au mauvais endroit dans les listes Amelia, ou perdre l'accès à leur cabinet.
+				</p>
+				<table class="widefat" style="background:#fff5f5;margin-top:0.6rem;">
+					<thead>
+						<tr>
+							<th style="width:35%;">Personne</th>
+							<th style="width:20%;">Rôle WP</th>
+							<th style="width:20%;">Type Amelia</th>
+							<th style="width:25%;">Action proposée</th>
+						</tr>
+					</thead>
+					<tbody>
+					<?php foreach ( $anomalies as $a ) : ?>
+						<tr data-amelia-id="<?php echo (int) $a['amelia_id']; ?>" data-new-type="<?php echo esc_attr( $a['suggested'] ); ?>">
+							<td>
+								<strong><?php echo esc_html( $a['wp_login'] ); ?></strong><br>
+								<span style="color:#666;font-size:0.9em;"><?php echo esc_html( $a['wp_email'] ); ?></span><br>
+								<span style="color:#999;font-size:0.8em;">WP #<?php echo (int) $a['wp_id']; ?> · Amelia #<?php echo (int) $a['amelia_id']; ?></span>
+							</td>
+							<td><code><?php echo esc_html( $a['wp_role'] ); ?></code></td>
+							<td><code style="color:#a33;"><?php echo esc_html( $a['amelia_type'] ); ?></code></td>
+							<td>
+								Changer Amelia <code><?php echo esc_html( $a['amelia_type'] ); ?></code> → <code style="color:#070;"><?php echo esc_html( $a['suggested'] ); ?></code><br>
+								<button class="button cordespace-la-fix-anomaly-btn" style="margin-top:0.3rem;">✓ Corriger</button>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+					</tbody>
+				</table>
+				<p style="margin:0.6rem 0 0;font-size:0.85em;color:#666;">
+					💡 Si tu veux laisser une anomalie telle quelle (ex. cas particulier qu'on doit garder), ignore simplement cette section — aucun changement n'est fait sans clic.
+				</p>
 			</div>
 		<?php endif; ?>
 
@@ -450,6 +570,49 @@ function cordespace_admin_render_link_accounts_page(): void {
 						.catch(function (err) {
 							btn.disabled = false;
 							btn.textContent = '🔧 Lier automatiquement';
+							cordespaceLaNotice('error', 'Erreur réseau : ' + err.message);
+						});
+				});
+			});
+
+			// Correction des anomalies WP role ↔ Amelia type
+			document.querySelectorAll('.cordespace-la-fix-anomaly-btn').forEach(function (btn) {
+				btn.addEventListener('click', function () {
+					var row       = btn.closest('tr');
+					if (!row) return;
+					var ameliaId  = parseInt(row.dataset.ameliaId, 10);
+					var newType   = row.dataset.newType;
+					if (!ameliaId || !newType) return;
+
+					if (!confirm('Changer le type Amelia de cet user vers "' + newType + '" ?')) return;
+
+					btn.disabled = true;
+					btn.textContent = '⏳ Correction...';
+
+					var body = new FormData();
+					body.append('action',    'cordespace_fix_anomaly');
+					body.append('_wpnonce',  nonce);
+					body.append('amelia_id', ameliaId);
+					body.append('new_type',  newType);
+
+					fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: body })
+						.then(function (r) { return r.json(); })
+						.then(function (data) {
+							if (data && data.success) {
+								cordespaceLaNotice('success', (data.data && data.data.message) || 'Anomalie corrigée.');
+								row.style.opacity = '0.4';
+								btn.textContent = '✓ Corrigé';
+								// Reload pour rafraîchir les listes
+								setTimeout(function () { window.location.reload(); }, 1500);
+							} else {
+								btn.disabled = false;
+								btn.textContent = '✓ Corriger';
+								cordespaceLaNotice('error', (data && data.data && data.data.message) || 'Erreur de correction.');
+							}
+						})
+						.catch(function (err) {
+							btn.disabled = false;
+							btn.textContent = '✓ Corriger';
 							cordespaceLaNotice('error', 'Erreur réseau : ' + err.message);
 						});
 				});
@@ -668,5 +831,71 @@ function cordespace_ajax_repair_orphan_customer(): void {
 		'message'    => sprintf( 'Liaison réparée : Amelia #%d ↔ WP #%d (%s).', $amelia_id, $wp_user_id, $wp_user->user_email ),
 		'amelia_id'  => $amelia_id,
 		'wp_user_id' => $wp_user_id,
+	] );
+}
+
+/**
+ * AJAX : corriger une anomalie en changeant le type Amelia d'un user.
+ *
+ * Action WP : cordespace_fix_anomaly
+ * Params : amelia_id, new_type (customer|provider|manager|admin)
+ *
+ * Sécurité : on revérifie côté serveur que le couple (wp role → new_type)
+ * fait du sens, pour éviter qu'un POST forgé n'autorise un changement
+ * arbitraire qui pourrait élever des privilèges.
+ */
+add_action( 'wp_ajax_cordespace_fix_anomaly', 'cordespace_ajax_fix_anomaly' );
+
+function cordespace_ajax_fix_anomaly(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_send_json_error( [ 'message' => 'Permission refusée.' ], 403 );
+	}
+	if ( ! check_ajax_referer( 'cordespace_link_accounts', '_wpnonce', false ) ) {
+		wp_send_json_error( [ 'message' => 'Nonce invalide. Recharge la page.' ], 400 );
+	}
+
+	$amelia_id = isset( $_POST['amelia_id'] ) ? (int) $_POST['amelia_id'] : 0;
+	$new_type  = isset( $_POST['new_type'] ) ? sanitize_text_field( wp_unslash( (string) $_POST['new_type'] ) ) : '';
+
+	if ( $amelia_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'Amelia ID invalide.' ], 400 );
+	}
+	if ( ! in_array( $new_type, [ 'customer', 'provider', 'manager', 'admin' ], true ) ) {
+		wp_send_json_error( [ 'message' => 'Type Amelia invalide.' ], 400 );
+	}
+
+	// Refaire la détection d'anomalies et confirmer que cette ligne en fait partie.
+	// → Évite qu'un POST forgé impose un new_type qui n'est pas la suggestion validée.
+	$anomalies = cordespace_la_get_anomalies();
+	$match     = null;
+	foreach ( $anomalies as $a ) {
+		if ( $a['amelia_id'] === $amelia_id ) {
+			$match = $a;
+			break;
+		}
+	}
+	if ( ! $match ) {
+		wp_send_json_error( [ 'message' => 'Cet user n\'est plus dans la liste des anomalies (peut-être déjà corrigé ?).' ], 400 );
+	}
+	if ( $match['suggested'] !== $new_type ) {
+		wp_send_json_error( [ 'message' => 'Type proposé incohérent.' ], 400 );
+	}
+
+	global $wpdb;
+	$upd = $wpdb->update(
+		$wpdb->prefix . 'amelia_users',
+		[ 'type' => $new_type ],
+		[ 'id' => $amelia_id ],
+		[ '%s' ],
+		[ '%d' ]
+	);
+	if ( $upd === false ) {
+		wp_send_json_error( [ 'message' => 'Échec UPDATE : ' . $wpdb->last_error ], 500 );
+	}
+
+	wp_send_json_success( [
+		'message'     => sprintf( 'Type Amelia changé : #%d → %s ✓', $amelia_id, $new_type ),
+		'amelia_id'   => $amelia_id,
+		'new_type'    => $new_type,
 	] );
 }
