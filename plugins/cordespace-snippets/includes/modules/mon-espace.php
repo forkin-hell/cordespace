@@ -253,16 +253,11 @@ function cordespace_render_prof_view( $user, $has_linked ) {
 	// greeting-themes ciblent les descendants via .cordespace-theme-X .truc.
 	$theme_class = apply_filters( 'cordespace_greeting_theme_class', '', $user );
 
-	// Détection des rôles autorisés à gérer les events Amelia en admin.
-	// On lit $user->caps (les rôles stockés en DB) plutôt que $user->roles
-	// parce que le module amelia-role-context strip 'administrator' et
-	// 'wpamelia-manager' du tableau roles en mémoire pour permettre l'auto-
-	// login cabinet — du coup le check roles renverrait false ici. Les caps,
-	// elles, restent intactes (correspondance directe avec la DB).
-	$caps = isset( $user->caps ) ? (array) $user->caps : [];
-	$can_manage_events = ! empty( $caps['administrator'] )
-		|| ! empty( $caps['wpamelia-admin'] )
-		|| ! empty( $caps['wpamelia-manager'] );
+	// Note : on n'a plus besoin de filtrer la section "Outils enseignant·e"
+	// par rôle. Tous les profs (même les wpamelia-provider simples) peuvent
+	// accéder à wp-admin → Amelia → Events ; Amelia 9.5 leur applique
+	// automatiquement le filtre provider et ils voient seulement leurs
+	// propres events. Les admins/managers voient tout.
 	?>
 	<div class="cordespace-page cordespace-page-prof <?php echo esc_attr( $theme_class ); ?>">
 	<?php if ( $switch_button ) : ?>
@@ -300,24 +295,17 @@ function cordespace_render_prof_view( $user, $has_linked ) {
 
 	<section id="section-outils" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
 		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">🛠️ Outils enseignant·e</h2>
-		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Raccourcis vers la gestion d'Amelia pour les enseignant·es autorisé·es.</p>
-		<?php if ( $can_manage_events ) : ?>
-			<div style="display:flex;flex-wrap:wrap;gap:0.6rem;">
-				<a href="<?php echo esc_url( admin_url( 'admin.php?page=wpamelia-events#/' ) ); ?>"
-				   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.7rem 1.2rem;background:#1d4d7e;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">
-					📋 Gérer les événements Amelia
-				</a>
-				<a href="<?php echo esc_url( admin_url( 'admin.php?page=wpamelia-calendar#/' ) ); ?>"
-				   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.7rem 1.2rem;background:#fff;color:#1d4d7e;text-decoration:none;border-radius:6px;font-weight:600;border:1px solid #1d4d7e;">
-					🗓️ Voir le calendrier Amelia
-				</a>
-			</div>
-		<?php else : ?>
-			<div style="padding:1rem 1.2rem;background:#f7f7f7;border-radius:6px;color:#555;font-size:0.95em;">
-				🔒 Tu n'as pas les droits pour éditer les événements directement.<br>
-				Pour ajouter / modifier / annuler un cours, <strong>contacte un membre de l'équipe administrative</strong> (gestion@cordespace.com).
-			</div>
-		<?php endif; ?>
+		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Raccourcis vers la gestion d'Amelia. Selon ton rôle tu verras soit tous les cours (admin / manager), soit seulement les tiens.</p>
+		<div style="display:flex;flex-wrap:wrap;gap:0.6rem;">
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=wpamelia-events#/' ) ); ?>"
+			   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.7rem 1.2rem;background:#1d4d7e;color:#fff;text-decoration:none;border-radius:6px;font-weight:600;">
+				📋 Gérer les événements Amelia
+			</a>
+			<a href="<?php echo esc_url( admin_url( 'admin.php?page=wpamelia-calendar#/' ) ); ?>"
+			   style="display:inline-flex;align-items:center;gap:0.4rem;padding:0.7rem 1.2rem;background:#fff;color:#1d4d7e;text-decoration:none;border-radius:6px;font-weight:600;border:1px solid #1d4d7e;">
+				🗓️ Voir le calendrier Amelia
+			</a>
+		</div>
 	</section>
 	</div><?php // /.cordespace-page ?>
 	<?php
