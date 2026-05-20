@@ -140,8 +140,20 @@ function cordespace_drop_delete_users_outside_real_admin( $allcaps, $caps, $args
  * Sert à distinguer une vraie page wp-admin (où on garde les rôles admin
  * intacts) d'une page publique (où on les retire pour que le cabinet Amelia
  * fasse l'auto-login WP_USER au lieu de demander email + password).
+ *
+ * Exclusions importantes (renvoient false même si is_admin()=false) :
+ * - wp-login.php : endpoint d'auth WP, utilisé par User Switching pour
+ *   l'action=switch_to_user. Stripper administrator ici casse le check
+ *   edit_user → switch refusé (« Could not switch users »).
  */
 function cordespace_is_frontend_request(): bool {
+	$script = $_SERVER['SCRIPT_NAME'] ?? '';
+	// wp-login.php : endpoint d'auth WP (login, password reset, User Switching).
+	// On le traite comme wp-admin pour préserver les caps administrator.
+	if ( $script === '/wp-login.php' || substr( $script, -13 ) === '/wp-login.php' ) {
+		return false;
+	}
+
 	if ( ! is_admin() ) {
 		return true;
 	}
