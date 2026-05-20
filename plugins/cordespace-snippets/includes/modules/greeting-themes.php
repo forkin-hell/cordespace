@@ -105,10 +105,35 @@ function cordespace_greeting_themes(): array {
 			],
 		],
 
+		'rabbits' => [
+			'label'        => '🐰 Lapins',
+			'title_suffix' => '🐰',
+			'emojis'       => [
+				[ 'emoji' => '🐰', 'top' => '4%',  'left' => '4%',  'rotate' => -12, 'size' => 36 ],
+				[ 'emoji' => '💚', 'top' => '3%',  'left' => '28%', 'rotate' => 10,  'size' => 26 ],
+				[ 'emoji' => '🐇', 'top' => '7%',  'left' => '50%', 'rotate' => -6,  'size' => 32 ],
+				[ 'emoji' => '🐰', 'top' => '4%',  'left' => '75%', 'rotate' => 14,  'size' => 28 ],
+				[ 'emoji' => '💚', 'top' => '8%',  'left' => '90%', 'rotate' => -8,  'size' => 26 ],
+				[ 'emoji' => '🐇', 'top' => '30%', 'left' => '10%', 'rotate' => 8,   'size' => 32 ],
+				[ 'emoji' => '💚', 'top' => '32%', 'left' => '36%', 'rotate' => -10, 'size' => 28 ],
+				[ 'emoji' => '🐰', 'top' => '30%', 'left' => '58%', 'rotate' => 12,  'size' => 36 ],
+				[ 'emoji' => '💚', 'top' => '34%', 'left' => '82%', 'rotate' => -4,  'size' => 28 ],
+				[ 'emoji' => '🐇', 'top' => '55%', 'left' => '5%',  'rotate' => 6,   'size' => 32 ],
+				[ 'emoji' => '🐰', 'top' => '58%', 'left' => '28%', 'rotate' => -10, 'size' => 34 ],
+				[ 'emoji' => '💚', 'top' => '55%', 'left' => '52%', 'rotate' => 8,   'size' => 28 ],
+				[ 'emoji' => '🐇', 'top' => '60%', 'left' => '78%', 'rotate' => -6,  'size' => 32 ],
+				[ 'emoji' => '🐰', 'top' => '82%', 'left' => '14%', 'rotate' => 12,  'size' => 32 ],
+				[ 'emoji' => '💚', 'top' => '85%', 'left' => '38%', 'rotate' => -8,  'size' => 28 ],
+				[ 'emoji' => '🐇', 'top' => '80%', 'left' => '62%', 'rotate' => 14,  'size' => 32 ],
+				[ 'emoji' => '🐰', 'top' => '88%', 'left' => '86%', 'rotate' => -10, 'size' => 30 ],
+			],
+		],
+
 		// Pour ajouter un thème : copier une des entrées et adapter
-		// `label`, `title_suffix` et `emojis`. Convention : ~7-10 emojis
-		// répartis sur la zone, rotations entre -15° et +15°, tailles entre
-		// 26 et 42 px.
+		// `label`, `title_suffix` et `emojis`. Convention : ~16-17 emojis
+		// répartis sur 4 rangées (top: ~5%, 30%, 55%, 85%), rotations entre
+		// -15° et +15°, tailles entre 26 et 38 px. Pattern : 1 emoji
+		// vedette (= title_suffix) + 2 autres pour la variété.
 	];
 }
 
