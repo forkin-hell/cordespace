@@ -65,11 +65,19 @@ function cordespace_render_orders_section( $user ) {
 							$pastille     = cordespace_order_status_color( $status_slug );
 							$created_ts   = $order->get_date_created() ? $order->get_date_created()->getTimestamp() : 0;
 
-							// Liste des articles : on récupère les noms des line items WC
-							// (typiquement des produits qui représentent des billets d'événements).
+							// Liste des articles : on récupère le titre du vrai event quand
+							// dispo (meta 'ameliabooking' → champ 'name'), sinon on retombe
+							// sur le nom du produit WC (typiquement « Billet événement »,
+							// pas très parlant). Le titre Amelia est plus utile pour
+							// reconnaître la commande d'un coup d'œil.
 							$item_names = [];
 							foreach ( $order->get_items() as $item ) {
-								$item_names[] = $item->get_name();
+								$booking = $item->get_meta( 'ameliabooking' );
+								if ( is_array( $booking ) && ! empty( $booking['name'] ) ) {
+									$item_names[] = $booking['name'];
+								} else {
+									$item_names[] = $item->get_name();
+								}
 							}
 						?>
 							<tr style="border-bottom:1px solid #f0f0f0;">
