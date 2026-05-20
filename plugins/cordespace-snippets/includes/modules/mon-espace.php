@@ -253,13 +253,16 @@ function cordespace_render_prof_view( $user, $has_linked ) {
 	// greeting-themes ciblent les descendants via .cordespace-theme-X .truc.
 	$theme_class = apply_filters( 'cordespace_greeting_theme_class', '', $user );
 
-	// Détection des rôles autorisés à gérer les events Amelia en admin
-	$roles = isset( $user->roles ) ? (array) $user->roles : [];
-	$can_manage_events = ! empty( array_intersect( $roles, [
-		'administrator',
-		'wpamelia-admin',
-		'wpamelia-manager',
-	] ) );
+	// Détection des rôles autorisés à gérer les events Amelia en admin.
+	// On lit $user->caps (les rôles stockés en DB) plutôt que $user->roles
+	// parce que le module amelia-role-context strip 'administrator' et
+	// 'wpamelia-manager' du tableau roles en mémoire pour permettre l'auto-
+	// login cabinet — du coup le check roles renverrait false ici. Les caps,
+	// elles, restent intactes (correspondance directe avec la DB).
+	$caps = isset( $user->caps ) ? (array) $user->caps : [];
+	$can_manage_events = ! empty( $caps['administrator'] )
+		|| ! empty( $caps['wpamelia-admin'] )
+		|| ! empty( $caps['wpamelia-manager'] );
 	?>
 	<div class="cordespace-page cordespace-page-prof <?php echo esc_attr( $theme_class ); ?>">
 	<?php if ( $switch_button ) : ?>
