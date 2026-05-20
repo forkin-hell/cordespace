@@ -22,6 +22,36 @@
 
 defined( 'ABSPATH' ) || exit;
 
+// Set le cookie ameliaRangeFuture AVANT le rendu de la page, côté serveur,
+// pour éviter la race condition où Amelia initialiserait son interface avec
+// son défaut (1 semaine pour le provider cabinet) avant que notre JS inline
+// ne fire. Symptôme observé sans ce fix : sur un navigateur/device neuf,
+// la vue prof affichait seulement 7 jours d'events au lieu de 92.
+add_action( 'template_redirect', 'cordespace_set_amelia_range_cookie_early', 5 );
+
+function cordespace_set_amelia_range_cookie_early() {
+	if ( ! is_user_logged_in() ) {
+		return;
+	}
+	global $post;
+	if ( ! $post || ! has_shortcode( (string) $post->post_content, 'cordespace_mon_espace' ) ) {
+		return;
+	}
+	$user    = wp_get_current_user();
+	$is_prof = cordespace_user_is_amelia_provider( $user->ID );
+	$days    = $is_prof ? 92 : 365;
+
+	// Set le cookie via HTTP header. Amelia le verra dès le premier render
+	// (le browser stocke à réception de la réponse, AVANT d'exécuter le JS
+	// d'Amelia). Notre JS inline reste en place comme deuxième couche.
+	setcookie( 'ameliaRangeFuture', (string) $days, [
+		'expires'  => time() + YEAR_IN_SECONDS,
+		'path'     => '/',
+		'secure'   => is_ssl(),
+		'samesite' => 'Lax',
+	] );
+}
+
 add_shortcode( 'cordespace_mon_espace', 'cordespace_render_mon_espace_shortcode' );
 
 function cordespace_render_mon_espace_shortcode( $atts ) {
