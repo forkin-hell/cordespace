@@ -21,89 +21,134 @@ defined( 'ABSPATH' ) || exit;
 
 /**
  * Catalogue des thèmes disponibles.
+ *
+ * Chaque thème définit :
+ * - label      : libellé affiché dans le dropdown du profil
+ * - emojis     : liste d'emojis avec leur position (top/left en %, rotate en
+ *                degrés, size en px) pour le décor de fond du bloc Bonjour.
+ *                Rendus en HTML <span> absolument positionnés → utilisent
+ *                la vraie police emoji système (Apple Color Emoji sur Mac/
+ *                iOS, Noto sur Android, etc.) — donc rendu cohérent avec
+ *                le reste des emojis du texte.
+ * - title_suffix : emoji ajouté après chaque <h2> de section (via CSS).
  */
 function cordespace_greeting_themes(): array {
 	return [
 		'dinosaurs' => [
-			'label'     => '🦕 Dinosaures',
-			'decor_css' => "
-				/* Fond peuplé de dinos derrière le bloc Bonjour — pattern SVG tilé
-				   avec emojis à positions et rotations variées pour un rendu
-				   « scattered » plutôt qu'aligné en grille. */
-				.cordespace-theme-dinosaurs .cordespace-greeting-block { position:relative; overflow:hidden; }
-				.cordespace-theme-dinosaurs .cordespace-greeting-block > * { position:relative; z-index:1; }
-				.cordespace-theme-dinosaurs .cordespace-greeting-block::before {
-					content:'';
-					position:absolute; inset:0;
-					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220' font-family='Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, EmojiOne Color, Twemoji Mozilla, sans-serif'><text x='30' y='55' font-size='38' transform='rotate(-12 47 41)'>🦕</text><text x='150' y='40' font-size='32' transform='rotate(8 165 28)'>🦖</text><text x='250' y='75' font-size='40' transform='rotate(-6 270 60)'>🦕</text><text x='75' y='130' font-size='34' transform='rotate(15 92 117)'>🦖</text><text x='180' y='155' font-size='42' transform='rotate(-4 200 141)'>🦕</text><text x='285' y='180' font-size='30' transform='rotate(10 298 168)'>🦖</text><text x='20' y='200' font-size='34' transform='rotate(-15 35 188)'>🦕</text></svg>\");
-					background-size: 320px 220px;
-					background-repeat: repeat;
-					opacity:0.18;
-					pointer-events:none;
-				}
-				/* Petit diplodocus après chaque titre de section (pleine opacité) */
-				.cordespace-theme-dinosaurs section > h2::after {
-					content: ' 🦕';
-					margin-left:0.4rem;
-					font-size:0.85em;
-				}
-			",
+			'label'        => '🦕 Dinosaures',
+			'title_suffix' => '🦕',
+			'emojis'       => [
+				[ 'emoji' => '🦕', 'top' => '10%', 'left' => '5%',  'rotate' => -12, 'size' => 38 ],
+				[ 'emoji' => '🦖', 'top' => '8%',  'left' => '40%', 'rotate' => 8,   'size' => 32 ],
+				[ 'emoji' => '🦕', 'top' => '20%', 'left' => '75%', 'rotate' => -6,  'size' => 40 ],
+				[ 'emoji' => '🦖', 'top' => '50%', 'left' => '15%', 'rotate' => 15,  'size' => 34 ],
+				[ 'emoji' => '🦕', 'top' => '60%', 'left' => '50%', 'rotate' => -4,  'size' => 42 ],
+				[ 'emoji' => '🦖', 'top' => '70%', 'left' => '85%', 'rotate' => 10,  'size' => 30 ],
+				[ 'emoji' => '🦕', 'top' => '85%', 'left' => '8%',  'rotate' => -15, 'size' => 34 ],
+			],
 		],
 
 		'unicorns' => [
-			'label'     => '🦄 Licornes',
-			'decor_css' => "
-				/* Fond peuplé de licornes — pattern SVG tilé en scatter */
-				.cordespace-theme-unicorns .cordespace-greeting-block { position:relative; overflow:hidden; }
-				.cordespace-theme-unicorns .cordespace-greeting-block > * { position:relative; z-index:1; }
-				.cordespace-theme-unicorns .cordespace-greeting-block::before {
-					content:'';
-					position:absolute; inset:0;
-					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220' font-family='Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, EmojiOne Color, Twemoji Mozilla, sans-serif'><text x='30' y='50' font-size='38' transform='rotate(-10 47 36)'>🦄</text><text x='130' y='35' font-size='28' transform='rotate(12 145 25)'>✨</text><text x='200' y='65' font-size='34' transform='rotate(-5 218 51)'>🌈</text><text x='280' y='45' font-size='26' transform='rotate(8 290 35)'>✨</text><text x='65' y='115' font-size='32' transform='rotate(15 82 102)'>🌈</text><text x='160' y='140' font-size='40' transform='rotate(-8 180 124)'>🦄</text><text x='265' y='130' font-size='28' transform='rotate(10 277 120)'>✨</text><text x='35' y='195' font-size='30' transform='rotate(-12 50 183)'>🌈</text><text x='130' y='205' font-size='28' transform='rotate(6 144 195)'>✨</text><text x='225' y='185' font-size='36' transform='rotate(-4 244 169)'>🦄</text></svg>\");
-					background-size: 320px 220px;
-					background-repeat: repeat;
-					opacity:0.18;
-					pointer-events:none;
-				}
-				/* Petite étoile après chaque titre de section (pleine opacité) */
-				.cordespace-theme-unicorns section > h2::after {
-					content: ' ✨';
-					margin-left:0.4rem;
-					font-size:0.85em;
-				}
-			",
+			'label'        => '🦄 Licornes',
+			'title_suffix' => '✨',
+			'emojis'       => [
+				[ 'emoji' => '🦄', 'top' => '8%',  'left' => '5%',  'rotate' => -10, 'size' => 38 ],
+				[ 'emoji' => '✨', 'top' => '5%',  'left' => '40%', 'rotate' => 12,  'size' => 28 ],
+				[ 'emoji' => '🌈', 'top' => '18%', 'left' => '60%', 'rotate' => -5,  'size' => 34 ],
+				[ 'emoji' => '✨', 'top' => '10%', 'left' => '85%', 'rotate' => 8,   'size' => 26 ],
+				[ 'emoji' => '🌈', 'top' => '45%', 'left' => '15%', 'rotate' => 15,  'size' => 32 ],
+				[ 'emoji' => '🦄', 'top' => '55%', 'left' => '50%', 'rotate' => -8,  'size' => 40 ],
+				[ 'emoji' => '✨', 'top' => '50%', 'left' => '82%', 'rotate' => 10,  'size' => 28 ],
+				[ 'emoji' => '🌈', 'top' => '82%', 'left' => '8%',  'rotate' => -12, 'size' => 30 ],
+				[ 'emoji' => '✨', 'top' => '88%', 'left' => '40%', 'rotate' => 6,   'size' => 28 ],
+				[ 'emoji' => '🦄', 'top' => '78%', 'left' => '70%', 'rotate' => -4,  'size' => 36 ],
+			],
 		],
 
 		'chicks' => [
-			'label'     => '🐣 Poussins',
-			'decor_css' => "
-				/* Fond peuplé de poussins, cœurs jaunes et burgers — pattern
-				   SVG tilé en scatter. Demandé par une utilisatrice. */
-				.cordespace-theme-chicks .cordespace-greeting-block { position:relative; overflow:hidden; }
-				.cordespace-theme-chicks .cordespace-greeting-block > * { position:relative; z-index:1; }
-				.cordespace-theme-chicks .cordespace-greeting-block::before {
-					content:'';
-					position:absolute; inset:0;
-					background-image: url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='320' height='220' font-family='Apple Color Emoji, Segoe UI Emoji, Noto Color Emoji, EmojiOne Color, Twemoji Mozilla, sans-serif'><text x='30' y='50' font-size='38' transform='rotate(-12 47 36)'>🐣</text><text x='130' y='38' font-size='28' transform='rotate(10 145 28)'>💛</text><text x='210' y='62' font-size='34' transform='rotate(-6 228 48)'>🍔</text><text x='285' y='42' font-size='30' transform='rotate(14 298 32)'>🐣</text><text x='60' y='115' font-size='32' transform='rotate(8 78 102)'>💛</text><text x='155' y='140' font-size='40' transform='rotate(-10 175 124)'>🐣</text><text x='265' y='135' font-size='28' transform='rotate(12 277 125)'>💛</text><text x='30' y='200' font-size='30' transform='rotate(-8 45 188)'>🍔</text><text x='130' y='205' font-size='34' transform='rotate(6 148 191)'>🐣</text><text x='230' y='190' font-size='32' transform='rotate(-6 246 176)'>🍔</text></svg>\");
-					background-size: 320px 220px;
-					background-repeat: repeat;
-					opacity:0.18;
-					pointer-events:none;
-				}
-				/* Petit poussin après chaque titre de section (pleine opacité) */
-				.cordespace-theme-chicks section > h2::after {
-					content: ' 🐣';
-					margin-left:0.4rem;
-					font-size:0.85em;
-				}
-			",
+			'label'        => '🐣 Poussins',
+			'title_suffix' => '🐣',
+			'emojis'       => [
+				[ 'emoji' => '🐣', 'top' => '8%',  'left' => '5%',  'rotate' => -12, 'size' => 38 ],
+				[ 'emoji' => '💛', 'top' => '5%',  'left' => '40%', 'rotate' => 10,  'size' => 28 ],
+				[ 'emoji' => '🍔', 'top' => '18%', 'left' => '65%', 'rotate' => -6,  'size' => 34 ],
+				[ 'emoji' => '🐣', 'top' => '8%',  'left' => '88%', 'rotate' => 14,  'size' => 30 ],
+				[ 'emoji' => '💛', 'top' => '45%', 'left' => '15%', 'rotate' => 8,   'size' => 32 ],
+				[ 'emoji' => '🐣', 'top' => '55%', 'left' => '48%', 'rotate' => -10, 'size' => 40 ],
+				[ 'emoji' => '💛', 'top' => '50%', 'left' => '82%', 'rotate' => 12,  'size' => 28 ],
+				[ 'emoji' => '🍔', 'top' => '85%', 'left' => '8%',  'rotate' => -8,  'size' => 30 ],
+				[ 'emoji' => '🐣', 'top' => '88%', 'left' => '40%', 'rotate' => 6,   'size' => 34 ],
+				[ 'emoji' => '🍔', 'top' => '80%', 'left' => '70%', 'rotate' => -6,  'size' => 32 ],
+			],
 		],
 
-		// Pour ajouter un thème : copier une des entrées et adapter le pattern SVG.
-		// Convention : SVG tile 320x220 avec ~7-10 emojis à positions variées et
-		// rotations entre -15° et +15°. Pas de décorations dans les coins des
-		// cartes (épuré).
+		// Pour ajouter un thème : copier une des entrées et adapter
+		// `label`, `title_suffix` et `emojis`. Convention : ~7-10 emojis
+		// répartis sur la zone, rotations entre -15° et +15°, tailles entre
+		// 26 et 42 px.
 	];
+}
+
+/**
+ * CSS de base commun à tous les thèmes — positionne le décor en arrière-plan
+ * du bloc Bonjour et ajoute le suffixe emoji après chaque <h2> de section.
+ */
+function cordespace_greeting_themes_base_css(): string {
+	$css = "
+		/* Wrapper Bonjour : conteneur pour le décor absolu */
+		.cordespace-page .cordespace-greeting-block { position:relative; overflow:hidden; }
+		.cordespace-page .cordespace-greeting-block > *:not(.cordespace-greeting-decor) {
+			position:relative; z-index:1;
+		}
+		/* Décor lui-même : couvre tout le bloc en fond, opacité réduite,
+		   pas cliquable, en dessous du contenu. */
+		.cordespace-greeting-decor {
+			position:absolute; inset:0;
+			pointer-events:none;
+			opacity:0.18;
+			z-index:0;
+			overflow:hidden;
+		}
+		.cordespace-greeting-decor span {
+			position:absolute;
+			line-height:1;
+			user-select:none;
+		}
+	";
+
+	// Suffixe emoji après h2 de section, par thème.
+	foreach ( cordespace_greeting_themes() as $slug => $theme ) {
+		if ( empty( $theme['title_suffix'] ) ) continue;
+		$css .= sprintf(
+			".cordespace-theme-%s section > h2::after { content: ' %s'; margin-left:0.4rem; font-size:0.85em; }\n",
+			esc_attr( $slug ),
+			esc_html( $theme['title_suffix'] )
+		);
+	}
+
+	return $css;
+}
+
+/**
+ * Rend le HTML décor d'un thème (à appeler à l'intérieur du bloc Bonjour).
+ * Renvoie une chaîne ou rien si le thème n'a pas d'emojis configurés.
+ */
+function cordespace_render_greeting_decor( string $theme_slug ): void {
+	$themes = cordespace_greeting_themes();
+	if ( empty( $themes[ $theme_slug ]['emojis'] ) ) return;
+
+	echo '<div class="cordespace-greeting-decor" aria-hidden="true">';
+	foreach ( $themes[ $theme_slug ]['emojis'] as $e ) {
+		printf(
+			'<span style="top:%s;left:%s;transform:rotate(%ddeg);font-size:%dpx;">%s</span>',
+			esc_attr( $e['top'] ),
+			esc_attr( $e['left'] ),
+			(int) $e['rotate'],
+			(int) $e['size'],
+			esc_html( $e['emoji'] )
+		);
+	}
+	echo '</div>';
 }
 
 /**
@@ -133,18 +178,19 @@ function cordespace_apply_greeting_theme_class( string $class, $user ): string {
 }
 
 /**
- * Print le CSS du thème UNE seule fois par requête (lazy). Évite de polluer
- * les pages où aucun user n'a de thème actif.
+ * Print le CSS commun à tous les thèmes UNE seule fois par requête (lazy).
+ * Évite de polluer les pages où aucun user n'a de thème actif. Le CSS est
+ * commun à tous les thèmes (positionnement absolu du décor, suffixe h2) ;
+ * la liste des emojis et leurs positions est gérée par
+ * cordespace_render_greeting_decor() qui injecte directement le HTML.
  */
 function cordespace_print_greeting_theme_css_once( string $theme ): void {
-	static $printed = [];
-	if ( isset( $printed[ $theme ] ) ) return;
-	$themes = cordespace_greeting_themes();
-	if ( ! isset( $themes[ $theme ]['decor_css'] ) ) return;
-	$printed[ $theme ] = true;
-	$css = $themes[ $theme ]['decor_css'];
-	add_action( 'wp_footer', function () use ( $css, $theme ) {
-		echo "<style id='cordespace-greeting-theme-{$theme}-decor'>{$css}</style>";
+	static $printed = false;
+	if ( $printed ) return;
+	$printed = true;
+	$css = cordespace_greeting_themes_base_css();
+	add_action( 'wp_footer', function () use ( $css ) {
+		echo "<style id='cordespace-greeting-themes-base'>{$css}</style>";
 	}, 5 );
 }
 
