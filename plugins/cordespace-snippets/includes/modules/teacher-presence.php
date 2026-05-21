@@ -440,13 +440,19 @@ function cordespace_render_today_students( $atts ) {
 				flex: 1 1 auto !important;
 				overflow: hidden;
 			}
-			/* Nom + email serrés, tronqués si trop longs */
+			/* Nom : autorise le wrap pour que le badge "PAIEMENT À VALIDER"
+			   passe à la ligne sous le nom plutôt que d'être tronqué en "…". */
 			.cordespace-today-students-wrapper li > div:first-child > div:first-child {
-				font-size: 0.95em !important;
-				white-space: nowrap;
-				overflow: hidden;
-				text-overflow: ellipsis;
+				font-size: 0.9em !important;
 			}
+			/* Badge compact en mobile pour qu'il tienne souvent sur la même ligne que le nom */
+			.cordespace-today-students-wrapper li > div:first-child > div:first-child > span {
+				font-size: 0.62em !important;
+				padding: 0.1rem 0.4rem !important;
+				margin-left: 0.3rem !important;
+				white-space: nowrap;
+			}
+			/* Email : tronqué (1 ligne max), souvent long */
 			.cordespace-today-students-wrapper li > div:first-child > div:last-child {
 				font-size: 0.78em !important;
 				white-space: nowrap;
