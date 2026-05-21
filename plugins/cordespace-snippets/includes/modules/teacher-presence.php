@@ -555,35 +555,31 @@ function cordespace_render_today_students( $atts ) {
 
 		function fireConfettiBurst(eventBlock) {
 			if (typeof confetti !== 'function') return; // lib pas (encore) chargée → silencieux
-			// Origine : coin haut-droit du compteur "X/Y présent·e·s"
-			var counter = eventBlock.querySelector('.cordespace-counter');
-			var origin = { x: 0.5, y: 0.5 };
-			if (counter) {
-				var rect = counter.getBoundingClientRect();
-				origin.x = Math.min(0.99, Math.max(0.01, (rect.left + rect.width / 2) / window.innerWidth));
-				origin.y = Math.min(0.99, Math.max(0.01, (rect.top  + rect.height / 2) / window.innerHeight));
-			}
+			// Origine : bas-centre du viewport, toujours visible peu importe où la prof est scrollée.
+			// y=0.95 = juste au-dessus du bord bas → les particules explosent vers le haut.
+			var origin = { x: 0.5, y: 0.95 };
 			var colors = ['#5b2c8f', '#f5b800', '#1d4d7e', '#ffffff', '#c084ed'];
-			// Premier burst : large et puissant
+			// Premier burst : large et puissant, explose vers le haut
 			confetti({
 				particleCount: 90,
-				spread: 75,
+				spread: 80,
 				origin: origin,
 				colors: colors,
-				ticks: 200,
-				gravity: 1.1,
+				ticks: 220,
+				gravity: 1.0,
 				scalar: 1.05,
+				startVelocity: 55,
 			});
 			// Deuxième burst 220ms plus tard pour un effet "double pop"
 			setTimeout(function () {
 				if (typeof confetti !== 'function') return;
 				confetti({
 					particleCount: 50,
-					spread: 110,
+					spread: 120,
 					origin: origin,
 					colors: colors,
-					startVelocity: 38,
-					ticks: 220,
+					startVelocity: 45,
+					ticks: 240,
 					scalar: 0.85,
 				});
 			}, 220);
