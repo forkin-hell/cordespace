@@ -43,7 +43,8 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 	$in_24h = gmdate( 'Y-m-d H:i:s', time() + 24 * HOUR_IN_SECONDS );   // UTC
 
 	$bookings = $wpdb->get_results( $wpdb->prepare(
-		"SELECT b.id, b.status, b.qrCodes, e.name AS event_name, ep.periodStart, ep.periodEnd
+		"SELECT b.id, b.status, b.persons, b.qrCodes,
+				e.name AS event_name, ep.periodStart, ep.periodEnd
 		   FROM {$wpdb->prefix}amelia_customer_bookings b
 		   JOIN {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep ON bep.customerBookingId = b.id
 		   JOIN {$wpdb->prefix}amelia_events_periods ep ON ep.id = bep.eventPeriodId
@@ -127,6 +128,9 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 				<div style="flex:1;min-width:200px;">
 					<div class="cordespace-qr-event-name" style="font-size:1.1em;font-weight:600;margin-bottom:0.3rem;line-height:1.4;">
 						<?php echo esc_html( $booking['event_name'] ); ?>
+						<?php $persons = (int) ( $booking['persons'] ?? 1 ); if ( $persons > 1 ) : ?>
+							<span style="display:inline-block;background:rgba(255,255,255,0.22);color:#fff;font-size:0.75em;padding:0.2rem 0.55rem;border-radius:4px;margin-left:0.4rem;font-weight:700;vertical-align:middle;letter-spacing:0.2px;" title="Nombre de billets pour cette réservation">🎫 ×<?php echo $persons; ?></span>
+						<?php endif; ?>
 						<?php if ( $is_pending ) : ?>
 							<span style="display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.2rem 0.55rem;border-radius:4px;margin-left:0.4rem;font-weight:700;vertical-align:middle;letter-spacing:0.3px;">⏳ PAIEMENT À VALIDER</span>
 						<?php endif; ?>

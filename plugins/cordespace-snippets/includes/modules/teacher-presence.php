@@ -189,7 +189,13 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 	foreach ( $events as &$event ) {
 		$bookings = $wpdb->get_results( $wpdb->prepare(
 			"SELECT b.id AS booking_id, b.status, b.persons,
-					u.firstName, u.lastName, u.email
+					u.firstName, u.lastName, u.email,
+					(SELECT p.wcOrderId
+					   FROM {$wpdb->prefix}amelia_payments p
+					  WHERE p.customerBookingId = b.id
+					    AND p.wcOrderId IS NOT NULL
+					  ORDER BY p.id DESC
+					  LIMIT 1) AS wc_order_id
 			   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep
 			   JOIN {$wpdb->prefix}amelia_customer_bookings b ON b.id = bep.customerBookingId
 			   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
@@ -377,8 +383,16 @@ function cordespace_render_today_students( $atts ) {
 								<div style="flex:1;min-width:200px;">
 									<div style="font-weight:600;color:#333;line-height:1.4;">
 										<?php echo esc_html( $display_name ); ?>
+										<?php $persons = (int) ( $b['persons'] ?? 1 ); if ( $persons > 1 ) : ?>
+											<span class="cordespace-persons-badge" style="display:inline-block;background:#e9d8f5;color:#5b2c8f;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Nombre de billets pour cette réservation">🎫 ×<?php echo $persons; ?></span>
+										<?php endif; ?>
 										<?php if ( $is_pending ) : ?>
-											<span style="display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.15rem 0.5rem;border-radius:4px;margin-left:0.4rem;font-weight:700;letter-spacing:0.3px;">⏳ PAIEMENT À VALIDER</span>
+											<span class="cordespace-pending-badge" style="display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.15rem 0.5rem;border-radius:4px;margin-left:0.4rem;font-weight:700;letter-spacing:0.3px;">⏳ PAIEMENT À VALIDER<?php
+											$wc_order_id = (int) ( $b['wc_order_id'] ?? 0 );
+											if ( $wc_order_id > 0 ) {
+												echo ' #' . $wc_order_id;
+											}
+											?></span>
 										<?php endif; ?>
 									</div>
 									<div style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
