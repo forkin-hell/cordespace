@@ -188,8 +188,11 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 
 	foreach ( $events as &$event ) {
 		$bookings = $wpdb->get_results( $wpdb->prepare(
-			"SELECT b.id AS booking_id, b.status, b.persons,
+			"SELECT b.id AS booking_id, b.status,
 					u.firstName, u.lastName, u.email,
+					COALESCE((SELECT SUM(bt.persons)
+					            FROM {$wpdb->prefix}amelia_customer_bookings_to_events_tickets bt
+					           WHERE bt.customerBookingId = b.id), 1) AS persons,
 					(SELECT p.wcOrderId
 					   FROM {$wpdb->prefix}amelia_payments p
 					  WHERE p.customerBookingId = b.id

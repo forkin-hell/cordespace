@@ -43,8 +43,11 @@ function cordespace_render_upcoming_classes_qr( $user ) {
 	$in_24h = gmdate( 'Y-m-d H:i:s', time() + 24 * HOUR_IN_SECONDS );   // UTC
 
 	$bookings = $wpdb->get_results( $wpdb->prepare(
-		"SELECT b.id, b.status, b.persons, b.qrCodes,
-				e.name AS event_name, ep.periodStart, ep.periodEnd
+		"SELECT b.id, b.status, b.qrCodes,
+				e.name AS event_name, ep.periodStart, ep.periodEnd,
+				COALESCE((SELECT SUM(bt.persons)
+				            FROM {$wpdb->prefix}amelia_customer_bookings_to_events_tickets bt
+				           WHERE bt.customerBookingId = b.id), 1) AS persons
 		   FROM {$wpdb->prefix}amelia_customer_bookings b
 		   JOIN {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep ON bep.customerBookingId = b.id
 		   JOIN {$wpdb->prefix}amelia_events_periods ep ON ep.id = bep.eventPeriodId
