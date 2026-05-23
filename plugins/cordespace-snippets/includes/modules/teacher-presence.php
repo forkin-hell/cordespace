@@ -285,10 +285,17 @@ add_action( 'rest_api_init', function () {
 
 /**
  * GET /wp-json/cordespace/v1/checkin-state
- * → { "117": true, "118": false, "122": true }
+ * → { "117": { "present": true, "status": "approved" }, ... }
  *
- * Renvoie l'état checked-in actuel des bookings visibles dans la vue du
- * prof connecté. Utilisé pour le polling JS qui rafraîchit les toggles.
+ * Renvoie l'état actuel des bookings visibles dans la vue du prof connecté :
+ *   - present  : true/false (toggle de check-in)
+ *   - status   : 'pending' / 'approved' / autre (statut Amelia → reflète le
+ *                paiement WC : tant qu'un order WC est pending, le booking
+ *                Amelia est pending ; quand l'order passe à completed/processing,
+ *                l'integration Amelia upgrade le booking à approved)
+ *
+ * Utilisé par le polling JS pour rafraîchir les toggles ET les badges
+ * 'PAIEMENT À VALIDER' sans reload de page.
  */
 function cordespace_rest_checkin_state( $request ) {
 	$user_id = get_current_user_id();
@@ -299,7 +306,10 @@ function cordespace_rest_checkin_state( $request ) {
 	$state  = [];
 	foreach ( $events as $event ) {
 		foreach ( ( $event['bookings'] ?? [] ) as $b ) {
-			$state[ (string) $b['booking_id'] ] = (bool) $b['is_checked_in'];
+			$state[ (string) $b['booking_id'] ] = [
+				'present' => (bool) $b['is_checked_in'],
+				'status'  => (string) ( $b['status'] ?? '' ),
+			];
 		}
 	}
 	return $state;
@@ -614,33 +624,72 @@ function cordespace_render_today_students( $atts ) {
 				var bookingId = String(btn.dataset.bookingId);
 				if (!(bookingId in state)) return;
 
+				var entry = state[bookingId];
+				// Compat ancien format { id: bool } au cas où le serveur n'a pas
+				// encore été redéployé : on lit aussi le boolean direct.
+				var serverPresent, serverStatus;
+				if (typeof entry === 'object' && entry !== null) {
+					serverPresent = !!entry.present;
+					serverStatus  = String(entry.status || '');
+				} else {
+					serverPresent = !!entry;
+					serverStatus  = null;
+				}
+
 				// Ne pas écraser un toggle en mid-transition (track.opacity < 1)
 				var label = btn.closest('.cordespace-checkin-switch');
 				if (!label) return;
 				var track = label.querySelector('.cordespace-switch-track');
 				if (track && track.style.opacity && parseFloat(track.style.opacity) < 1) return;
 
-				var serverPresent = !!state[bookingId];
+				// === SYNC TOGGLE PRÉSENCE ===
 				var domPresent = (btn.dataset.state === 'present');
-				if (serverPresent === domPresent) return; // déjà à jour
+				if (serverPresent !== domPresent) {
+					var labelText = label.querySelector('.cordespace-switch-label');
+					var thumb = track.querySelector('.cordespace-switch-thumb');
+					if (serverPresent) {
+						btn.dataset.state = 'present';
+						btn.checked = true;
+						labelText.textContent = '✅ Présent·e';
+						labelText.style.color = '#5b2c8f';
+						track.style.background = '#5b2c8f';
+						thumb.style.left = '25px';
+					} else {
+						btn.dataset.state = 'not_present';
+						btn.checked = false;
+						labelText.textContent = 'À venir';
+						labelText.style.color = '#888';
+						track.style.background = '#d0d0d0';
+						thumb.style.left = '3px';
+					}
+				}
 
-				// Mise à jour silencieuse (pas d'appel REST, juste alignement DOM)
-				var labelText = label.querySelector('.cordespace-switch-label');
-				var thumb = track.querySelector('.cordespace-switch-thumb');
-				if (serverPresent) {
-					btn.dataset.state = 'present';
-					btn.checked = true;
-					labelText.textContent = '✅ Présent·e';
-					labelText.style.color = '#5b2c8f';
-					track.style.background = '#5b2c8f';
-					thumb.style.left = '25px';
-				} else {
-					btn.dataset.state = 'not_present';
-					btn.checked = false;
-					labelText.textContent = 'À venir';
-					labelText.style.color = '#888';
-					track.style.background = '#d0d0d0';
-					thumb.style.left = '3px';
+				// === SYNC BADGE PENDING (PAIEMENT À VALIDER) ===
+				if (serverStatus !== null) {
+					// On localise la ligne <li> de cette personne pour gérer son badge
+					var li = btn.closest('li');
+					if (li) {
+						var existingBadge = li.querySelector('.cordespace-pending-badge');
+						var shouldShowPending = (serverStatus === 'pending');
+
+						if (shouldShowPending && !existingBadge) {
+							// Badge à AJOUTER : le statut est passé à pending (rare,
+							// mais possible si un staff l'a remis manuellement)
+							var nameDiv = li.querySelector('div > div:first-child');
+							if (nameDiv) {
+								var newBadge = document.createElement('span');
+								newBadge.className = 'cordespace-pending-badge';
+								newBadge.setAttribute('style', 'display:inline-block;background:#f5b800;color:#3a2c00;font-size:0.7em;padding:0.15rem 0.5rem;border-radius:4px;margin-left:0.4rem;font-weight:700;letter-spacing:0.3px;');
+								newBadge.textContent = '⏳ PAIEMENT À VALIDER';
+								nameDiv.appendChild(document.createTextNode(' '));
+								nameDiv.appendChild(newBadge);
+							}
+						} else if (!shouldShowPending && existingBadge) {
+							// Badge à RETIRER : le paiement vient d'être validé
+							// (status passé de 'pending' à 'approved')
+							existingBadge.remove();
+						}
+					}
 				}
 			});
 			updateCounters();
