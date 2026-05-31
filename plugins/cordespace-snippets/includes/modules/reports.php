@@ -1069,8 +1069,8 @@ function cordespace_reports_render_tab_credits(): void {
  *
  * @return array{role: string, prof_name: string}
  */
-function cordespace_reports_detect_user_role( array $caps_serialized, ?int $linked_user_id ): array {
-	$caps_str = (string) ( $caps_serialized ?: '' );
+function cordespace_reports_detect_user_role( string $caps_serialized, ?int $linked_user_id ): array {
+	$caps_str = $caps_serialized;
 	if ( stripos( $caps_str, '"administrator"' ) !== false ) {
 		return [ 'role' => 'admin', 'prof_name' => '' ];
 	}
