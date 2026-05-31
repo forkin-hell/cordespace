@@ -589,16 +589,24 @@ function cordespace_reports_render_page(): void {
 		<style>
 			/* 🦖 Petits dinos cachés et animation de saut au clic CSV.
 			   Scopé à .cordespace-reports-page pour ne pas affecter le reste de l'admin. */
+			@keyframes cordespace-dino-bob {
+				0%, 100% { transform: translateY(0)    rotate(0deg); }
+				25%      { transform: translateY(-3px) rotate(-4deg); }
+				75%      { transform: translateY(-2px) rotate(3deg); }
+			}
 			.cordespace-reports-page .cordespace-dino-hidden {
-				opacity: 0.18;
-				font-size: 0.8em;
+				display: inline-block;
+				opacity: 0.65;
+				font-size: 1.05em;
 				transition: opacity 0.25s, transform 0.25s;
 				cursor: default;
 				vertical-align: middle;
+				animation: cordespace-dino-bob 2.8s ease-in-out infinite;
 			}
 			.cordespace-reports-page .cordespace-dino-hidden:hover {
 				opacity: 1;
-				transform: scale(1.4) rotate(-8deg);
+				transform: scale(1.5) rotate(-10deg);
+				animation: none;
 			}
 			@keyframes cordespace-dino-jump {
 				0%   { transform: translate(-50%, 0)    scale(1);   opacity: 1; }
@@ -1556,7 +1564,7 @@ function cordespace_reports_render_grand_total( array $grand, array $opts = [] )
 	$rank_emoji     = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
 	?>
 	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px; position:relative;">
-		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé <span style="opacity:0.35; font-size:0.65em; vertical-align:middle;" title="rawr">🦖</span></h2>
+		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé <span class="cordespace-dino-hidden" title="rawr">🦖</span></h2>
 
 		<?php if ( ! empty( $top_buyers ) || ! empty( $top_sellers ) ) : ?>
 			<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
