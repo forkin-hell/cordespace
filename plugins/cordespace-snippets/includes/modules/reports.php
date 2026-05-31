@@ -301,6 +301,23 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 }
 
 /**
+ * Catégorise un statut de commande WC pour la ventilation comptable du total :
+ *   - 'real'      : compte dans le chiffre d'affaires réel (encaissé / remboursé)
+ *   - 'pending'   : pronostic — ventes à confirmer (en attente de validation)
+ *   - 'cancelled' : ignoré — jamais encaissé, ni remboursé (0$ d'impact réel)
+ */
+function cordespace_reports_status_category( string $status ): string {
+	if ( in_array( $status, [ 'wc-completed', 'wc-refunded' ], true ) ) {
+		return 'real';
+	}
+	if ( in_array( $status, [ 'wc-cancelled', 'wc-failed' ], true ) ) {
+		return 'cancelled';
+	}
+	// Tout le reste (processing, on-hold, pending, etc.) = pronostic à venir
+	return 'pending';
+}
+
+/**
  * Convertit la méthode de paiement en label court visuellement clair.
  */
 function cordespace_reports_short_payment_label( string $method, string $title ): string {
@@ -340,28 +357,45 @@ function cordespace_reports_get_tax_label( int $rate_id ): string {
  * Agrège les items par section et calcule les totaux.
  */
 function cordespace_reports_compute_totals( array $items ): array {
+	$empty_bucket = [ 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ];
+	$mk_section   = function () use ( $empty_bucket ) {
+		return [
+			'items'     => [],
+			'real'      => $empty_bucket,
+			'pending'   => $empty_bucket,
+			'cancelled' => $empty_bucket,
+		];
+	};
 	$sections = [
-		'boutique' => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
-		'cours'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
-		'salle'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
+		'boutique' => $mk_section(),
+		'cours'    => $mk_section(),
+		'salle'    => $mk_section(),
 	];
+
 	foreach ( $items as $it ) {
-		$s = $it['section'];
-		$sections[ $s ]['items'][]   = $it;
-		$sections[ $s ]['qty']      += $it['qty'];
-		$sections[ $s ]['subtotal'] += $it['subtotal'];
-		$sections[ $s ]['tps']      += $it['tps'];
-		$sections[ $s ]['tvq']      += $it['tvq'];
-		$sections[ $s ]['total']    += $it['total'];
+		$s   = $it['section'];
+		$cat = cordespace_reports_status_category( $it['status'] );
+		$sections[ $s ]['items'][] = $it;
+		foreach ( [ 'qty', 'subtotal', 'tps', 'tvq', 'total' ] as $k ) {
+			$sections[ $s ][ $cat ][ $k ] += $it[ $k ];
+		}
 	}
-	$grand_total = [
-		'qty'      => array_sum( array_column( $sections, 'qty' ) ),
-		'subtotal' => array_sum( array_column( $sections, 'subtotal' ) ),
-		'tps'      => array_sum( array_column( $sections, 'tps' ) ),
-		'tvq'      => array_sum( array_column( $sections, 'tvq' ) ),
-		'total'    => array_sum( array_column( $sections, 'total' ) ),
+
+	// Total général ventilé par catégorie compta
+	$grand = [
+		'real'      => $empty_bucket,
+		'pending'   => $empty_bucket,
+		'cancelled' => $empty_bucket,
 	];
-	return [ 'sections' => $sections, 'grand' => $grand_total ];
+	foreach ( $sections as $s ) {
+		foreach ( [ 'real', 'pending', 'cancelled' ] as $cat ) {
+			foreach ( [ 'qty', 'subtotal', 'tps', 'tvq', 'total' ] as $k ) {
+				$grand[ $cat ][ $k ] += $s[ $cat ][ $k ];
+			}
+		}
+	}
+
+	return [ 'sections' => $sections, 'grand' => $grand ];
 }
 
 // ============================================================================
@@ -492,27 +526,73 @@ function cordespace_reports_render_page(): void {
 
 function cordespace_reports_render_grand_total( array $grand ): void {
 	?>
-	<div style="margin-top:1.5rem; padding:1.5rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
-		<h2 style="margin:0 0 0.6rem; color:#fff; font-size:1.3em;">💰 Total général</h2>
-		<div style="display:flex; flex-wrap:wrap; gap:1.5rem;">
-			<div><span style="opacity:0.7; font-size:0.85em; display:block;">Sous-total</span><strong style="font-size:1.4em;"><?php echo number_format( $grand['subtotal'], 2, ',', ' ' ); ?> $</strong></div>
-			<div><span style="opacity:0.7; font-size:0.85em; display:block;">TPS</span><strong style="font-size:1.4em;"><?php echo number_format( $grand['tps'], 2, ',', ' ' ); ?> $</strong></div>
-			<div><span style="opacity:0.7; font-size:0.85em; display:block;">TVQ</span><strong style="font-size:1.4em;"><?php echo number_format( $grand['tvq'], 2, ',', ' ' ); ?> $</strong></div>
-			<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.5rem;"><span style="opacity:0.7; font-size:0.85em; display:block;">Total TTC</span><strong style="font-size:1.6em;"><?php echo number_format( $grand['total'], 2, ',', ' ' ); ?> $</strong></div>
+	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
+		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé</h2>
+
+		<!-- BLOC 1 : RÉEL (compta) -->
+		<div style="margin-bottom:1rem;">
+			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
+				<strong style="font-size:1.05em;">✅ Réel comptable</strong>
+				<span style="opacity:0.7; font-size:0.85em;">— Complétées + Remboursées (ce qui a effectivement été encaissé)</span>
+			</div>
+			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; padding-left:0.5rem;">
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">Sous-total</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['real']['subtotal'], 2, ',', ' ' ); ?> $</strong></div>
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TPS</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['real']['tps'], 2, ',', ' ' ); ?> $</strong></div>
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TVQ</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['real']['tvq'], 2, ',', ' ' ); ?> $</strong></div>
+				<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.2rem;"><span style="opacity:0.7; font-size:0.8em; display:block;">Total TTC</span><strong style="font-size:1.5em;"><?php echo number_format( $grand['real']['total'], 2, ',', ' ' ); ?> $</strong></div>
+			</div>
+		</div>
+
+		<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
+
+		<!-- BLOC 2 : PRONOSTIC -->
+		<div style="margin-bottom:1rem;">
+			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
+				<strong style="font-size:1.05em;">🔮 Pronostic à venir</strong>
+				<span style="opacity:0.7; font-size:0.85em;">— En cours + En attente + Attente paiement (à confirmer)</span>
+			</div>
+			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; padding-left:0.5rem;">
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">Sous-total</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['subtotal'], 2, ',', ' ' ); ?> $</strong></div>
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TPS</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tps'], 2, ',', ' ' ); ?> $</strong></div>
+				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TVQ</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tvq'], 2, ',', ' ' ); ?> $</strong></div>
+				<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.2rem;"><span style="opacity:0.7; font-size:0.8em; display:block;">Total TTC</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['pending']['total'], 2, ',', ' ' ); ?> $</strong></div>
+			</div>
+		</div>
+
+		<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
+
+		<!-- BLOC 3 : ANNULÉES (info seulement) -->
+		<div>
+			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
+				<strong style="font-size:1em; opacity:0.85;">🚫 Annulées (info seulement)</strong>
+				<span style="opacity:0.65; font-size:0.85em;">— Jamais encaissées, exclues des totaux ci-dessus</span>
+			</div>
+			<div style="padding-left:0.5rem; opacity:0.85;">
+				<span style="font-size:0.95em;">Montant total annulé (n'impacte rien) :</span>
+				<strong style="font-size:1.1em; margin-left:0.4rem;"><?php echo number_format( $grand['cancelled']['total'], 2, ',', ' ' ); ?> $</strong>
+			</div>
 		</div>
 	</div>
 	<?php
 }
 
 function cordespace_reports_render_section( string $title, array $section, string $key ): void {
+	$real    = $section['real'];
+	$pending = $section['pending'];
+	$cancel  = $section['cancelled'];
 	?>
 	<div style="margin-top:1.8rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
-		<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem;">
+		<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.8rem; flex-wrap:wrap; gap:0.6rem;">
 			<h2 style="margin:0; font-size:1.2em;"><?php echo esc_html( $title ); ?></h2>
-			<div style="color:#555; font-size:0.95em;">
-				<?php echo count( $section['items'] ); ?> lignes
-				·
-				<strong><?php echo number_format( $section['total'], 2, ',', ' ' ); ?> $</strong>
+			<div style="color:#555; font-size:0.9em; display:flex; gap:1rem; flex-wrap:wrap;">
+				<span><?php echo count( $section['items'] ); ?> lignes</span>
+				<span style="color:#2a7a2a;">✅ Réel : <strong><?php echo number_format( $real['total'], 2, ',', ' ' ); ?> $</strong></span>
+				<?php if ( $pending['total'] != 0 ) : ?>
+					<span style="color:#7a5d00;">🔮 Pronostic : <strong><?php echo number_format( $pending['total'], 2, ',', ' ' ); ?> $</strong></span>
+				<?php endif; ?>
+				<?php if ( $cancel['total'] != 0 ) : ?>
+					<span style="color:#999;">🚫 Annulé : <?php echo number_format( $cancel['total'], 2, ',', ' ' ); ?> $</span>
+				<?php endif; ?>
 			</div>
 		</div>
 
@@ -569,13 +649,31 @@ function cordespace_reports_render_section( string $title, array $section, strin
 							<td style="text-align:right; font-weight:600;"><?php echo number_format( $it['total'], 2, ',', ' ' ); ?></td>
 						</tr>
 					<?php endforeach; ?>
-					<tr style="background:#f7f7f7; font-weight:700;">
-						<td colspan="<?php echo $colspan_offset; ?>" style="text-align:right;">Sous-totaux section :</td>
-						<td style="text-align:right;"><?php echo number_format( $section['subtotal'], 2, ',', ' ' ); ?></td>
-						<td style="text-align:right;"><?php echo number_format( $section['tps'], 2, ',', ' ' ); ?></td>
-						<td style="text-align:right;"><?php echo number_format( $section['tvq'], 2, ',', ' ' ); ?></td>
-						<td style="text-align:right;"><?php echo number_format( $section['total'], 2, ',', ' ' ); ?></td>
+					<tr style="background:#eef9ee; font-weight:700;">
+						<td colspan="<?php echo $colspan_offset; ?>" style="text-align:right; color:#2a7a2a;">✅ Sous-total RÉEL (Complétées + Remboursées) :</td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $real['subtotal'], 2, ',', ' ' ); ?></td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $real['tps'], 2, ',', ' ' ); ?></td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $real['tvq'], 2, ',', ' ' ); ?></td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $real['total'], 2, ',', ' ' ); ?></td>
 					</tr>
+					<?php if ( $pending['total'] != 0 ) : ?>
+						<tr style="background:#fff8e6; font-weight:600; font-size:0.92em;">
+							<td colspan="<?php echo $colspan_offset; ?>" style="text-align:right; color:#7a5d00;">🔮 Sous-total PRONOSTIC (En cours, En attente, Attente paiement) :</td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $pending['subtotal'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $pending['tps'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $pending['tvq'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $pending['total'], 2, ',', ' ' ); ?></td>
+						</tr>
+					<?php endif; ?>
+					<?php if ( $cancel['total'] != 0 ) : ?>
+						<tr style="background:#f7f7f7; font-weight:600; font-size:0.88em; color:#999;">
+							<td colspan="<?php echo $colspan_offset; ?>" style="text-align:right;">🚫 Sous-total ANNULÉ (info seulement, non compté) :</td>
+							<td style="text-align:right;"><?php echo number_format( $cancel['subtotal'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right;"><?php echo number_format( $cancel['tps'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right;"><?php echo number_format( $cancel['tvq'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right;"><?php echo number_format( $cancel['total'], 2, ',', ' ' ); ?></td>
+						</tr>
+					<?php endif; ?>
 				</tbody>
 			</table>
 		<?php endif; ?>
@@ -623,23 +721,27 @@ function cordespace_reports_handle_csv_export(): void {
 	// BOM UTF-8 pour Excel
 	fwrite( $out, "\xEF\xBB\xBF" );
 
-	// Header (avec colonne Paiement)
+	// Header (avec colonnes Catégorie compta + Paiement)
 	fputcsv( $out, [
-		'Section', 'Date', 'N° Commande', 'Remboursement', 'Statut', 'Paiement',
-		'Client', 'Courriel', 'Détail', 'Date événement', 'Qté',
-		'Sous-total', 'TPS', 'TVQ', 'Total',
+		'Section', 'Catégorie compta', 'Date', 'N° Commande', 'Remboursement',
+		'Statut', 'Paiement', 'Client', 'Courriel', 'Détail', 'Date événement',
+		'Qté', 'Sous-total', 'TPS', 'TVQ', 'Total',
 	], ';' );
 
-	$status_labels = wc_get_order_statuses();
-	$section_labels = [
-		'boutique' => 'Boutique',
-		'cours'    => 'Cours',
-		'salle'    => 'Salle',
+	$status_labels   = wc_get_order_statuses();
+	$section_labels  = [ 'boutique' => 'Boutique', 'cours' => 'Cours', 'salle' => 'Salle' ];
+	$category_labels = [
+		'real'      => 'Réel',
+		'pending'   => 'Pronostic',
+		'cancelled' => 'Annulé',
 	];
+
 	foreach ( [ 'boutique', 'cours', 'salle' ] as $sec ) {
 		foreach ( $totals['sections'][ $sec ]['items'] as $it ) {
+			$cat = cordespace_reports_status_category( $it['status'] );
 			fputcsv( $out, [
 				$section_labels[ $sec ],
+				$category_labels[ $cat ],
 				mysql2date( 'Y-m-d', $it['date'] ),
 				'#' . ( $it['reference_order_id'] ?? $it['order_id'] ),
 				$it['is_refund'] ? 'OUI' : '',
@@ -656,28 +758,36 @@ function cordespace_reports_handle_csv_export(): void {
 				number_format( $it['total'], 2, '.', '' ),
 			], ';' );
 		}
-		// Ligne de sous-total section
-		$s = $totals['sections'][ $sec ];
-		fputcsv( $out, [
-			'Sous-total ' . $section_labels[ $sec ], '', '', '', '', '', '', '', '', '',
-			(int) $s['qty'],
-			number_format( $s['subtotal'], 2, '.', '' ),
-			number_format( $s['tps'], 2, '.', '' ),
-			number_format( $s['tvq'], 2, '.', '' ),
-			number_format( $s['total'], 2, '.', '' ),
-		], ';' );
+		// Sous-totaux par catégorie pour cette section
+		foreach ( [ 'real', 'pending', 'cancelled' ] as $cat ) {
+			$b = $totals['sections'][ $sec ][ $cat ];
+			if ( $b['total'] == 0 && $b['qty'] == 0 ) continue;
+			fputcsv( $out, [
+				'Sous-total ' . $section_labels[ $sec ] . ' (' . $category_labels[ $cat ] . ')',
+				$category_labels[ $cat ], '', '', '', '', '', '', '', '', '',
+				(int) $b['qty'],
+				number_format( $b['subtotal'], 2, '.', '' ),
+				number_format( $b['tps'], 2, '.', '' ),
+				number_format( $b['tvq'], 2, '.', '' ),
+				number_format( $b['total'], 2, '.', '' ),
+			], ';' );
+		}
 		fputcsv( $out, [], ';' ); // ligne vide entre sections
 	}
 
-	// Total général
-	fputcsv( $out, [
-		'TOTAL GÉNÉRAL NET', '', '', '', '', '', '', '', '', '',
-		(int) $totals['grand']['qty'],
-		number_format( $totals['grand']['subtotal'], 2, '.', '' ),
-		number_format( $totals['grand']['tps'], 2, '.', '' ),
-		number_format( $totals['grand']['tvq'], 2, '.', '' ),
-		number_format( $totals['grand']['total'], 2, '.', '' ),
-	], ';' );
+	// Totaux généraux ventilés
+	foreach ( [ 'real', 'pending', 'cancelled' ] as $cat ) {
+		$b = $totals['grand'][ $cat ];
+		fputcsv( $out, [
+			'TOTAL GÉNÉRAL ' . strtoupper( $category_labels[ $cat ] ),
+			$category_labels[ $cat ], '', '', '', '', '', '', '', '', '',
+			(int) $b['qty'],
+			number_format( $b['subtotal'], 2, '.', '' ),
+			number_format( $b['tps'], 2, '.', '' ),
+			number_format( $b['tvq'], 2, '.', '' ),
+			number_format( $b['total'], 2, '.', '' ),
+		], ';' );
+	}
 
 	fclose( $out );
 	exit;
