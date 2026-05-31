@@ -106,8 +106,12 @@ function cordespace_reports_get_available_statuses(): array {
 }
 
 /**
- * Récupère les line_items des commandes WC pour la période et les statuts donnés.
- * Retourne un tableau riche par item, déjà classé (section: boutique|cours|salle).
+ * Récupère les line_items des commandes WC + remboursements pour la période
+ * et les statuts donnés. Classe chaque item dans une section :
+ *   - 'boutique'  : produit WC physique (cordes, livres, etc.)
+ *   - 'cours'     : booking Amelia type='event'
+ *   - 'salle'     : booking Amelia type='appointment'
+ *   - 'refund'    : ligne de remboursement (type WC shop_order_refund)
  *
  * @return array<int, array<string,mixed>>
  */
@@ -121,14 +125,21 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 	// Échappe les statuts pour SQL IN(...)
 	$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
 
+	// On inclut shop_order ET shop_order_refund (les remboursements créent
+	// une "commande" séparée liée à la commande originale via parent_order_id).
+	// Pour les refunds, on utilise la date du refund et le statut du parent.
 	$sql = $wpdb->prepare(
 		"SELECT
 			o.id AS order_id,
-			o.status,
+			o.type AS order_type,
+			COALESCE(parent.status, o.status) AS status,
 			o.date_created_gmt,
-			o.billing_email,
-			oa.first_name,
-			oa.last_name,
+			COALESCE(parent.id, o.id) AS reference_order_id,
+			COALESCE(parent.payment_method_title, o.payment_method_title) AS payment_method_title,
+			COALESCE(parent.payment_method, o.payment_method) AS payment_method,
+			COALESCE(parent_oa.first_name, oa.first_name) AS first_name,
+			COALESCE(parent_oa.last_name, oa.last_name) AS last_name,
+			COALESCE(parent.billing_email, o.billing_email) AS billing_email,
 			oi.order_item_id,
 			oi.order_item_name,
 			MAX(CASE WHEN oim.meta_key = '_product_id'   THEN oim.meta_value END) AS product_id,
@@ -139,17 +150,21 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 			MAX(CASE WHEN oim.meta_key = '_line_tax_data' THEN oim.meta_value END) AS line_tax_data,
 			MAX(CASE WHEN oim.meta_key = 'ameliabooking' THEN oim.meta_value END) AS ameliabooking_raw
 		   FROM {$wpdb->prefix}wc_orders o
+		   LEFT JOIN {$wpdb->prefix}wc_orders parent ON parent.id = o.parent_order_id
 		   LEFT JOIN {$wpdb->prefix}wc_order_addresses oa
 		          ON oa.order_id = o.id AND oa.address_type = 'billing'
+		   LEFT JOIN {$wpdb->prefix}wc_order_addresses parent_oa
+		          ON parent_oa.order_id = parent.id AND parent_oa.address_type = 'billing'
 		   JOIN {$wpdb->prefix}woocommerce_order_items oi
 		          ON oi.order_id = o.id AND oi.order_item_type = 'line_item'
 		   JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim
 		          ON oim.order_item_id = oi.order_item_id
 		  WHERE o.date_created_gmt BETWEEN %s AND %s
-		    AND o.status IN ($status_placeholders)
+		    AND o.type IN ('shop_order', 'shop_order_refund')
+		    AND (o.status IN ($status_placeholders) OR (o.type = 'shop_order_refund' AND parent.status IN ($status_placeholders)))
 		  GROUP BY o.id, oi.order_item_id
 		  ORDER BY o.date_created_gmt ASC, o.id ASC, oi.order_item_id ASC",
-		array_merge( [ $start, $end ], $statuses )
+		array_merge( [ $start, $end ], $statuses, $statuses )
 	);
 
 	$rows = $wpdb->get_results( $sql, ARRAY_A );
@@ -162,13 +177,21 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		$ameliabooking = ! empty( $r['ameliabooking_raw'] ) ? @unserialize( $r['ameliabooking_raw'] ) : null;
 		$ameliabooking = is_array( $ameliabooking ) ? $ameliabooking : null;
 
-		$type = $ameliabooking['type'] ?? null;
-		if ( $type === 'event' ) {
-			$section = 'cours';
-		} elseif ( $type === 'appointment' ) {
-			$section = 'salle';
+		// Classification :
+		// 1) Si c'est un remboursement (shop_order_refund) → section refund
+		// 2) Sinon, si meta ameliabooking présente → event/appointment
+		// 3) Sinon → boutique
+		if ( ( $r['order_type'] ?? '' ) === 'shop_order_refund' ) {
+			$section = 'refund';
 		} else {
-			$section = 'boutique';
+			$type = $ameliabooking['type'] ?? null;
+			if ( $type === 'event' ) {
+				$section = 'cours';
+			} elseif ( $type === 'appointment' ) {
+				$section = 'salle';
+			} else {
+				$section = 'boutique';
+			}
 		}
 
 		// Nom détaillé : pour les Amelia, c'est le nom du service/event (pas le produit-coquille)
@@ -206,25 +229,49 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		}
 
 		$items[] = [
-			'section'     => $section,
-			'order_id'    => (int) $r['order_id'],
-			'status'      => (string) $r['status'],
-			'date'        => (string) $r['date_created_gmt'],
-			'client_name' => $client_name,
-			'client_email'=> (string) ( $r['billing_email'] ?? '' ),
-			'item_name'   => (string) $r['order_item_name'],
-			'detail_name' => (string) $detail_name,
-			'detail_date' => $detail_date,
-			'qty'         => (float) ( $r['qty'] ?? 1 ),
-			'subtotal'    => (float) ( $r['line_subtotal'] ?? 0 ),
-			'tps'         => round( $tps, 2 ),
-			'tvq'         => round( $tvq, 2 ),
-			'total'       => (float) ( $r['line_total'] ?? 0 ) + (float) ( $r['line_tax'] ?? 0 ),
-			'product_id'  => (int) ( $r['product_id'] ?? 0 ),
+			'section'         => $section,
+			'order_id'        => (int) $r['order_id'],
+			'reference_order_id' => (int) ( $r['reference_order_id'] ?? $r['order_id'] ),
+			'is_refund'       => ( $r['order_type'] ?? '' ) === 'shop_order_refund',
+			'status'          => (string) $r['status'],
+			'date'            => (string) $r['date_created_gmt'],
+			'client_name'     => $client_name,
+			'client_email'    => (string) ( $r['billing_email'] ?? '' ),
+			'item_name'       => (string) $r['order_item_name'],
+			'detail_name'     => (string) $detail_name,
+			'detail_date'     => $detail_date,
+			'qty'             => (float) ( $r['qty'] ?? 1 ),
+			'subtotal'        => (float) ( $r['line_subtotal'] ?? 0 ),
+			'tps'             => round( $tps, 2 ),
+			'tvq'             => round( $tvq, 2 ),
+			'total'           => (float) ( $r['line_total'] ?? 0 ) + (float) ( $r['line_tax'] ?? 0 ),
+			'product_id'      => (int) ( $r['product_id'] ?? 0 ),
+			'payment_method'  => (string) ( $r['payment_method'] ?? '' ),
+			'payment_label'   => cordespace_reports_short_payment_label( (string) ( $r['payment_method'] ?? '' ), (string) ( $r['payment_method_title'] ?? '' ) ),
 		];
 	}
 
 	return $items;
+}
+
+/**
+ * Convertit la méthode de paiement en label court visuellement clair.
+ */
+function cordespace_reports_short_payment_label( string $method, string $title ): string {
+	$method = strtolower( $method );
+	if ( $method === 'mycred' ) {
+		return '💳 Crédits';
+	}
+	if ( $method === 'advanced_emt' || stripos( $title, 'interac' ) !== false || stripos( $title, 'virement' ) !== false ) {
+		return '💵 Interac';
+	}
+	if ( $method === 'cod' ) {
+		return '💵 Sur place / Interac';
+	}
+	if ( $title !== '' ) {
+		return $title;
+	}
+	return $method !== '' ? $method : '—';
 }
 
 /**
@@ -251,6 +298,7 @@ function cordespace_reports_compute_totals( array $items ): array {
 		'boutique' => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 		'cours'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 		'salle'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
+		'refund'   => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 	];
 	foreach ( $items as $it ) {
 		$s = $it['section'];
@@ -283,9 +331,16 @@ function cordespace_reports_render_page(): void {
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
 	$custom_start     = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
-	$selected_statuses = isset( $_GET['statuses'] ) && is_array( $_GET['statuses'] )
+
+	$available_statuses_for_default = cordespace_reports_get_available_statuses();
+	$default_all_statuses           = array_keys( $available_statuses_for_default );
+
+	// Si pas de filtre statut explicite dans l'URL → cocher TOUS les statuts disponibles par défaut
+	// (Hanna doit voir tout par défaut, puis filtrer à la baisse si elle veut)
+	$has_explicit_filter = isset( $_GET['filtered'] ) && $_GET['filtered'] === '1';
+	$selected_statuses   = isset( $_GET['statuses'] ) && is_array( $_GET['statuses'] )
 		? array_map( 'sanitize_text_field', wp_unslash( $_GET['statuses'] ) )
-		: [ 'wc-completed' ];
+		: ( $has_explicit_filter ? [] : $default_all_statuses );
 
 	// Calcul de la période effective
 	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
@@ -297,7 +352,7 @@ function cordespace_reports_render_page(): void {
 		$range = cordespace_reports_get_preset_range( $preset );
 	}
 
-	$available_statuses = cordespace_reports_get_available_statuses();
+	$available_statuses = $available_statuses_for_default;
 	$items              = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses );
 	$totals             = cordespace_reports_compute_totals( $items );
 
@@ -313,8 +368,13 @@ function cordespace_reports_render_page(): void {
 		<h1>📊 Rapports — Cordespace</h1>
 		<p style="color:#666;">Rapport unifié des ventes (boutique + cours + salles) sur une période donnée, calculé depuis les vrais montants WooCommerce.</p>
 
+		<div style="margin-top:0.8rem; padding:0.8rem 1.1rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00; font-size:0.92em;">
+			<strong>💡 À savoir</strong> — Les paniers abandonnés (statut "checkout-draft") et la corbeille sont automatiquement exclus du rapport (ce ne sont pas de vraies ventes). Si tu veux les inclure, dis-moi.
+		</div>
+
 		<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
 			<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
+			<input type="hidden" name="filtered" value="1">
 
 			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
 				<!-- Période -->
@@ -376,6 +436,7 @@ function cordespace_reports_render_page(): void {
 		<?php cordespace_reports_render_section( '📚 Boutique', $totals['sections']['boutique'], 'boutique' ); ?>
 		<?php cordespace_reports_render_section( '🎓 Cours', $totals['sections']['cours'], 'cours' ); ?>
 		<?php cordespace_reports_render_section( '🏠 Salles', $totals['sections']['salle'], 'salle' ); ?>
+		<?php cordespace_reports_render_section( '💸 Remboursements', $totals['sections']['refund'], 'refund' ); ?>
 	</div>
 	<?php
 }
@@ -409,15 +470,20 @@ function cordespace_reports_render_section( string $title, array $section, strin
 		<?php if ( empty( $section['items'] ) ) : ?>
 			<p style="color:#999; font-style:italic; margin:0;">Aucune vente dans cette section pour la période.</p>
 		<?php else : ?>
+			<?php
+			$has_event_date = ( $key === 'cours' || $key === 'salle' );
+			$colspan_offset = $has_event_date ? 8 : 7;
+			?>
 			<table class="widefat striped" style="font-size:0.9em;">
 				<thead>
 					<tr>
 						<th>Date</th>
 						<th># Cde</th>
 						<th>Statut</th>
+						<th>Paiement</th>
 						<th>Client</th>
-						<th><?php echo $key === 'boutique' ? 'Produit' : ( $key === 'cours' ? 'Cours' : 'Salle' ); ?></th>
-						<?php if ( $key !== 'boutique' ) : ?>
+						<th><?php echo $key === 'boutique' ? 'Produit' : ( $key === 'cours' ? 'Cours' : ( $key === 'salle' ? 'Salle' : 'Item remboursé' ) ); ?></th>
+						<?php if ( $has_event_date ) : ?>
 							<th>Date événement</th>
 						<?php endif; ?>
 						<th style="text-align:right;">Qté</th>
@@ -430,14 +496,21 @@ function cordespace_reports_render_section( string $title, array $section, strin
 				<tbody>
 					<?php foreach ( $section['items'] as $it ) :
 						$status_label = wc_get_order_statuses()[ $it['status'] ] ?? $it['status'];
+						$ref_id       = $it['reference_order_id'] ?? $it['order_id'];
 						?>
-						<tr>
+						<tr<?php echo $it['is_refund'] ? ' style="background:#fdecea;"' : ''; ?>>
 							<td><?php echo esc_html( mysql2date( 'Y-m-d', $it['date'] ) ); ?></td>
-							<td><a href="<?php echo esc_url( admin_url( 'admin.php?page=wc-orders&action=edit&id=' . $it['order_id'] ) ); ?>">#<?php echo (int) $it['order_id']; ?></a></td>
+							<td>
+								<a href="<?php echo esc_url( admin_url( 'admin.php?page=wc-orders&action=edit&id=' . $ref_id ) ); ?>">#<?php echo (int) $ref_id; ?></a>
+								<?php if ( $it['is_refund'] ) : ?>
+									<span style="font-size:0.85em; color:#999;">↩</span>
+								<?php endif; ?>
+							</td>
 							<td><?php echo esc_html( $status_label ); ?></td>
+							<td><?php echo esc_html( $it['payment_label'] ?? '—' ); ?></td>
 							<td><?php echo esc_html( $it['client_name'] ); ?></td>
 							<td><?php echo esc_html( $it['detail_name'] ); ?></td>
-							<?php if ( $key !== 'boutique' ) : ?>
+							<?php if ( $has_event_date ) : ?>
 								<td><?php echo esc_html( $it['detail_date'] !== '' ? mysql2date( 'Y-m-d H\hi', $it['detail_date'] ) : '—' ); ?></td>
 							<?php endif; ?>
 							<td style="text-align:right;"><?php echo (int) $it['qty']; ?></td>
@@ -448,7 +521,7 @@ function cordespace_reports_render_section( string $title, array $section, strin
 						</tr>
 					<?php endforeach; ?>
 					<tr style="background:#f7f7f7; font-weight:700;">
-						<td colspan="<?php echo $key === 'boutique' ? 6 : 7; ?>" style="text-align:right;">Sous-totaux section :</td>
+						<td colspan="<?php echo $colspan_offset; ?>" style="text-align:right;">Sous-totaux section :</td>
 						<td style="text-align:right;"><?php echo number_format( $section['subtotal'], 2, ',', ' ' ); ?></td>
 						<td style="text-align:right;"><?php echo number_format( $section['tps'], 2, ',', ' ' ); ?></td>
 						<td style="text-align:right;"><?php echo number_format( $section['tvq'], 2, ',', ' ' ); ?></td>
@@ -501,20 +574,29 @@ function cordespace_reports_handle_csv_export(): void {
 	// BOM UTF-8 pour Excel
 	fwrite( $out, "\xEF\xBB\xBF" );
 
-	// Header
+	// Header (avec colonne Paiement)
 	fputcsv( $out, [
-		'Section', 'Date', 'N° Commande', 'Statut', 'Client', 'Courriel',
-		'Détail', 'Date événement', 'Qté', 'Sous-total', 'TPS', 'TVQ', 'Total',
+		'Section', 'Date', 'N° Commande', 'Remboursement', 'Statut', 'Paiement',
+		'Client', 'Courriel', 'Détail', 'Date événement', 'Qté',
+		'Sous-total', 'TPS', 'TVQ', 'Total',
 	], ';' );
 
 	$status_labels = wc_get_order_statuses();
-	foreach ( [ 'boutique', 'cours', 'salle' ] as $sec ) {
+	$section_labels = [
+		'boutique' => 'Boutique',
+		'cours'    => 'Cours',
+		'salle'    => 'Salle',
+		'refund'   => 'Remboursement',
+	];
+	foreach ( [ 'boutique', 'cours', 'salle', 'refund' ] as $sec ) {
 		foreach ( $totals['sections'][ $sec ]['items'] as $it ) {
 			fputcsv( $out, [
-				ucfirst( $sec ),
+				$section_labels[ $sec ],
 				mysql2date( 'Y-m-d', $it['date'] ),
-				'#' . $it['order_id'],
+				'#' . ( $it['reference_order_id'] ?? $it['order_id'] ),
+				$it['is_refund'] ? 'OUI' : '',
 				$status_labels[ $it['status'] ] ?? $it['status'],
+				$it['payment_label'] ?? '',
 				$it['client_name'],
 				$it['client_email'],
 				$it['detail_name'],
@@ -529,7 +611,7 @@ function cordespace_reports_handle_csv_export(): void {
 		// Ligne de sous-total section
 		$s = $totals['sections'][ $sec ];
 		fputcsv( $out, [
-			'Sous-total ' . ucfirst( $sec ), '', '', '', '', '', '', '',
+			'Sous-total ' . $section_labels[ $sec ], '', '', '', '', '', '', '', '', '',
 			(int) $s['qty'],
 			number_format( $s['subtotal'], 2, '.', '' ),
 			number_format( $s['tps'], 2, '.', '' ),
@@ -541,7 +623,7 @@ function cordespace_reports_handle_csv_export(): void {
 
 	// Total général
 	fputcsv( $out, [
-		'TOTAL GÉNÉRAL', '', '', '', '', '', '', '',
+		'TOTAL GÉNÉRAL NET', '', '', '', '', '', '', '', '', '',
 		(int) $totals['grand']['qty'],
 		number_format( $totals['grand']['subtotal'], 2, '.', '' ),
 		number_format( $totals['grand']['tps'], 2, '.', '' ),
