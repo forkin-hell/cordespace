@@ -425,6 +425,179 @@ function cordespace_reports_compute_totals( array $items ): array {
 	return [ 'sections' => $sections, 'grand' => $grand ];
 }
 
+/**
+ * Top N acheteurs sur la période, en agrégeant les items "réel comptable"
+ * (wc-completed + wc-refunded) par client (email prioritaire, fallback name).
+ * Net spend = somme des totals (les remboursements ont total négatif → soustraction).
+ *
+ * @return array<int, array{name:string, email:string, spent:float, order_count:int}>
+ */
+function cordespace_reports_compute_top_buyers( array $items, int $top_n = 5 ): array {
+	$by_client = [];
+	foreach ( $items as $it ) {
+		if ( ! in_array( $it['status'], [ 'wc-completed', 'wc-refunded' ], true ) ) {
+			continue;
+		}
+		$key = $it['client_email'] !== ''
+			? mb_strtolower( $it['client_email'] )
+			: mb_strtolower( $it['client_name'] );
+		if ( $key === '' ) {
+			continue;
+		}
+		if ( ! isset( $by_client[ $key ] ) ) {
+			$by_client[ $key ] = [
+				'name'       => $it['client_name'] !== '' ? $it['client_name'] : $it['client_email'],
+				'email'      => $it['client_email'],
+				'spent'      => 0.0,
+				'_order_ids' => [],
+			];
+		}
+		$by_client[ $key ]['spent']                                       += $it['total'];
+		$by_client[ $key ]['_order_ids'][ $it['reference_order_id'] ] = true;
+	}
+	foreach ( $by_client as &$c ) {
+		$c['order_count'] = count( $c['_order_ids'] );
+		unset( $c['_order_ids'] );
+	}
+	unset( $c );
+
+	uasort( $by_client, fn( $a, $b ) => $b['spent'] <=> $a['spent'] );
+	return array_slice( array_values( $by_client ), 0, $top_n );
+}
+
+/**
+ * Top N produits par occurrences (= dans combien de commandes distinctes
+ * il apparaît) sur la période. "Réel comptable" seulement + on exclut les
+ * lignes de remboursement (qui ne sont pas des "ventes").
+ * Pour les items Amelia (cours/salles), on regroupe par detail_name (= nom
+ * du cours/salle), pas par item_name (nom de la coquille WC).
+ *
+ * @return array<int, array{name:string, section:string, occurrences:int, qty_total:int}>
+ */
+function cordespace_reports_compute_top_sellers( array $items, int $top_n = 5 ): array {
+	$by_product = [];
+	foreach ( $items as $it ) {
+		if ( ! in_array( $it['status'], [ 'wc-completed', 'wc-refunded' ], true ) ) {
+			continue;
+		}
+		if ( ! empty( $it['is_refund'] ) ) {
+			continue;
+		}
+		$key = $it['detail_name'] !== '' ? $it['detail_name'] : $it['item_name'];
+		if ( $key === '' ) {
+			continue;
+		}
+		if ( ! isset( $by_product[ $key ] ) ) {
+			$by_product[ $key ] = [
+				'name'        => $key,
+				'section'     => $it['section'],
+				'occurrences' => 0,
+				'qty_total'   => 0,
+			];
+		}
+		$by_product[ $key ]['occurrences'] += 1;
+		$by_product[ $key ]['qty_total']   += (int) $it['qty'];
+	}
+
+	uasort( $by_product, fn( $a, $b ) => $b['occurrences'] <=> $a['occurrences'] );
+	return array_slice( array_values( $by_product ), 0, $top_n );
+}
+
+/**
+ * Rendu visuel : 2 cartes côte-à-côte (Top acheteurs + Top ventes).
+ */
+function cordespace_reports_render_top_performers( array $top_buyers, array $top_sellers ): void {
+	if ( empty( $top_buyers ) && empty( $top_sellers ) ) {
+		return;
+	}
+	$section_emoji = [ 'boutique' => '🛍️', 'cours' => '🎓', 'salle' => '🏠' ];
+	$rank_emoji    = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
+	?>
+	<div style="margin-top:1.5rem; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:1.2rem;">
+		<!-- Top acheteurs -->
+		<div style="padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+			<h3 style="margin:0 0 0.8rem; font-size:1.1em;">🏆 Top 5 acheteurs <span style="color:#999; font-size:0.8em; font-weight:normal;">(réel comptable)</span></h3>
+			<?php if ( empty( $top_buyers ) ) : ?>
+				<p style="color:#999; font-style:italic; margin:0;">Aucune donnée sur cette période.</p>
+			<?php else : ?>
+				<ol style="margin:0; padding:0; list-style:none;">
+					<?php foreach ( $top_buyers as $i => $b ) : $rank = $i + 1; ?>
+						<li style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid #f0f0f0;">
+							<span style="min-width:1.5em; font-size:1.1em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+							<span style="flex:1; min-width:0;">
+								<strong><?php echo esc_html( $b['name'] ); ?></strong>
+								<br><span style="color:#999; font-size:0.82em;"><?php echo esc_html( $b['email'] ); ?> · <?php echo (int) $b['order_count']; ?> commande<?php echo $b['order_count'] > 1 ? 's' : ''; ?></span>
+							</span>
+							<strong style="white-space:nowrap; color:#2a7a2a;"><?php echo number_format( $b['spent'], 2, ',', ' ' ); ?> $</strong>
+						</li>
+					<?php endforeach; ?>
+				</ol>
+			<?php endif; ?>
+		</div>
+
+		<!-- Top ventes -->
+		<div style="padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+			<h3 style="margin:0 0 0.8rem; font-size:1.1em;">🔥 Top 5 ventes <span style="color:#999; font-size:0.8em; font-weight:normal;">(par occurrences)</span></h3>
+			<?php if ( empty( $top_sellers ) ) : ?>
+				<p style="color:#999; font-style:italic; margin:0;">Aucune donnée sur cette période.</p>
+			<?php else : ?>
+				<ol style="margin:0; padding:0; list-style:none;">
+					<?php foreach ( $top_sellers as $i => $s ) : $rank = $i + 1; ?>
+						<li style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid #f0f0f0;">
+							<span style="min-width:1.5em; font-size:1.1em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+							<span style="flex:1; min-width:0;">
+								<strong><?php echo esc_html( $section_emoji[ $s['section'] ] ?? '' ); ?> <?php echo esc_html( $s['name'] ); ?></strong>
+							</span>
+							<strong style="white-space:nowrap; color:#2c70b8;"><?php echo (int) $s['occurrences']; ?> vente<?php echo $s['occurrences'] > 1 ? 's' : ''; ?></strong>
+						</li>
+					<?php endforeach; ?>
+				</ol>
+			<?php endif; ?>
+		</div>
+	</div>
+	<?php
+}
+
+/**
+ * Rendu : graphique barres horizontales du top N produits par quantité réelle.
+ * Utilisé dans Sommaire boutique au-dessus du tableau détaillé.
+ */
+function cordespace_reports_render_qty_bars( array $grouped, int $top_n = 7 ): void {
+	$candidates = array_filter( $grouped, fn( $g ) => ( $g['qty_real'] ?? 0 ) > 0 );
+	if ( empty( $candidates ) ) {
+		return;
+	}
+	uasort( $candidates, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
+	$top = array_slice( array_values( $candidates ), 0, $top_n );
+	$max = (int) $top[0]['qty_real'];
+	if ( $max <= 0 ) {
+		return;
+	}
+	$rank_emoji = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
+	?>
+	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+		<h3 style="margin:0 0 1rem; font-size:1.1em;">📊 Top <?php echo count( $top ); ?> par quantité vendue <span style="color:#999; font-size:0.8em; font-weight:normal;">(réel comptable)</span></h3>
+		<?php foreach ( $top as $i => $g ) :
+			$pct  = $g['qty_real'] / $max * 100;
+			$rank = $i + 1;
+			?>
+			<div style="display:grid; grid-template-columns:1.8em 1fr; gap:0.5rem; margin-bottom:0.6rem; align-items:center;">
+				<span style="font-size:1.05em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+				<div>
+					<div style="display:flex; justify-content:space-between; margin-bottom:0.2rem; font-size:0.92em;">
+						<strong><?php echo esc_html( $g['name'] ); ?></strong>
+						<span style="color:#2a7a2a; font-weight:600;"><?php echo (int) $g['qty_real']; ?> unité<?php echo $g['qty_real'] > 1 ? 's' : ''; ?></span>
+					</div>
+					<div style="background:#eef; border-radius:4px; height:0.7em; overflow:hidden;">
+						<div style="background:linear-gradient(90deg, #5b8def 0%, #2c70b8 100%); height:100%; width:<?php echo number_format( $pct, 1 ); ?>%;"></div>
+					</div>
+				</div>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<?php
+}
+
 // ============================================================================
 // 4) Page admin (UI) — routage par onglets
 // ============================================================================
@@ -627,6 +800,13 @@ function cordespace_reports_render_tab_achats(): void {
 			<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 		</div>
 
+		<?php
+		// 🏆 Top performers (calculés sur la même liste d'items que les sections)
+		$top_buyers  = cordespace_reports_compute_top_buyers( $items, 5 );
+		$top_sellers = cordespace_reports_compute_top_sellers( $items, 5 );
+		cordespace_reports_render_top_performers( $top_buyers, $top_sellers );
+		?>
+
 		<?php cordespace_reports_render_grand_total( $totals['grand'] ); ?>
 
 		<?php cordespace_reports_render_section( '📚 Boutique', $totals['sections']['boutique'], 'boutique' ); ?>
@@ -756,6 +936,8 @@ function cordespace_reports_render_tab_sommaire(): void {
 		</div>
 		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 	</div>
+
+	<?php cordespace_reports_render_qty_bars( $grouped, 7 ); ?>
 
 	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
 		<?php if ( empty( $grouped ) ) : ?>
