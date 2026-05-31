@@ -333,14 +333,23 @@ function cordespace_reports_render_page(): void {
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
 
 	$available_statuses_for_default = cordespace_reports_get_available_statuses();
-	$default_all_statuses           = array_keys( $available_statuses_for_default );
 
-	// Si pas de filtre statut explicite dans l'URL → cocher TOUS les statuts disponibles par défaut
-	// (Hanna doit voir tout par défaut, puis filtrer à la baisse si elle veut)
+	// Statuts par défaut : seulement ceux qui comptent pour la compta réelle
+	// (Terminée = paiement validé / Remboursée = transaction de remboursement).
+	// Les autres (annulée, en attente, en cours, en attente paiement) restent
+	// disponibles dans le filtre mais décochés par défaut — Hanna peut les
+	// cocher pour analyser les commandes en attente de validation etc.
+	$default_statuses = [];
+	foreach ( [ 'wc-completed', 'wc-refunded' ] as $s ) {
+		if ( isset( $available_statuses_for_default[ $s ] ) ) {
+			$default_statuses[] = $s;
+		}
+	}
+
 	$has_explicit_filter = isset( $_GET['filtered'] ) && $_GET['filtered'] === '1';
 	$selected_statuses   = isset( $_GET['statuses'] ) && is_array( $_GET['statuses'] )
 		? array_map( 'sanitize_text_field', wp_unslash( $_GET['statuses'] ) )
-		: ( $has_explicit_filter ? [] : $default_all_statuses );
+		: ( $has_explicit_filter ? [] : $default_statuses );
 
 	// Calcul de la période effective
 	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
@@ -367,10 +376,6 @@ function cordespace_reports_render_page(): void {
 	<div class="wrap" style="max-width:1400px;">
 		<h1>📊 Rapports — Cordespace</h1>
 		<p style="color:#666;">Rapport unifié des ventes (boutique + cours + salles) sur une période donnée, calculé depuis les vrais montants WooCommerce.</p>
-
-		<div style="margin-top:0.8rem; padding:0.8rem 1.1rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00; font-size:0.92em;">
-			<strong>💡 À savoir</strong> — Les paniers abandonnés (statut "checkout-draft") et la corbeille sont automatiquement exclus du rapport (ce ne sont pas de vraies ventes). Si tu veux les inclure, dis-moi.
-		</div>
 
 		<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
 			<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
