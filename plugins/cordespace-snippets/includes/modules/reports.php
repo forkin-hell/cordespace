@@ -807,14 +807,253 @@ function cordespace_reports_render_tab_sommaire(): void {
 }
 
 /**
- * Onglet 💳 HISTORIQUE CRÉDITS : stub temporaire.
- * Implémentation à venir dans le prochain commit (lecture wphu_myCRED_log).
+ * Liste des types de mouvement MyCred avec labels lisibles.
+ *
+ * @return array<string, array{label: string, icon: string, category: string}>
+ *   category = 'gain' | 'spend' | 'adjust' (pour les sous-totaux)
+ */
+function cordespace_reports_get_credit_ref_labels(): array {
+	return [
+		'manual'              => [ 'label' => 'Ajustement manuel',       'icon' => '✏️', 'category' => 'adjust' ],
+		'compensation'        => [ 'label' => 'Compensation',            'icon' => '🎁', 'category' => 'gain' ],
+		'woocommerce_payment' => [ 'label' => 'Paiement commande',       'icon' => '🛒', 'category' => 'spend' ],
+		'woocommerce_refund'  => [ 'label' => 'Remboursement commande',  'icon' => '🔄', 'category' => 'gain' ],
+	];
+}
+
+/**
+ * Récupère les mouvements MyCred sur une période avec filtres.
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function cordespace_reports_fetch_credit_log( string $start, string $end, array $refs = [], string $user_search = '' ): array {
+	global $wpdb;
+
+	$start_ts = (int) get_gmt_from_date( $start, 'U' );
+	$end_ts   = (int) get_gmt_from_date( $end, 'U' );
+
+	$conditions = [ 'l.time BETWEEN %d AND %d' ];
+	$params     = [ $start_ts, $end_ts ];
+
+	if ( ! empty( $refs ) ) {
+		$placeholders = implode( ',', array_fill( 0, count( $refs ), '%s' ) );
+		$conditions[] = "l.ref IN ($placeholders)";
+		$params       = array_merge( $params, $refs );
+	}
+
+	if ( $user_search !== '' ) {
+		$conditions[] = '(u.user_email LIKE %s OR u.display_name LIKE %s OR u.user_login LIKE %s)';
+		$like         = '%' . $wpdb->esc_like( $user_search ) . '%';
+		$params       = array_merge( $params, [ $like, $like, $like ] );
+	}
+
+	$where_sql = implode( ' AND ', $conditions );
+
+	$sql = $wpdb->prepare(
+		"SELECT l.id, l.time, l.user_id, l.ref, l.ref_id, l.creds, l.entry,
+		        u.user_email, u.display_name
+		   FROM {$wpdb->prefix}myCRED_log l
+		   LEFT JOIN {$wpdb->users} u ON u.ID = l.user_id
+		  WHERE $where_sql
+		  ORDER BY l.time DESC",
+		$params
+	);
+
+	$rows = $wpdb->get_results( $sql, ARRAY_A );
+	return is_array( $rows ) ? $rows : [];
+}
+
+/**
+ * Remplace les placeholders dans l'entry MyCred (%order_id% etc.) par les
+ * valeurs réelles pour un affichage propre.
+ */
+function cordespace_reports_format_credit_entry( string $entry, array $row ): string {
+	$entry = str_replace( '%order_id%', '#' . (int) $row['ref_id'], $entry );
+	$entry = str_replace( '%singular%', 'crédit', $entry );
+	$entry = str_replace( '%plural%',   'crédits', $entry );
+	return $entry;
+}
+
+/**
+ * Onglet 💳 HISTORIQUE CRÉDITS : tous les mouvements MyCred (achats,
+ * compensations, ajustements, remboursements) sur une période, avec filtres
+ * par type et par user, et export CSV.
  */
 function cordespace_reports_render_tab_credits(): void {
+	// Filtres
+	$preset       = isset( $_GET['preset'] )       ? sanitize_key( (string) $_GET['preset'] )         : 'this_month';
+	$custom_start = isset( $_GET['date_start'] )   ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
+	$custom_end   = isset( $_GET['date_end'] )     ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
+	$user_search  = isset( $_GET['user_search'] )  ? sanitize_text_field( (string) $_GET['user_search'] ) : '';
+
+	$ref_labels = cordespace_reports_get_credit_ref_labels();
+	$all_refs   = array_keys( $ref_labels );
+
+	$has_explicit_filter = isset( $_GET['filtered'] ) && $_GET['filtered'] === '1';
+	$selected_refs       = isset( $_GET['refs'] ) && is_array( $_GET['refs'] )
+		? array_map( 'sanitize_text_field', wp_unslash( $_GET['refs'] ) )
+		: ( $has_explicit_filter ? [] : $all_refs );
+
+	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
+		$range = [ 'start' => $custom_start . ' 00:00:00', 'end' => $custom_end . ' 23:59:59' ];
+	} else {
+		$range = cordespace_reports_get_preset_range( $preset );
+	}
+
+	$rows = cordespace_reports_fetch_credit_log( $range['start'], $range['end'], $selected_refs, $user_search );
+
+	// Calcul des sous-totaux par catégorie + total net
+	$cats = [ 'gain' => 0, 'spend' => 0, 'adjust_pos' => 0, 'adjust_neg' => 0 ];
+	foreach ( $rows as $r ) {
+		$ref = $r['ref'];
+		$amt = (float) $r['creds'];
+		if ( ! isset( $ref_labels[ $ref ] ) ) {
+			continue;
+		}
+		if ( $ref_labels[ $ref ]['category'] === 'gain' ) {
+			$cats['gain'] += $amt;
+		} elseif ( $ref_labels[ $ref ]['category'] === 'spend' ) {
+			$cats['spend'] += $amt;
+		} else {
+			if ( $amt >= 0 ) $cats['adjust_pos'] += $amt;
+			else             $cats['adjust_neg'] += $amt;
+		}
+	}
+	$net = $cats['gain'] + $cats['spend'] + $cats['adjust_pos'] + $cats['adjust_neg'];
+
+	$export_url = add_query_arg(
+		array_merge(
+			[ 'action' => 'cordespace_reports_csv_credits', '_wpnonce' => wp_create_nonce( 'cordespace_reports_csv_credits' ) ],
+			$_GET
+		),
+		admin_url( 'admin-post.php' )
+	);
 	?>
-	<div style="margin-top:1.5rem; padding:2rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00;">
-		<h2 style="margin:0 0 0.5rem;">🚧 Bientôt disponible</h2>
-		<p style="margin:0;">L'onglet <strong>Historique crédits</strong> sera disponible dans une prochaine version. Il affichera tous les mouvements MyCred (achats, compensations, remboursements) sur une période avec leurs noms/courriels, et un export CSV.</p>
+	<p style="color:#666; margin-top:1rem;">Tous les mouvements MyCred sur la période : achats payés en crédits, compensations, remboursements, ajustements manuels admin.</p>
+
+	<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
+		<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
+		<input type="hidden" name="tab" value="credits">
+		<input type="hidden" name="filtered" value="1">
+
+		<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Période</label>
+				<select name="preset" onchange="document.getElementById('custom_dates_credits').style.display = this.value === 'custom' ? 'block' : 'none';">
+					<option value="this_month"   <?php selected( $preset, 'this_month' );   ?>>Ce mois</option>
+					<option value="last_month"   <?php selected( $preset, 'last_month' );   ?>>Mois précédent</option>
+					<option value="this_year"    <?php selected( $preset, 'this_year' );    ?>>Cette année</option>
+					<option value="last_30_days" <?php selected( $preset, 'last_30_days' ); ?>>30 derniers jours</option>
+					<option value="custom"       <?php selected( $preset, 'custom' );       ?>>Période personnalisée</option>
+				</select>
+				<div id="custom_dates_credits" style="margin-top:0.6rem; display:<?php echo $preset === 'custom' ? 'block' : 'none'; ?>;">
+					<label style="font-size:0.9em; display:block; margin-bottom:0.2rem;">Du</label>
+					<input type="date" name="date_start" value="<?php echo esc_attr( $custom_start ); ?>">
+					<label style="font-size:0.9em; display:block; margin:0.4rem 0 0.2rem;">Au</label>
+					<input type="date" name="date_end" value="<?php echo esc_attr( $custom_end ); ?>">
+				</div>
+			</div>
+
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Types de mouvement</label>
+				<div style="display:flex; flex-direction:column; gap:0.3rem;">
+					<?php foreach ( $ref_labels as $ref => $info ) :
+						$checked = in_array( $ref, $selected_refs, true );
+						?>
+						<label style="display:flex; align-items:center; gap:0.4rem; font-size:0.95em;">
+							<input type="checkbox" name="refs[]" value="<?php echo esc_attr( $ref ); ?>" <?php checked( $checked ); ?>>
+							<?php echo esc_html( $info['icon'] . ' ' . $info['label'] ); ?>
+						</label>
+					<?php endforeach; ?>
+				</div>
+			</div>
+
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Filtre utilisateur·trice</label>
+				<input type="text" name="user_search" value="<?php echo esc_attr( $user_search ); ?>" placeholder="nom, courriel ou login" style="width:260px;">
+				<p style="margin:0.4rem 0 0; color:#999; font-size:0.85em;">Vide = tous les users</p>
+			</div>
+
+			<div style="align-self:flex-end;">
+				<button type="submit" class="button button-primary">Filtrer</button>
+			</div>
+		</div>
+	</form>
+
+	<div style="margin-top:1.2rem; padding:1rem 1.4rem; background:#eef5fd; border-left:4px solid #2c70b8; border-radius:5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+		<div>
+			<strong>📅 Période :</strong>
+			<?php echo esc_html( mysql2date( 'j F Y', $range['start'] ) ); ?>
+			→
+			<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
+			·
+			<strong><?php echo count( $rows ); ?> mouvements</strong>
+		</div>
+		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
+	</div>
+
+	<!-- Sous-totaux par catégorie -->
+	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
+		<h2 style="margin:0 0 1rem; color:#fff; font-size:1.2em;">💰 Solde net de la période</h2>
+		<div style="display:flex; flex-wrap:wrap; gap:1.8rem;">
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎁 Gains (compensations + remb.)</span><strong style="font-size:1.4em; color:#7eff7e;">+<?php echo number_format( $cats['gain'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🛒 Dépenses (achats)</span><strong style="font-size:1.4em; color:#ffb0b0;"><?php echo number_format( $cats['spend'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">✏️ Ajustements +</span><strong style="font-size:1.2em; color:#7eff7e;">+<?php echo number_format( $cats['adjust_pos'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">✏️ Ajustements −</span><strong style="font-size:1.2em; color:#ffb0b0;"><?php echo number_format( $cats['adjust_neg'], 2, ',', ' ' ); ?></strong></div>
+			<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.8rem;"><span style="opacity:0.7; font-size:0.85em; display:block;">SOLDE NET</span><strong style="font-size:1.6em;"><?php echo number_format( $net, 2, ',', ' ' ); ?></strong></div>
+		</div>
+	</div>
+
+	<!-- Tableau -->
+	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+		<?php if ( empty( $rows ) ) : ?>
+			<p style="color:#999; font-style:italic; margin:0;">Aucun mouvement sur cette période avec les filtres sélectionnés.</p>
+		<?php else : ?>
+			<table class="widefat striped" style="font-size:0.92em;">
+				<thead>
+					<tr>
+						<th>Date / Heure</th>
+						<th>Utilisateur·trice</th>
+						<th>Type</th>
+						<th>Description</th>
+						<th># Commande</th>
+						<th style="text-align:right;">Montant</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $rows as $r ) :
+						$ref      = (string) $r['ref'];
+						$ref_info = $ref_labels[ $ref ] ?? [ 'label' => $ref, 'icon' => '❓' ];
+						$amt      = (float) $r['creds'];
+						$entry    = cordespace_reports_format_credit_entry( (string) ( $r['entry'] ?? '' ), $r );
+						$has_order = in_array( $ref, [ 'woocommerce_payment', 'woocommerce_refund' ], true ) && $r['ref_id'];
+						?>
+						<tr>
+							<td>
+								<?php echo esc_html( mysql2date( 'Y-m-d', gmdate( 'Y-m-d H:i:s', (int) $r['time'] ) ) ); ?>
+								<br><span style="color:#999; font-size:0.9em;"><?php echo esc_html( mysql2date( 'H\hi', gmdate( 'Y-m-d H:i:s', (int) $r['time'] ) ) ); ?></span>
+							</td>
+							<td>
+								<strong><?php echo esc_html( (string) ( $r['display_name'] ?? '—' ) ); ?></strong>
+								<br><span style="color:#666; font-size:0.85em;"><?php echo esc_html( (string) ( $r['user_email'] ?? '' ) ); ?></span>
+							</td>
+							<td><?php echo esc_html( $ref_info['icon'] . ' ' . $ref_info['label'] ); ?></td>
+							<td style="font-size:0.9em; color:#555;"><?php echo esc_html( $entry ); ?></td>
+							<td>
+								<?php if ( $has_order ) : ?>
+									<a href="<?php echo esc_url( admin_url( 'admin.php?page=wc-orders&action=edit&id=' . (int) $r['ref_id'] ) ); ?>">#<?php echo (int) $r['ref_id']; ?></a>
+								<?php else : ?>
+									<span style="color:#999;">—</span>
+								<?php endif; ?>
+							</td>
+							<td style="text-align:right; font-weight:600; color:<?php echo $amt >= 0 ? '#2a7a2a' : '#b91c1c'; ?>;">
+								<?php echo $amt >= 0 ? '+' : ''; ?><?php echo number_format( $amt, 2, ',', ' ' ); ?>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
 	</div>
 	<?php
 }
@@ -1099,6 +1338,82 @@ function cordespace_reports_handle_csv_export(): void {
 			number_format( $b['total'], 2, '.', '' ),
 		], ';' );
 	}
+
+	fclose( $out );
+	exit;
+}
+
+// ============================================================================
+// 7) Export CSV — Historique crédits
+// ============================================================================
+add_action( 'admin_post_cordespace_reports_csv_credits', 'cordespace_reports_handle_csv_credits' );
+function cordespace_reports_handle_csv_credits(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'forbidden', 403 );
+	}
+	check_admin_referer( 'cordespace_reports_csv_credits' );
+
+	$preset       = isset( $_GET['preset'] )       ? sanitize_key( (string) $_GET['preset'] )         : 'this_month';
+	$custom_start = isset( $_GET['date_start'] )   ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
+	$custom_end   = isset( $_GET['date_end'] )     ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
+	$user_search  = isset( $_GET['user_search'] )  ? sanitize_text_field( (string) $_GET['user_search'] ) : '';
+
+	$ref_labels    = cordespace_reports_get_credit_ref_labels();
+	$selected_refs = isset( $_GET['refs'] ) && is_array( $_GET['refs'] )
+		? array_map( 'sanitize_text_field', wp_unslash( $_GET['refs'] ) )
+		: array_keys( $ref_labels );
+
+	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
+		$range = [ 'start' => $custom_start . ' 00:00:00', 'end' => $custom_end . ' 23:59:59' ];
+	} else {
+		$range = cordespace_reports_get_preset_range( $preset );
+	}
+
+	$rows = cordespace_reports_fetch_credit_log( $range['start'], $range['end'], $selected_refs, $user_search );
+
+	$filename = sprintf(
+		'cordespace-historique-credits-%s-au-%s.csv',
+		substr( $range['start'], 0, 10 ),
+		substr( $range['end'], 0, 10 )
+	);
+
+	nocache_headers();
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename=' . $filename );
+
+	$out = fopen( 'php://output', 'w' );
+	fwrite( $out, "\xEF\xBB\xBF" );
+
+	fputcsv( $out, [
+		'Date', 'Heure', 'Utilisateur', 'Courriel', 'Type', 'Description',
+		'N° Commande', 'Montant',
+	], ';' );
+
+	$net = 0;
+	foreach ( $rows as $r ) {
+		$ref      = (string) $r['ref'];
+		$ref_info = $ref_labels[ $ref ] ?? [ 'label' => $ref ];
+		$amt      = (float) $r['creds'];
+		$net     += $amt;
+		$entry    = cordespace_reports_format_credit_entry( (string) ( $r['entry'] ?? '' ), $r );
+		$has_order = in_array( $ref, [ 'woocommerce_payment', 'woocommerce_refund' ], true ) && $r['ref_id'];
+
+		fputcsv( $out, [
+			mysql2date( 'Y-m-d', gmdate( 'Y-m-d H:i:s', (int) $r['time'] ) ),
+			mysql2date( 'H:i', gmdate( 'Y-m-d H:i:s', (int) $r['time'] ) ),
+			(string) ( $r['display_name'] ?? '' ),
+			(string) ( $r['user_email'] ?? '' ),
+			$ref_info['label'],
+			$entry,
+			$has_order ? '#' . (int) $r['ref_id'] : '',
+			number_format( $amt, 2, '.', '' ),
+		], ';' );
+	}
+
+	fputcsv( $out, [
+		'SOLDE NET', '', '', '', '', '', '',
+		number_format( $net, 2, '.', '' ),
+	], ';' );
 
 	fclose( $out );
 	exit;
