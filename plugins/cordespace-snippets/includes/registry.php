@@ -14,6 +14,7 @@ return [
 	'categories' => [
 		'mon-espace' => [ 'label' => 'Mon espace',           'icon' => '📋', 'order' => 10 ],
 		'payments'   => [ 'label' => 'Paiements et crédits', 'icon' => '💰', 'order' => 20 ],
+		'admin'      => [ 'label' => 'Outils admin',         'icon' => '🛠️', 'order' => 25 ],
 		'styles'     => [ 'label' => 'Styles',               'icon' => '🎨', 'order' => 30 ],
 	],
 
@@ -96,6 +97,16 @@ return [
 			'file'            => 'includes/modules/greeting-themes.php',
 			'requires_plugin' => [],
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/greeting-themes.php',
+			'default_active'  => true,
+		],
+		'admin.reports' => [
+			'label'           => 'Rapports de vente (Boutique / Cours / Salles)',
+			'description'     => 'Page wp-admin → Cordespace → Rapports qui agrège les ventes WooCommerce sur une période choisie. 3 sections (Boutique, Cours Amelia, Salles Amelia) avec totaux + TPS/TVQ + export CSV. Calcule les vrais montants depuis WC (pas les 0$ d\'Amelia).',
+			'category'        => 'admin',
+			'type'            => 'php',
+			'file'            => 'includes/modules/reports.php',
+			'requires_plugin' => [ 'woocommerce/woocommerce.php' => 'WooCommerce' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/reports.php',
 			'default_active'  => true,
 		],
 		'payments.prof-warning' => [
