@@ -575,23 +575,19 @@ function cordespace_reports_render_qty_bars( array $grouped, int $top_n = 7 ): v
 	}
 	$rank_emoji = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
 	?>
-	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
-		<h3 style="margin:0 0 1rem; font-size:1.1em;">📊 Top <?php echo count( $top ); ?> par quantité vendue <span style="color:#999; font-size:0.8em; font-weight:normal;">(réel comptable)</span></h3>
+	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
+		<h2 style="margin:0 0 1rem; color:#fff; font-size:1.3em;">📊 Top <?php echo count( $top ); ?> par quantité vendue <span style="opacity:0.7; font-size:0.7em; font-weight:normal;">(réel comptable)</span></h2>
 		<?php foreach ( $top as $i => $g ) :
 			$pct  = $g['qty_real'] / $max * 100;
 			$rank = $i + 1;
 			?>
-			<div style="display:grid; grid-template-columns:1.8em 1fr; gap:0.5rem; margin-bottom:0.6rem; align-items:center;">
-				<span style="font-size:1.05em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
-				<div>
-					<div style="display:flex; justify-content:space-between; margin-bottom:0.2rem; font-size:0.92em;">
-						<strong><?php echo esc_html( $g['name'] ); ?></strong>
-						<span style="color:#2a7a2a; font-weight:600;"><?php echo (int) $g['qty_real']; ?> unité<?php echo $g['qty_real'] > 1 ? 's' : ''; ?></span>
-					</div>
-					<div style="background:#eef; border-radius:4px; height:0.7em; overflow:hidden;">
-						<div style="background:linear-gradient(90deg, #5b8def 0%, #2c70b8 100%); height:100%; width:<?php echo number_format( $pct, 1 ); ?>%;"></div>
-					</div>
+			<div style="display:flex; align-items:center; gap:0.8rem; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.12);">
+				<span style="min-width:1.8em; text-align:center; font-size:1.05em;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+				<strong style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?php echo esc_html( $g['name'] ); ?></strong>
+				<div style="width:140px; background:rgba(255,255,255,0.15); border-radius:4px; height:0.55em; overflow:hidden; flex-shrink:0;">
+					<div style="background:linear-gradient(90deg, #c490f0 0%, #f5b1b1 100%); height:100%; width:<?php echo number_format( $pct, 1 ); ?>%;"></div>
 				</div>
+				<strong style="min-width:5.5em; text-align:right; white-space:nowrap;"><?php echo (int) $g['qty_real']; ?> unité<?php echo $g['qty_real'] > 1 ? 's' : ''; ?></strong>
 			</div>
 		<?php endforeach; ?>
 	</div>
