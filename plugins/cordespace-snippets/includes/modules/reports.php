@@ -503,60 +503,8 @@ function cordespace_reports_compute_top_sellers( array $items, int $top_n = 5 ):
 	return array_slice( array_values( $by_product ), 0, $top_n );
 }
 
-/**
- * Rendu visuel : 2 cartes côte-à-côte (Top acheteurs + Top ventes).
- */
-function cordespace_reports_render_top_performers( array $top_buyers, array $top_sellers ): void {
-	if ( empty( $top_buyers ) && empty( $top_sellers ) ) {
-		return;
-	}
-	$section_emoji = [ 'boutique' => '🛍️', 'cours' => '🎓', 'salle' => '🏠' ];
-	$rank_emoji    = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
-	?>
-	<div style="margin-top:1.5rem; display:grid; grid-template-columns:repeat(auto-fit, minmax(340px, 1fr)); gap:1.2rem;">
-		<!-- Top acheteurs -->
-		<div style="padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
-			<h3 style="margin:0 0 0.8rem; font-size:1.1em;">🏆 Top 5 acheteurs <span style="color:#999; font-size:0.8em; font-weight:normal;">(réel comptable)</span></h3>
-			<?php if ( empty( $top_buyers ) ) : ?>
-				<p style="color:#999; font-style:italic; margin:0;">Aucune donnée sur cette période.</p>
-			<?php else : ?>
-				<ol style="margin:0; padding:0; list-style:none;">
-					<?php foreach ( $top_buyers as $i => $b ) : $rank = $i + 1; ?>
-						<li style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid #f0f0f0;">
-							<span style="min-width:1.5em; font-size:1.1em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
-							<span style="flex:1; min-width:0;">
-								<strong><?php echo esc_html( $b['name'] ); ?></strong>
-								<br><span style="color:#999; font-size:0.82em;"><?php echo esc_html( $b['email'] ); ?> · <?php echo (int) $b['order_count']; ?> commande<?php echo $b['order_count'] > 1 ? 's' : ''; ?></span>
-							</span>
-							<strong style="white-space:nowrap; color:#2a7a2a;"><?php echo number_format( $b['spent'], 2, ',', ' ' ); ?> $</strong>
-						</li>
-					<?php endforeach; ?>
-				</ol>
-			<?php endif; ?>
-		</div>
-
-		<!-- Top ventes -->
-		<div style="padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
-			<h3 style="margin:0 0 0.8rem; font-size:1.1em;">🔥 Top 5 ventes <span style="color:#999; font-size:0.8em; font-weight:normal;">(par occurrences)</span></h3>
-			<?php if ( empty( $top_sellers ) ) : ?>
-				<p style="color:#999; font-style:italic; margin:0;">Aucune donnée sur cette période.</p>
-			<?php else : ?>
-				<ol style="margin:0; padding:0; list-style:none;">
-					<?php foreach ( $top_sellers as $i => $s ) : $rank = $i + 1; ?>
-						<li style="display:flex; align-items:center; gap:0.6rem; padding:0.5rem 0; border-bottom:1px solid #f0f0f0;">
-							<span style="min-width:1.5em; font-size:1.1em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
-							<span style="flex:1; min-width:0;">
-								<strong><?php echo esc_html( $section_emoji[ $s['section'] ] ?? '' ); ?> <?php echo esc_html( $s['name'] ); ?></strong>
-							</span>
-							<strong style="white-space:nowrap; color:#2c70b8;"><?php echo (int) $s['occurrences']; ?> vente<?php echo $s['occurrences'] > 1 ? 's' : ''; ?></strong>
-						</li>
-					<?php endforeach; ?>
-				</ol>
-			<?php endif; ?>
-		</div>
-	</div>
-	<?php
-}
+// (la fonction render_top_performers a été supprimée — les tops sont maintenant
+//  rendus directement dans cordespace_reports_render_grand_total via $opts.)
 
 /**
  * Rendu : graphique barres horizontales du top N produits par quantité réelle.
@@ -637,8 +585,54 @@ function cordespace_reports_render_page(): void {
 	$tabs        = cordespace_reports_get_tabs();
 	$current_tab = isset( $_GET['tab'] ) && isset( $tabs[ $_GET['tab'] ] ) ? sanitize_key( (string) $_GET['tab'] ) : 'achats';
 	?>
-	<div class="wrap" style="max-width:1400px;">
-		<h1>📊 Rapports — Cordespace</h1>
+	<div class="wrap cordespace-reports-page" style="max-width:1400px;">
+		<style>
+			/* 🦖 Petits dinos cachés et animation de saut au clic CSV.
+			   Scopé à .cordespace-reports-page pour ne pas affecter le reste de l'admin. */
+			.cordespace-reports-page .cordespace-dino-hidden {
+				opacity: 0.18;
+				font-size: 0.8em;
+				transition: opacity 0.25s, transform 0.25s;
+				cursor: default;
+				vertical-align: middle;
+			}
+			.cordespace-reports-page .cordespace-dino-hidden:hover {
+				opacity: 1;
+				transform: scale(1.4) rotate(-8deg);
+			}
+			@keyframes cordespace-dino-jump {
+				0%   { transform: translate(-50%, 0)    scale(1);   opacity: 1; }
+				25%  { transform: translate(-50%, -50px) scale(1.2); opacity: 1; }
+				50%  { transform: translate(-50%, -65px) scale(1.3); opacity: 1; }
+				75%  { transform: translate(-50%, -20px) scale(1);   opacity: 0.9; }
+				100% { transform: translate(-50%, 10px) scale(0.8); opacity: 0; }
+			}
+			.cordespace-dino-jumper {
+				position: absolute;
+				font-size: 2em;
+				pointer-events: none;
+				animation: cordespace-dino-jump 0.9s ease-out forwards;
+				z-index: 9999;
+			}
+		</style>
+		<script>
+		(function () {
+			var dinos = ['🦖', '🦕'];
+			document.addEventListener('click', function (e) {
+				var btn = e.target.closest('a[href*="cordespace_reports_csv"]');
+				if ( ! btn ) return;
+				var rect = btn.getBoundingClientRect();
+				var d = document.createElement('span');
+				d.className = 'cordespace-dino-jumper';
+				d.textContent = dinos[ Math.floor( Math.random() * dinos.length ) ];
+				d.style.left = ( rect.left + window.scrollX + rect.width / 2 ) + 'px';
+				d.style.top  = ( rect.top  + window.scrollY - 4 ) + 'px';
+				document.body.appendChild( d );
+				setTimeout(function () { d.remove(); }, 1000);
+			});
+		})();
+		</script>
+		<h1>📊 Rapports — Cordespace <span class="cordespace-dino-hidden" title="rawr">🦕</span></h1>
 
 		<nav class="nav-tab-wrapper" style="margin-top:1rem;">
 			<?php foreach ( $tabs as $key => $info ) : ?>
@@ -789,6 +783,7 @@ function cordespace_reports_render_tab_achats(): void {
 				<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
 				·
 				<strong><?php echo count( $items ); ?> lignes</strong>
+				<span class="cordespace-dino-hidden" title="rawr">🦖</span>
 				<?php if ( $period_mode === 'event' ) : ?>
 					<br><span style="color:#666; font-size:0.9em;">(boutique exclue — pas de notion de "date d'événement" pour les items physiques)</span>
 				<?php endif; ?>
@@ -797,13 +792,23 @@ function cordespace_reports_render_tab_achats(): void {
 		</div>
 
 		<?php
-		// 🏆 Top performers (calculés sur la même liste d'items que les sections)
+		// 🏆 Top performers + ventilation comptable, tout dans le même encadré violet.
+		// On masque les blocs Pronostic / Annulées si aucun statut correspondant n'est coché.
 		$top_buyers  = cordespace_reports_compute_top_buyers( $items, 5 );
 		$top_sellers = cordespace_reports_compute_top_sellers( $items, 5 );
-		cordespace_reports_render_top_performers( $top_buyers, $top_sellers );
-		?>
 
-		<?php cordespace_reports_render_grand_total( $totals['grand'] ); ?>
+		$selected_categories = [];
+		foreach ( $selected_statuses as $st ) {
+			$selected_categories[ cordespace_reports_status_category( $st ) ] = true;
+		}
+
+		cordespace_reports_render_grand_total( $totals['grand'], [
+			'top_buyers'     => $top_buyers,
+			'top_sellers'    => $top_sellers,
+			'show_pending'   => ! empty( $selected_categories['pending'] ),
+			'show_cancelled' => ! empty( $selected_categories['cancelled'] ),
+		] );
+		?>
 
 		<?php cordespace_reports_render_section( '📚 Boutique', $totals['sections']['boutique'], 'boutique' ); ?>
 		<?php cordespace_reports_render_section( '🎓 Cours', $totals['sections']['cours'], 'cours' ); ?>
@@ -929,6 +934,7 @@ function cordespace_reports_render_tab_sommaire(): void {
 			<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
 			·
 			<strong><?php echo count( $grouped ); ?> produits distincts</strong>
+			<span class="cordespace-dino-hidden" title="rawr">🦕</span>
 		</div>
 		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 	</div>
@@ -1166,6 +1172,7 @@ function cordespace_reports_render_tab_credits(): void {
 			<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
 			·
 			<strong><?php echo count( $rows ); ?> mouvements</strong>
+			<span class="cordespace-dino-hidden" title="rawr">🦖</span>
 		</div>
 		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 	</div>
@@ -1479,6 +1486,7 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 			<?php echo esc_html( mysql2date( 'j F Y', $snapshot_date . ' 00:00:00' ) ); ?>
 			·
 			<strong><?php echo count( $balances ); ?> utilisateur·trices avec solde non-nul</strong>
+			<span class="cordespace-dino-hidden" title="rawr">🦕</span>
 		</div>
 		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 	</div>
@@ -1539,13 +1547,59 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 	<?php
 }
 
-function cordespace_reports_render_grand_total( array $grand ): void {
+function cordespace_reports_render_grand_total( array $grand, array $opts = [] ): void {
+	$top_buyers     = $opts['top_buyers']     ?? [];
+	$top_sellers    = $opts['top_sellers']    ?? [];
+	$show_pending   = $opts['show_pending']   ?? true;
+	$show_cancelled = $opts['show_cancelled'] ?? true;
+	$section_emoji  = [ 'boutique' => '🛍️', 'cours' => '🎓', 'salle' => '🏠' ];
+	$rank_emoji     = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
 	?>
-	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
-		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé</h2>
+	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px; position:relative;">
+		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé <span style="opacity:0.35; font-size:0.65em; vertical-align:middle;" title="rawr">🦖</span></h2>
 
-		<!-- BLOC 1 : RÉEL (compta) -->
-		<div style="margin-bottom:1rem;">
+		<?php if ( ! empty( $top_buyers ) || ! empty( $top_sellers ) ) : ?>
+			<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
+				<?php if ( ! empty( $top_buyers ) ) : ?>
+					<div style="padding:1rem 1.2rem; background:rgba(255,255,255,0.08); border-radius:6px;">
+						<h3 style="margin:0 0 0.6rem; color:#fff; font-size:1em;">🏆 Top 5 acheteurs <span style="opacity:0.6; font-size:0.78em; font-weight:normal;">(réel comptable)</span></h3>
+						<ol style="margin:0; padding:0; list-style:none;">
+							<?php foreach ( $top_buyers as $i => $b ) : $rank = $i + 1; ?>
+								<li style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+									<span style="min-width:1.5em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+									<span style="flex:1; min-width:0;">
+										<strong><?php echo esc_html( $b['name'] ); ?></strong>
+										<br><span style="opacity:0.65; font-size:0.78em;"><?php echo esc_html( $b['email'] ); ?> · <?php echo (int) $b['order_count']; ?> cmd</span>
+									</span>
+									<strong style="white-space:nowrap;"><?php echo number_format( $b['spent'], 2, ',', ' ' ); ?> $</strong>
+								</li>
+							<?php endforeach; ?>
+						</ol>
+					</div>
+				<?php endif; ?>
+
+				<?php if ( ! empty( $top_sellers ) ) : ?>
+					<div style="padding:1rem 1.2rem; background:rgba(255,255,255,0.08); border-radius:6px;">
+						<h3 style="margin:0 0 0.6rem; color:#fff; font-size:1em;">🔥 Top 5 ventes <span style="opacity:0.6; font-size:0.78em; font-weight:normal;">(par occurrences)</span></h3>
+						<ol style="margin:0; padding:0; list-style:none;">
+							<?php foreach ( $top_sellers as $i => $s ) : $rank = $i + 1; ?>
+								<li style="display:flex; align-items:center; gap:0.5rem; padding:0.35rem 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+									<span style="min-width:1.5em; text-align:center;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+									<span style="flex:1; min-width:0;">
+										<strong><?php echo esc_html( $section_emoji[ $s['section'] ] ?? '' ); ?> <?php echo esc_html( $s['name'] ); ?></strong>
+									</span>
+									<strong style="white-space:nowrap;"><?php echo (int) $s['occurrences']; ?> vente<?php echo $s['occurrences'] > 1 ? 's' : ''; ?></strong>
+								</li>
+							<?php endforeach; ?>
+						</ol>
+					</div>
+				<?php endif; ?>
+			</div>
+			<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:0 0 1.2rem;">
+		<?php endif; ?>
+
+		<!-- BLOC 1 : RÉEL (compta) — toujours affiché -->
+		<div<?php echo ( $show_pending || $show_cancelled ) ? ' style="margin-bottom:1rem;"' : ''; ?>>
 			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
 				<strong style="font-size:1.05em;">✅ Réel comptable</strong>
 				<span style="opacity:0.7; font-size:0.85em;">— Complétées + Remboursées (ce qui a effectivement été encaissé)</span>
@@ -1558,35 +1612,35 @@ function cordespace_reports_render_grand_total( array $grand ): void {
 			</div>
 		</div>
 
-		<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
+		<?php if ( $show_pending ) : ?>
+			<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
+			<div<?php echo $show_cancelled ? ' style="margin-bottom:1rem;"' : ''; ?>>
+				<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
+					<strong style="font-size:1.05em;">🔮 Pronostic à venir</strong>
+					<span style="opacity:0.7; font-size:0.85em;">— En cours + En attente + Attente paiement (à confirmer)</span>
+				</div>
+				<div style="display:flex; flex-wrap:wrap; gap:1.5rem; padding-left:0.5rem;">
+					<div><span style="opacity:0.7; font-size:0.8em; display:block;">Sous-total</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['subtotal'], 2, ',', ' ' ); ?> $</strong></div>
+					<div><span style="opacity:0.7; font-size:0.8em; display:block;">TPS</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tps'], 2, ',', ' ' ); ?> $</strong></div>
+					<div><span style="opacity:0.7; font-size:0.8em; display:block;">TVQ</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tvq'], 2, ',', ' ' ); ?> $</strong></div>
+					<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.2rem;"><span style="opacity:0.7; font-size:0.8em; display:block;">Total TTC</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['pending']['total'], 2, ',', ' ' ); ?> $</strong></div>
+				</div>
+			</div>
+		<?php endif; ?>
 
-		<!-- BLOC 2 : PRONOSTIC -->
-		<div style="margin-bottom:1rem;">
-			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
-				<strong style="font-size:1.05em;">🔮 Pronostic à venir</strong>
-				<span style="opacity:0.7; font-size:0.85em;">— En cours + En attente + Attente paiement (à confirmer)</span>
+		<?php if ( $show_cancelled ) : ?>
+			<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
+			<div>
+				<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
+					<strong style="font-size:1em; opacity:0.85;">🚫 Annulées (info seulement)</strong>
+					<span style="opacity:0.65; font-size:0.85em;">— Jamais encaissées, exclues des totaux ci-dessus</span>
+				</div>
+				<div style="padding-left:0.5rem; opacity:0.85;">
+					<span style="font-size:0.95em;">Montant total annulé (n'impacte rien) :</span>
+					<strong style="font-size:1.1em; margin-left:0.4rem;"><?php echo number_format( $grand['cancelled']['total'], 2, ',', ' ' ); ?> $</strong>
+				</div>
 			</div>
-			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; padding-left:0.5rem;">
-				<div><span style="opacity:0.7; font-size:0.8em; display:block;">Sous-total</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['subtotal'], 2, ',', ' ' ); ?> $</strong></div>
-				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TPS</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tps'], 2, ',', ' ' ); ?> $</strong></div>
-				<div><span style="opacity:0.7; font-size:0.8em; display:block;">TVQ</span><strong style="font-size:1.15em;"><?php echo number_format( $grand['pending']['tvq'], 2, ',', ' ' ); ?> $</strong></div>
-				<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.2rem;"><span style="opacity:0.7; font-size:0.8em; display:block;">Total TTC</span><strong style="font-size:1.3em;"><?php echo number_format( $grand['pending']['total'], 2, ',', ' ' ); ?> $</strong></div>
-			</div>
-		</div>
-
-		<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:1rem 0;">
-
-		<!-- BLOC 3 : ANNULÉES (info seulement) -->
-		<div>
-			<div style="display:flex; align-items:baseline; gap:0.6rem; margin-bottom:0.3rem;">
-				<strong style="font-size:1em; opacity:0.85;">🚫 Annulées (info seulement)</strong>
-				<span style="opacity:0.65; font-size:0.85em;">— Jamais encaissées, exclues des totaux ci-dessus</span>
-			</div>
-			<div style="padding-left:0.5rem; opacity:0.85;">
-				<span style="font-size:0.95em;">Montant total annulé (n'impacte rien) :</span>
-				<strong style="font-size:1.1em; margin-left:0.4rem;"><?php echo number_format( $grand['cancelled']['total'], 2, ',', ' ' ); ?> $</strong>
-			</div>
-		</div>
+		<?php endif; ?>
 	</div>
 	<?php
 }
