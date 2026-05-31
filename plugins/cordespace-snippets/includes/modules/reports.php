@@ -1165,16 +1165,40 @@ function cordespace_reports_fetch_balances_at( string $snapshot_date_end ): arra
 		$linked_id   = (int) ( $r['linked_user_id'] ?? 0 );
 		$role_info   = cordespace_reports_detect_user_role( (string) ( $r['capabilities'] ?? '' ), $linked_id );
 		$out[]       = [
-			'user_id'      => (int) $r['user_id'],
-			'display_name' => (string) $r['display_name'],
-			'email'        => (string) $r['user_email'],
-			'login'        => (string) $r['user_login'],
-			'balance'      => $balance_at,
-			'current'      => (float) $r['current_balance'],
-			'role'         => $role_info['role'],
-			'prof_name'    => $role_info['prof_name'],
+			'user_id'        => (int) $r['user_id'],
+			'display_name'   => (string) $r['display_name'],
+			'email'          => (string) $r['user_email'],
+			'login'          => (string) $r['user_login'],
+			'balance'        => $balance_at,
+			'current'        => (float) $r['current_balance'],
+			'role'           => $role_info['role'],
+			'prof_name'      => $role_info['prof_name'],
+			'linked_user_id' => $linked_id,
+			'is_anomaly'     => false,
 		];
 	}
+
+	// Détection d'anomalies : un prof ET son·ses compte·s client lié·s ont tous
+	// les deux des crédits non-nuls. Les crédits devraient TOUJOURS être sur le
+	// compte client, jamais sur le compte prof — donc ce cas trahit un transfert
+	// manqué ou un achat fait par erreur côté prof.
+	$prof_ids_with_credits = [];
+	$linked_prof_ids       = [];
+	foreach ( $out as $row ) {
+		if ( $row['role'] === 'prof' ) {
+			$prof_ids_with_credits[ $row['user_id'] ] = true;
+		} elseif ( $row['role'] === 'prof_client' && $row['linked_user_id'] > 0 ) {
+			$linked_prof_ids[ $row['linked_user_id'] ] = true;
+		}
+	}
+	foreach ( $out as &$row ) {
+		if ( $row['role'] === 'prof' && isset( $linked_prof_ids[ $row['user_id'] ] ) ) {
+			$row['is_anomaly'] = true;
+		} elseif ( $row['role'] === 'prof_client' && isset( $prof_ids_with_credits[ $row['linked_user_id'] ] ) ) {
+			$row['is_anomaly'] = true;
+		}
+	}
+	unset( $row );
 
 	// Tri par solde desc
 	usort( $out, fn( $a, $b ) => $b['balance'] <=> $a['balance'] );
@@ -1212,15 +1236,23 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 		} ) );
 	}
 
-	// Sous-totaux par catégorie
+	// Sous-totaux par catégorie + compteur d'anomalies
 	$tots = [ 'admin' => 0, 'prof' => 0, 'prof_client' => 0, 'client' => 0 ];
 	$cnts = [ 'admin' => 0, 'prof' => 0, 'prof_client' => 0, 'client' => 0 ];
-	$grand = 0;
+	$grand          = 0;
+	$anomaly_count  = 0;
+	$anomaly_pairs  = []; // user_id de prof => true (pour compter par paire, pas par ligne)
 	foreach ( $balances as $b ) {
 		$tots[ $b['role'] ] += $b['balance'];
 		$cnts[ $b['role'] ] += 1;
 		$grand              += $b['balance'];
+		if ( ! empty( $b['is_anomaly'] ) ) {
+			$anomaly_count++;
+			$prof_id = $b['role'] === 'prof' ? $b['user_id'] : $b['linked_user_id'];
+			$anomaly_pairs[ $prof_id ] = true;
+		}
 	}
+	$anomaly_pair_count = count( $anomaly_pairs );
 
 	$export_url = add_query_arg(
 		array_merge(
@@ -1285,6 +1317,15 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 		</div>
 	</div>
 
+	<?php if ( $anomaly_pair_count > 0 ) : ?>
+		<div style="margin-top:1.5rem; padding:1rem 1.3rem; background:#fff3cd; border:1px solid #f0ad4e; border-radius:6px; color:#856404;">
+			<strong style="font-size:1.05em;">⚠️ <?php echo (int) $anomaly_pair_count; ?> anomalie<?php echo $anomaly_pair_count > 1 ? 's' : ''; ?> détectée<?php echo $anomaly_pair_count > 1 ? 's' : ''; ?> :</strong>
+			crédits MyCred présents à la fois sur un compte prof ET son compte client lié.
+			<br>
+			<span style="font-size:0.92em;">En théorie, tous les crédits devraient être sur le compte client (c'est ce compte qui sert pour les achats). Les lignes concernées sont surlignées en jaune ci-dessous. À consolider manuellement dans <em>wp-admin → Points</em>.</span>
+		</div>
+	<?php endif; ?>
+
 	<!-- Tableau -->
 	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
 		<?php if ( empty( $balances ) ) : ?>
@@ -1301,8 +1342,11 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 				</thead>
 				<tbody>
 					<?php foreach ( $balances as $b ) : ?>
-						<tr>
+						<tr<?php echo $b['is_anomaly'] ? ' style="background:#fff8e1;"' : ''; ?>>
 							<td>
+								<?php if ( $b['is_anomaly'] ) : ?>
+									<div style="margin-bottom:0.4rem; padding:0.25rem 0.5rem; background:#fff3cd; border-left:3px solid #f0ad4e; color:#856404; font-size:0.82em; line-height:1.3;">⚠️ Crédits sur 2 comptes liés — à consolider</div>
+								<?php endif; ?>
 								<strong><?php echo esc_html( $b['display_name'] !== '' ? $b['display_name'] : $b['login'] ); ?></strong>
 								<br><span style="color:#666; font-size:0.85em;"><?php echo esc_html( $b['email'] ); ?></span>
 							</td>
@@ -1625,7 +1669,7 @@ function cordespace_reports_handle_csv_balances(): void {
 	fwrite( $out, "\xEF\xBB\xBF" );
 
 	fputcsv( $out, [
-		'Utilisateur', 'Courriel', 'Login', 'Rôle', 'Prof lié',
+		'Utilisateur', 'Courriel', 'Login', 'Rôle', 'Prof lié', 'Anomalie',
 		'Solde au snapshot', 'Solde actuel',
 	], ';' );
 
@@ -1644,6 +1688,7 @@ function cordespace_reports_handle_csv_balances(): void {
 			$b['login'],
 			$role_text_labels[ $b['role'] ] ?? $b['role'],
 			$b['prof_name'],
+			! empty( $b['is_anomaly'] ) ? 'OUI - crédits sur 2 comptes liés' : '',
 			number_format( $b['balance'], 2, '.', '' ),
 			number_format( $b['current'], 2, '.', '' ),
 		], ';' );
@@ -1651,7 +1696,7 @@ function cordespace_reports_handle_csv_balances(): void {
 	}
 
 	fputcsv( $out, [
-		'TOTAL EN CIRCULATION', '', '', '', '',
+		'TOTAL EN CIRCULATION', '', '', '', '', '',
 		number_format( $grand, 2, '.', '' ),
 		'',
 	], ';' );
