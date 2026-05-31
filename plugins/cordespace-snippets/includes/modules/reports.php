@@ -587,26 +587,18 @@ function cordespace_reports_render_page(): void {
 	?>
 	<div class="wrap cordespace-reports-page" style="max-width:1400px;">
 		<style>
-			/* 🦖 Petits dinos cachés et animation de saut au clic CSV.
+			/* 🦖 Petits dinos décoratifs et animation de saut au clic CSV.
 			   Scopé à .cordespace-reports-page pour ne pas affecter le reste de l'admin. */
-			@keyframes cordespace-dino-bob {
-				0%, 100% { transform: translateY(0)    rotate(0deg); }
-				25%      { transform: translateY(-3px) rotate(-4deg); }
-				75%      { transform: translateY(-2px) rotate(3deg); }
-			}
 			.cordespace-reports-page .cordespace-dino-hidden {
 				display: inline-block;
-				opacity: 0.65;
+				opacity: 1;
 				font-size: 1.05em;
-				transition: opacity 0.25s, transform 0.25s;
+				transition: transform 0.25s;
 				cursor: default;
 				vertical-align: middle;
-				animation: cordespace-dino-bob 2.8s ease-in-out infinite;
 			}
 			.cordespace-reports-page .cordespace-dino-hidden:hover {
-				opacity: 1;
-				transform: scale(1.5) rotate(-10deg);
-				animation: none;
+				transform: scale(1.4) rotate(-8deg);
 			}
 			@keyframes cordespace-dino-jump {
 				0%   { transform: translate(-50%, 0)    scale(1);   opacity: 1; }
@@ -880,6 +872,14 @@ function cordespace_reports_render_tab_sommaire(): void {
 	// Tri par quantité réelle desc
 	uasort( $grouped, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
 
+	// Totaux ventilés (réel / pronostic / annulé) sur les items boutique pour
+	// le bandeau violet, structure identique à celle utilisée par l'onglet Achats.
+	$boutique_totals      = cordespace_reports_compute_totals( array_values( $boutique ) );
+	$sommaire_categories  = [];
+	foreach ( $selected_statuses as $st ) {
+		$sommaire_categories[ cordespace_reports_status_category( $st ) ] = true;
+	}
+
 	$export_url = add_query_arg(
 		array_merge(
 			[ 'action' => 'cordespace_reports_csv_sommaire', '_wpnonce' => wp_create_nonce( 'cordespace_reports_csv_sommaire' ) ],
@@ -946,6 +946,16 @@ function cordespace_reports_render_tab_sommaire(): void {
 		</div>
 		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 	</div>
+
+	<?php
+	// Bandeau violet "💰 Total général ventilé" (boutique uniquement). Mêmes
+	// règles d'affichage que dans Achats : pas de tops ici, blocs pronostic /
+	// annulé masqués si statuts correspondants non cochés.
+	cordespace_reports_render_grand_total( $boutique_totals['grand'], [
+		'show_pending'   => ! empty( $sommaire_categories['pending'] ),
+		'show_cancelled' => ! empty( $sommaire_categories['cancelled'] ),
+	] );
+	?>
 
 	<?php cordespace_reports_render_qty_bars( $grouped, 7 ); ?>
 
