@@ -1310,8 +1310,7 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 		<h2 style="margin:0 0 1rem; color:#fff; font-size:1.2em;">💰 Soldes totaux par catégorie</h2>
 		<div style="display:flex; flex-wrap:wrap; gap:1.8rem;">
 			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🛒 Clients (<?php echo (int) $cnts['client']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['client'], 2, ',', ' ' ); ?></strong></div>
-			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎓 Profs (<?php echo (int) $cnts['prof']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['prof'], 2, ',', ' ' ); ?></strong></div>
-			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎓 Profs côté client (<?php echo (int) $cnts['prof_client']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['prof_client'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎓 Profs (<?php echo (int) ( $cnts['prof'] + $cnts['prof_client'] ); ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['prof'] + $tots['prof_client'], 2, ',', ' ' ); ?></strong></div>
 			<div><span style="opacity:0.7; font-size:0.85em; display:block;">👑 Admins (<?php echo (int) $cnts['admin']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['admin'], 2, ',', ' ' ); ?></strong></div>
 			<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.8rem;"><span style="opacity:0.7; font-size:0.85em; display:block;">TOTAL EN CIRCULATION</span><strong style="font-size:1.7em;"><?php echo number_format( $grand, 2, ',', ' ' ); ?></strong></div>
 		</div>
@@ -1648,7 +1647,11 @@ function cordespace_reports_handle_csv_balances(): void {
 	$user_search   = isset( $_GET['user_search'] )   ? sanitize_text_field( (string) $_GET['user_search'] )  : '';
 
 	$balances = cordespace_reports_fetch_balances_at( $snapshot_date . ' 23:59:59' );
-	if ( $role_filter !== 'all' ) {
+	// Même logique que l'affichage : 'prof' regroupe les vrais profs ET les
+	// profs sur leur compte client lié.
+	if ( $role_filter === 'prof' ) {
+		$balances = array_values( array_filter( $balances, fn( $b ) => in_array( $b['role'], [ 'prof', 'prof_client' ], true ) ) );
+	} elseif ( $role_filter !== 'all' ) {
 		$balances = array_values( array_filter( $balances, fn( $b ) => $b['role'] === $role_filter ) );
 	}
 	if ( $user_search !== '' ) {
