@@ -113,13 +113,26 @@ function cordespace_reports_get_available_statuses(): array {
  *   - 'salle'     : booking Amelia type='appointment'
  *   - 'refund'    : ligne de remboursement (type WC shop_order_refund)
  *
+ * @param string $period_mode 'purchase' (filtre sur date_created_gmt) ou 'event'
+ *                            (filtre sur la date de l'événement/réservation depuis
+ *                            la meta ameliabooking). Boutique est exclue en mode event.
  * @return array<int, array<string,mixed>>
  */
-function cordespace_reports_fetch_items( string $start, string $end, array $statuses ): array {
+function cordespace_reports_fetch_items( string $start, string $end, array $statuses, string $period_mode = 'purchase' ): array {
 	global $wpdb;
 
 	if ( empty( $statuses ) ) {
 		return [];
+	}
+
+	// Pour le mode 'event', on élargit la fenêtre SQL sur date_created_gmt (l'achat peut
+	// avoir lieu jusqu'à ~1 an avant la date de l'événement). On filtre ensuite côté PHP.
+	if ( $period_mode === 'event' ) {
+		$sql_start = gmdate( 'Y-m-d H:i:s', strtotime( $start ) - 365 * 24 * 3600 );
+		$sql_end   = $end;
+	} else {
+		$sql_start = $start;
+		$sql_end   = $end;
 	}
 
 	// Échappe les statuts pour SQL IN(...)
@@ -164,7 +177,7 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		    AND (o.status IN ($status_placeholders) OR (o.type = 'shop_order_refund' AND parent.status IN ($status_placeholders)))
 		  GROUP BY o.id, oi.order_item_id
 		  ORDER BY o.date_created_gmt ASC, o.id ASC, oi.order_item_id ASC",
-		array_merge( [ $start, $end ], $statuses, $statuses )
+		array_merge( [ $sql_start, $sql_end ], $statuses, $statuses )
 	);
 
 	$rows = $wpdb->get_results( $sql, ARRAY_A );
@@ -297,6 +310,20 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		];
 	}
 
+	// MODE 'event' : filtrage PHP final sur detail_date dans la plage demandée.
+	// Les items sans date d'événement (boutique pure) sont exclus.
+	if ( $period_mode === 'event' ) {
+		$start_normalized = substr( $start, 0, 10 ); // YYYY-MM-DD
+		$end_normalized   = substr( $end, 0, 10 );
+		$items = array_values( array_filter( $items, function ( $it ) use ( $start_normalized, $end_normalized ) {
+			if ( $it['detail_date'] === '' ) {
+				return false; // boutique sans date d'événement → exclue
+			}
+			$d = substr( $it['detail_date'], 0, 10 );
+			return $d >= $start_normalized && $d <= $end_normalized;
+		} ) );
+	}
+
 	return $items;
 }
 
@@ -407,6 +434,7 @@ function cordespace_reports_render_page(): void {
 	}
 
 	// Lecture des filtres depuis GET
+	$period_mode      = isset( $_GET['period_mode'] ) && $_GET['period_mode'] === 'event' ? 'event' : 'purchase';
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
 	$custom_start     = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
@@ -441,7 +469,7 @@ function cordespace_reports_render_page(): void {
 	}
 
 	$available_statuses = $available_statuses_for_default;
-	$items              = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses );
+	$items              = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses, $period_mode );
 	$totals             = cordespace_reports_compute_totals( $items );
 
 	$export_url = add_query_arg(
@@ -461,6 +489,15 @@ function cordespace_reports_render_page(): void {
 			<input type="hidden" name="filtered" value="1">
 
 			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+				<!-- Période basée sur -->
+				<div>
+					<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Période basée sur</label>
+					<select name="period_mode">
+						<option value="purchase" <?php selected( $period_mode, 'purchase' ); ?>>📦 Date d'achat</option>
+						<option value="event"    <?php selected( $period_mode, 'event' );    ?>>📅 Date d'événement</option>
+					</select>
+				</div>
+
 				<!-- Période -->
 				<div>
 					<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Période</label>
@@ -505,12 +542,15 @@ function cordespace_reports_render_page(): void {
 		<!-- Résumé période + bouton CSV -->
 		<div style="margin-top:1.2rem; padding:1rem 1.4rem; background:#eef5fd; border-left:4px solid #2c70b8; border-radius:5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
 			<div>
-				<strong>Période sélectionnée :</strong>
+				<strong><?php echo $period_mode === 'event' ? '📅 Période d\'événement :' : '📦 Période d\'achat :'; ?></strong>
 				<?php echo esc_html( mysql2date( 'j F Y', $range['start'] ) ); ?>
 				→
 				<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
 				·
 				<strong><?php echo count( $items ); ?> lignes</strong>
+				<?php if ( $period_mode === 'event' ) : ?>
+					<br><span style="color:#666; font-size:0.9em;">(boutique exclue — pas de notion de "date d'événement" pour les items physiques)</span>
+				<?php endif; ?>
 			</div>
 			<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
 		</div>
@@ -691,6 +731,7 @@ function cordespace_reports_handle_csv_export(): void {
 	}
 	check_admin_referer( 'cordespace_reports_csv' );
 
+	$period_mode      = isset( $_GET['period_mode'] ) && $_GET['period_mode'] === 'event' ? 'event' : 'purchase';
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
 	$custom_start     = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
@@ -704,11 +745,12 @@ function cordespace_reports_handle_csv_export(): void {
 		$range = cordespace_reports_get_preset_range( $preset );
 	}
 
-	$items  = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses );
+	$items  = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses, $period_mode );
 	$totals = cordespace_reports_compute_totals( $items );
 
 	$filename = sprintf(
-		'cordespace-rapport-%s-au-%s.csv',
+		'cordespace-rapport-%s-%s-au-%s.csv',
+		$period_mode === 'event' ? 'evt' : 'achat',
 		substr( $range['start'], 0, 10 ),
 		substr( $range['end'], 0, 10 )
 	);
