@@ -1059,15 +1059,260 @@ function cordespace_reports_render_tab_credits(): void {
 }
 
 /**
- * Onglet 💰 SOLDES CRÉDITS : stub temporaire.
- * Implémentation à venir : snapshot des soldes utilisateur à une date donnée
- * avec indicateur de rôle (client/prof).
+ * Détecte le rôle Cordespace d'un user :
+ *   - 'prof'        : a un rôle wpamelia-provider ou wpamelia-manager
+ *   - 'prof_client' : compte client lié à un compte prof (via _cordespace_linked_user_id)
+ *   - 'admin'       : a un rôle administrator
+ *   - 'client'      : tout autre cas
+ *
+ * Pour le cas 'prof_client', renvoie aussi le display_name du compte prof lié.
+ *
+ * @return array{role: string, prof_name: string}
+ */
+function cordespace_reports_detect_user_role( array $caps_serialized, ?int $linked_user_id ): array {
+	$caps_str = (string) ( $caps_serialized ?: '' );
+	if ( stripos( $caps_str, '"administrator"' ) !== false ) {
+		return [ 'role' => 'admin', 'prof_name' => '' ];
+	}
+	if ( stripos( $caps_str, '"wpamelia-provider"' ) !== false
+	     || stripos( $caps_str, '"wpamelia-manager"' ) !== false ) {
+		return [ 'role' => 'prof', 'prof_name' => '' ];
+	}
+	// Compte client lié à un compte prof → "prof_client"
+	if ( $linked_user_id && $linked_user_id > 0 ) {
+		global $wpdb;
+		$linked_caps = $wpdb->get_var( $wpdb->prepare(
+			"SELECT meta_value FROM {$wpdb->usermeta} WHERE user_id = %d AND meta_key = %s",
+			$linked_user_id,
+			$wpdb->prefix . 'capabilities'
+		) );
+		if ( $linked_caps
+		     && ( stripos( (string) $linked_caps, '"wpamelia-provider"' ) !== false
+		          || stripos( (string) $linked_caps, '"wpamelia-manager"' ) !== false ) ) {
+			$linked_name = $wpdb->get_var( $wpdb->prepare(
+				"SELECT display_name FROM {$wpdb->users} WHERE ID = %d",
+				$linked_user_id
+			) );
+			return [ 'role' => 'prof_client', 'prof_name' => (string) ( $linked_name ?: '' ) ];
+		}
+	}
+	return [ 'role' => 'client', 'prof_name' => '' ];
+}
+
+/**
+ * Renvoie le label visuel d'un rôle.
+ */
+function cordespace_reports_role_badge( string $role, string $prof_name = '' ): string {
+	switch ( $role ) {
+		case 'admin':       return '👑 Admin';
+		case 'prof':        return '🎓 Prof';
+		case 'prof_client': return '🎓 Prof (compte client, lié à : ' . esc_html( $prof_name ) . ')';
+		case 'client':      return '🛒 Client';
+	}
+	return $role;
+}
+
+/**
+ * Récupère les soldes MyCred à une date donnée (snapshot).
+ *
+ * Approche : prend le solde actuel et soustrait les mouvements postérieurs
+ * à la date du snapshot. Plus fiable que de partir de 0 et additionner (qui
+ * raterait les users dont le solde a été set en dehors du log).
+ *
+ * @return array<int, array<string, mixed>>
+ */
+function cordespace_reports_fetch_balances_at( string $snapshot_date_end ): array {
+	global $wpdb;
+
+	$snapshot_ts = (int) get_gmt_from_date( $snapshot_date_end, 'U' );
+	$caps_key    = $wpdb->prefix . 'capabilities';
+
+	$sql = $wpdb->prepare(
+		"SELECT
+			u.ID AS user_id,
+			u.user_email,
+			u.display_name,
+			u.user_login,
+			CAST(COALESCE(um_bal.meta_value, '0') AS DECIMAL(22,2)) AS current_balance,
+			COALESCE(SUM(CASE WHEN l.time > %d THEN l.creds ELSE 0 END), 0) AS post_movements,
+			MAX(um_caps.meta_value) AS capabilities,
+			MAX(CAST(um_link.meta_value AS UNSIGNED)) AS linked_user_id
+		   FROM {$wpdb->users} u
+		   LEFT JOIN {$wpdb->usermeta} um_bal  ON um_bal.user_id  = u.ID AND um_bal.meta_key  = 'mycred_default'
+		   LEFT JOIN {$wpdb->usermeta} um_caps ON um_caps.user_id = u.ID AND um_caps.meta_key = %s
+		   LEFT JOIN {$wpdb->usermeta} um_link ON um_link.user_id = u.ID AND um_link.meta_key = '_cordespace_linked_user_id'
+		   LEFT JOIN {$wpdb->prefix}myCRED_log l ON l.user_id = u.ID AND l.ctype = 'mycred_default'
+		  WHERE (um_bal.meta_value IS NOT NULL AND um_bal.meta_value != '0')
+		     OR l.id IS NOT NULL
+		  GROUP BY u.ID, u.user_email, u.display_name, u.user_login, um_bal.meta_value
+		  ORDER BY u.display_name ASC",
+		$snapshot_ts,
+		$caps_key
+	);
+
+	$rows = $wpdb->get_results( $sql, ARRAY_A );
+	if ( ! is_array( $rows ) ) {
+		return [];
+	}
+
+	$out = [];
+	foreach ( $rows as $r ) {
+		$balance_at = (float) $r['current_balance'] - (float) $r['post_movements'];
+		// On exclut les users avec 0 solde au snapshot (pas pertinent à montrer)
+		if ( abs( $balance_at ) < 0.005 ) {
+			continue;
+		}
+		$linked_id   = (int) ( $r['linked_user_id'] ?? 0 );
+		$role_info   = cordespace_reports_detect_user_role( (string) ( $r['capabilities'] ?? '' ), $linked_id );
+		$out[]       = [
+			'user_id'      => (int) $r['user_id'],
+			'display_name' => (string) $r['display_name'],
+			'email'        => (string) $r['user_email'],
+			'login'        => (string) $r['user_login'],
+			'balance'      => $balance_at,
+			'current'      => (float) $r['current_balance'],
+			'role'         => $role_info['role'],
+			'prof_name'    => $role_info['prof_name'],
+		];
+	}
+
+	// Tri par solde desc
+	usort( $out, fn( $a, $b ) => $b['balance'] <=> $a['balance'] );
+
+	return $out;
+}
+
+/**
+ * Onglet 💰 SOLDES CRÉDITS : snapshot des soldes MyCred à une date donnée,
+ * avec indicateur de rôle (admin / prof / client lié à prof / client) et CSV.
  */
 function cordespace_reports_render_tab_credits_globaux(): void {
+	$snapshot_date = isset( $_GET['snapshot_date'] ) ? sanitize_text_field( (string) $_GET['snapshot_date'] ) : wp_date( 'Y-m-d' );
+	$role_filter   = isset( $_GET['role_filter'] )   ? sanitize_key( (string) $_GET['role_filter'] )         : 'all';
+	$user_search   = isset( $_GET['user_search'] )   ? sanitize_text_field( (string) $_GET['user_search'] )  : '';
+
+	$snapshot_end = $snapshot_date . ' 23:59:59';
+	$balances     = cordespace_reports_fetch_balances_at( $snapshot_end );
+
+	// Filtre par rôle
+	if ( $role_filter !== 'all' ) {
+		$balances = array_values( array_filter( $balances, fn( $b ) => $b['role'] === $role_filter ) );
+	}
+
+	// Filtre user texte libre
+	if ( $user_search !== '' ) {
+		$needle   = mb_strtolower( $user_search );
+		$balances = array_values( array_filter( $balances, function ( $b ) use ( $needle ) {
+			return stripos( $b['display_name'], $needle ) !== false
+			    || stripos( $b['email'], $needle ) !== false
+			    || stripos( $b['login'], $needle ) !== false;
+		} ) );
+	}
+
+	// Sous-totaux par catégorie
+	$tots = [ 'admin' => 0, 'prof' => 0, 'prof_client' => 0, 'client' => 0 ];
+	$cnts = [ 'admin' => 0, 'prof' => 0, 'prof_client' => 0, 'client' => 0 ];
+	$grand = 0;
+	foreach ( $balances as $b ) {
+		$tots[ $b['role'] ] += $b['balance'];
+		$cnts[ $b['role'] ] += 1;
+		$grand              += $b['balance'];
+	}
+
+	$export_url = add_query_arg(
+		array_merge(
+			[ 'action' => 'cordespace_reports_csv_balances', '_wpnonce' => wp_create_nonce( 'cordespace_reports_csv_balances' ) ],
+			$_GET
+		),
+		admin_url( 'admin-post.php' )
+	);
 	?>
-	<div style="margin-top:1.5rem; padding:2rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00;">
-		<h2 style="margin:0 0 0.5rem;">🚧 Bientôt disponible</h2>
-		<p style="margin:0;">L'onglet <strong>Soldes crédits</strong> sera disponible dans une prochaine version. Il affichera le solde MyCred de chaque utilisateur·trice à une date donnée, avec indicateur client/prof (les profs liés à un compte client seront marqués comme tels).</p>
+	<p style="color:#666; margin-top:1rem;">Solde MyCred de chaque utilisateur·trice à une date précise (snapshot). Le calcul se fait à partir du solde actuel moins les mouvements postérieurs à la date — fiable même pour les anciens comptes.</p>
+
+	<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
+		<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
+		<input type="hidden" name="tab" value="credits-globaux">
+
+		<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-end;">
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Date du snapshot</label>
+				<input type="date" name="snapshot_date" value="<?php echo esc_attr( $snapshot_date ); ?>">
+				<p style="margin:0.3rem 0 0; color:#999; font-size:0.85em;">Solde à la fin de cette journée</p>
+			</div>
+
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Rôle</label>
+				<select name="role_filter">
+					<option value="all"         <?php selected( $role_filter, 'all' );         ?>>Tous</option>
+					<option value="prof"        <?php selected( $role_filter, 'prof' );        ?>>🎓 Prof uniquement</option>
+					<option value="prof_client" <?php selected( $role_filter, 'prof_client' ); ?>>🎓 Profs (comptes client liés)</option>
+					<option value="client"     <?php selected( $role_filter, 'client' );     ?>>🛒 Clients seulement</option>
+					<option value="admin"      <?php selected( $role_filter, 'admin' );      ?>>👑 Admins</option>
+				</select>
+			</div>
+
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Filtre utilisateur·trice</label>
+				<input type="text" name="user_search" value="<?php echo esc_attr( $user_search ); ?>" placeholder="nom, courriel ou login" style="width:240px;">
+			</div>
+
+			<div>
+				<button type="submit" class="button button-primary">Filtrer</button>
+			</div>
+		</div>
+	</form>
+
+	<div style="margin-top:1.2rem; padding:1rem 1.4rem; background:#eef5fd; border-left:4px solid #2c70b8; border-radius:5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+		<div>
+			<strong>📅 Snapshot au :</strong>
+			<?php echo esc_html( mysql2date( 'j F Y', $snapshot_date . ' 00:00:00' ) ); ?>
+			·
+			<strong><?php echo count( $balances ); ?> utilisateur·trices avec solde non-nul</strong>
+		</div>
+		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
+	</div>
+
+	<!-- Totaux par catégorie -->
+	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
+		<h2 style="margin:0 0 1rem; color:#fff; font-size:1.2em;">💰 Soldes totaux par catégorie</h2>
+		<div style="display:flex; flex-wrap:wrap; gap:1.8rem;">
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🛒 Clients (<?php echo (int) $cnts['client']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['client'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎓 Profs (<?php echo (int) $cnts['prof']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['prof'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">🎓 Profs côté client (<?php echo (int) $cnts['prof_client']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['prof_client'], 2, ',', ' ' ); ?></strong></div>
+			<div><span style="opacity:0.7; font-size:0.85em; display:block;">👑 Admins (<?php echo (int) $cnts['admin']; ?>)</span><strong style="font-size:1.4em;"><?php echo number_format( $tots['admin'], 2, ',', ' ' ); ?></strong></div>
+			<div style="border-left:1px solid rgba(255,255,255,0.3); padding-left:1.8rem;"><span style="opacity:0.7; font-size:0.85em; display:block;">TOTAL EN CIRCULATION</span><strong style="font-size:1.7em;"><?php echo number_format( $grand, 2, ',', ' ' ); ?></strong></div>
+		</div>
+	</div>
+
+	<!-- Tableau -->
+	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+		<?php if ( empty( $balances ) ) : ?>
+			<p style="color:#999; font-style:italic; margin:0;">Aucun·e utilisateur·trice avec solde non-nul à cette date.</p>
+		<?php else : ?>
+			<table class="widefat striped" style="font-size:0.92em;">
+				<thead>
+					<tr>
+						<th>Utilisateur·trice</th>
+						<th>Rôle</th>
+						<th style="text-align:right;">Solde au snapshot</th>
+						<th style="text-align:right;">Solde actuel</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $balances as $b ) : ?>
+						<tr>
+							<td>
+								<strong><?php echo esc_html( $b['display_name'] !== '' ? $b['display_name'] : $b['login'] ); ?></strong>
+								<br><span style="color:#666; font-size:0.85em;"><?php echo esc_html( $b['email'] ); ?></span>
+							</td>
+							<td><?php echo wp_kses_post( cordespace_reports_role_badge( $b['role'], $b['prof_name'] ) ); ?></td>
+							<td style="text-align:right; font-weight:600;"><?php echo number_format( $b['balance'], 2, ',', ' ' ); ?></td>
+							<td style="text-align:right; color:#666; font-size:0.9em;"><?php echo number_format( $b['current'], 2, ',', ' ' ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
 	</div>
 	<?php
 }
@@ -1338,6 +1583,77 @@ function cordespace_reports_handle_csv_export(): void {
 			number_format( $b['total'], 2, '.', '' ),
 		], ';' );
 	}
+
+	fclose( $out );
+	exit;
+}
+
+// ============================================================================
+// 8) Export CSV — Soldes crédits (snapshot)
+// ============================================================================
+add_action( 'admin_post_cordespace_reports_csv_balances', 'cordespace_reports_handle_csv_balances' );
+function cordespace_reports_handle_csv_balances(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'forbidden', 403 );
+	}
+	check_admin_referer( 'cordespace_reports_csv_balances' );
+
+	$snapshot_date = isset( $_GET['snapshot_date'] ) ? sanitize_text_field( (string) $_GET['snapshot_date'] ) : wp_date( 'Y-m-d' );
+	$role_filter   = isset( $_GET['role_filter'] )   ? sanitize_key( (string) $_GET['role_filter'] )         : 'all';
+	$user_search   = isset( $_GET['user_search'] )   ? sanitize_text_field( (string) $_GET['user_search'] )  : '';
+
+	$balances = cordespace_reports_fetch_balances_at( $snapshot_date . ' 23:59:59' );
+	if ( $role_filter !== 'all' ) {
+		$balances = array_values( array_filter( $balances, fn( $b ) => $b['role'] === $role_filter ) );
+	}
+	if ( $user_search !== '' ) {
+		$needle   = mb_strtolower( $user_search );
+		$balances = array_values( array_filter( $balances, function ( $b ) use ( $needle ) {
+			return stripos( $b['display_name'], $needle ) !== false
+			    || stripos( $b['email'], $needle ) !== false
+			    || stripos( $b['login'], $needle ) !== false;
+		} ) );
+	}
+
+	$filename = sprintf( 'cordespace-soldes-credits-snapshot-%s.csv', $snapshot_date );
+	nocache_headers();
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename=' . $filename );
+
+	$out = fopen( 'php://output', 'w' );
+	fwrite( $out, "\xEF\xBB\xBF" );
+
+	fputcsv( $out, [
+		'Utilisateur', 'Courriel', 'Login', 'Rôle', 'Prof lié',
+		'Solde au snapshot', 'Solde actuel',
+	], ';' );
+
+	$role_text_labels = [
+		'admin'       => 'Admin',
+		'prof'        => 'Prof',
+		'prof_client' => 'Prof (compte client)',
+		'client'      => 'Client',
+	];
+
+	$grand = 0;
+	foreach ( $balances as $b ) {
+		fputcsv( $out, [
+			$b['display_name'],
+			$b['email'],
+			$b['login'],
+			$role_text_labels[ $b['role'] ] ?? $b['role'],
+			$b['prof_name'],
+			number_format( $b['balance'], 2, '.', '' ),
+			number_format( $b['current'], 2, '.', '' ),
+		], ';' );
+		$grand += $b['balance'];
+	}
+
+	fputcsv( $out, [
+		'TOTAL EN CIRCULATION', '', '', '', '',
+		number_format( $grand, 2, '.', '' ),
+		'',
+	], ';' );
 
 	fclose( $out );
 	exit;
