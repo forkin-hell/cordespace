@@ -172,26 +172,72 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		return [];
 	}
 
+	// ÉTAPE 1 : collecte des order_ids parents des remboursements (pour aller
+	// lire la meta ameliabooking de la commande originale et classer le
+	// remboursement dans la même section que la vente d'origine).
+	$parent_lookup_needed = [];
+	foreach ( $rows as $r ) {
+		if ( ( $r['order_type'] ?? '' ) === 'shop_order_refund' && ! empty( $r['reference_order_id'] ) ) {
+			$parent_lookup_needed[] = (int) $r['reference_order_id'];
+		}
+	}
+	$parent_lookup_needed = array_unique( $parent_lookup_needed );
+
+	// ÉTAPE 2 : bulk query des meta ameliabooking des line_items des parents.
+	// Map : parent_order_id × product_id → ameliabooking array
+	$parent_ameliabooking_map = [];
+	if ( ! empty( $parent_lookup_needed ) ) {
+		$ph = implode( ',', array_fill( 0, count( $parent_lookup_needed ), '%d' ) );
+		$parent_rows = $wpdb->get_results( $wpdb->prepare(
+			"SELECT poi.order_id AS parent_order_id, poi.order_item_name,
+					MAX(CASE WHEN poim.meta_key = '_product_id'   THEN poim.meta_value END) AS product_id,
+					MAX(CASE WHEN poim.meta_key = 'ameliabooking' THEN poim.meta_value END) AS ameliabooking_raw
+			   FROM {$wpdb->prefix}woocommerce_order_items poi
+			   JOIN {$wpdb->prefix}woocommerce_order_itemmeta poim ON poim.order_item_id = poi.order_item_id
+			  WHERE poi.order_id IN ($ph)
+			    AND poi.order_item_type = 'line_item'
+			  GROUP BY poi.order_item_id",
+			$parent_lookup_needed
+		), ARRAY_A );
+
+		foreach ( (array) $parent_rows as $pr ) {
+			$parsed = ! empty( $pr['ameliabooking_raw'] ) ? @unserialize( $pr['ameliabooking_raw'] ) : null;
+			if ( ! is_array( $parsed ) ) {
+				$parsed = null;
+			}
+			$key = (int) $pr['parent_order_id'] . '|' . (int) $pr['product_id'];
+			$parent_ameliabooking_map[ $key ] = [
+				'ameliabooking' => $parsed,
+				'name'          => (string) $pr['order_item_name'],
+			];
+		}
+	}
+
+	// ÉTAPE 3 : traitement des items, classification finale
 	$items = [];
 	foreach ( $rows as $r ) {
 		$ameliabooking = ! empty( $r['ameliabooking_raw'] ) ? @unserialize( $r['ameliabooking_raw'] ) : null;
 		$ameliabooking = is_array( $ameliabooking ) ? $ameliabooking : null;
+		$is_refund     = ( $r['order_type'] ?? '' ) === 'shop_order_refund';
 
-		// Classification :
-		// 1) Si c'est un remboursement (shop_order_refund) → section refund
-		// 2) Sinon, si meta ameliabooking présente → event/appointment
-		// 3) Sinon → boutique
-		if ( ( $r['order_type'] ?? '' ) === 'shop_order_refund' ) {
-			$section = 'refund';
-		} else {
-			$type = $ameliabooking['type'] ?? null;
-			if ( $type === 'event' ) {
-				$section = 'cours';
-			} elseif ( $type === 'appointment' ) {
-				$section = 'salle';
-			} else {
-				$section = 'boutique';
+		// Pour les remboursements, on cherche le meta ameliabooking de l'item
+		// correspondant dans la commande PARENTE (même product_id).
+		if ( $is_refund && $ameliabooking === null ) {
+			$parent_key = (int) ( $r['reference_order_id'] ?? 0 ) . '|' . (int) ( $r['product_id'] ?? 0 );
+			if ( isset( $parent_ameliabooking_map[ $parent_key ] ) ) {
+				$ameliabooking = $parent_ameliabooking_map[ $parent_key ]['ameliabooking'];
 			}
+		}
+
+		// Classification finale : on regarde le type Amelia (qu'il vienne du
+		// line_item lui-même ou du parent dans le cas d'un remboursement)
+		$type = $ameliabooking['type'] ?? null;
+		if ( $type === 'event' ) {
+			$section = 'cours';
+		} elseif ( $type === 'appointment' ) {
+			$section = 'salle';
+		} else {
+			$section = 'boutique';
 		}
 
 		// Nom détaillé : pour les Amelia, c'est le nom du service/event (pas le produit-coquille)
@@ -298,7 +344,6 @@ function cordespace_reports_compute_totals( array $items ): array {
 		'boutique' => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 		'cours'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 		'salle'    => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
-		'refund'   => [ 'items' => [], 'qty' => 0, 'subtotal' => 0, 'tps' => 0, 'tvq' => 0, 'total' => 0 ],
 	];
 	foreach ( $items as $it ) {
 		$s = $it['section'];
@@ -441,7 +486,6 @@ function cordespace_reports_render_page(): void {
 		<?php cordespace_reports_render_section( '📚 Boutique', $totals['sections']['boutique'], 'boutique' ); ?>
 		<?php cordespace_reports_render_section( '🎓 Cours', $totals['sections']['cours'], 'cours' ); ?>
 		<?php cordespace_reports_render_section( '🏠 Salles', $totals['sections']['salle'], 'salle' ); ?>
-		<?php cordespace_reports_render_section( '💸 Remboursements', $totals['sections']['refund'], 'refund' ); ?>
 	</div>
 	<?php
 }
@@ -591,9 +635,8 @@ function cordespace_reports_handle_csv_export(): void {
 		'boutique' => 'Boutique',
 		'cours'    => 'Cours',
 		'salle'    => 'Salle',
-		'refund'   => 'Remboursement',
 	];
-	foreach ( [ 'boutique', 'cours', 'salle', 'refund' ] as $sec ) {
+	foreach ( [ 'boutique', 'cours', 'salle' ] as $sec ) {
 		foreach ( $totals['sections'][ $sec ]['items'] as $it ) {
 			fputcsv( $out, [
 				$section_labels[ $sec ],
