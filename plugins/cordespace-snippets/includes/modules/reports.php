@@ -1194,8 +1194,11 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 	$snapshot_end = $snapshot_date . ' 23:59:59';
 	$balances     = cordespace_reports_fetch_balances_at( $snapshot_end );
 
-	// Filtre par rôle
-	if ( $role_filter !== 'all' ) {
+	// Filtre par rôle. 'prof' regroupe les vrais profs ET les profs qui
+	// sont sur leur compte client (linked).
+	if ( $role_filter === 'prof' ) {
+		$balances = array_values( array_filter( $balances, fn( $b ) => in_array( $b['role'], [ 'prof', 'prof_client' ], true ) ) );
+	} elseif ( $role_filter !== 'all' ) {
 		$balances = array_values( array_filter( $balances, fn( $b ) => $b['role'] === $role_filter ) );
 	}
 
@@ -1243,11 +1246,9 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 			<div>
 				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Rôle</label>
 				<select name="role_filter">
-					<option value="all"         <?php selected( $role_filter, 'all' );         ?>>Tous</option>
-					<option value="prof"        <?php selected( $role_filter, 'prof' );        ?>>🎓 Prof uniquement</option>
-					<option value="prof_client" <?php selected( $role_filter, 'prof_client' ); ?>>🎓 Profs (comptes client liés)</option>
-					<option value="client"     <?php selected( $role_filter, 'client' );     ?>>🛒 Clients seulement</option>
-					<option value="admin"      <?php selected( $role_filter, 'admin' );      ?>>👑 Admins</option>
+					<option value="all"    <?php selected( $role_filter, 'all' );    ?>>Tous</option>
+					<option value="prof"   <?php selected( $role_filter, 'prof' );   ?>>🎓 Profs (incl. comptes client liés)</option>
+					<option value="client" <?php selected( $role_filter, 'client' ); ?>>🛒 Clients</option>
 				</select>
 			</div>
 
