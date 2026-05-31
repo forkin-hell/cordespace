@@ -426,13 +426,86 @@ function cordespace_reports_compute_totals( array $items ): array {
 }
 
 // ============================================================================
-// 4) Page admin (UI)
+// 4) Page admin (UI) — routage par onglets
 // ============================================================================
+
+/**
+ * Renvoie la liste des onglets disponibles.
+ * @return array<string, array{label: string, icon: string}>
+ */
+function cordespace_reports_get_tabs(): array {
+	return [
+		'achats'          => [ 'label' => 'Achats',              'icon' => '📦' ],
+		'sommaire'        => [ 'label' => 'Sommaire boutique',   'icon' => '📊' ],
+		'credits'         => [ 'label' => 'Historique crédits',  'icon' => '💳' ],
+		'credits-globaux' => [ 'label' => 'Soldes crédits',      'icon' => '💰' ],
+	];
+}
+
+/**
+ * Construit une URL d'onglet en conservant les filtres URL pertinents (période,
+ * statuts, etc.) pour passer d'un onglet à l'autre sans perdre la sélection.
+ */
+function cordespace_reports_tab_url( string $tab ): string {
+	$preserved_keys = [ 'preset', 'date_start', 'date_end', 'period_mode', 'statuses', 'snapshot_date' ];
+	$args           = [ 'page' => CORDESPACE_REPORTS_MENU_SLUG, 'tab' => $tab ];
+	foreach ( $preserved_keys as $k ) {
+		if ( isset( $_GET[ $k ] ) ) {
+			$args[ $k ] = $_GET[ $k ];
+		}
+	}
+	return add_query_arg( $args, admin_url( 'admin.php' ) );
+}
+
+/**
+ * Page principale : nav onglets + dispatch vers la fonction de rendu du tab.
+ */
 function cordespace_reports_render_page(): void {
 	if ( ! current_user_can( 'manage_options' ) ) {
 		wp_die( esc_html__( 'Accès refusé.', 'cordespace-snippets' ) );
 	}
 
+	$tabs        = cordespace_reports_get_tabs();
+	$current_tab = isset( $_GET['tab'] ) && isset( $tabs[ $_GET['tab'] ] ) ? sanitize_key( (string) $_GET['tab'] ) : 'achats';
+	?>
+	<div class="wrap" style="max-width:1400px;">
+		<h1>📊 Rapports — Cordespace</h1>
+
+		<nav class="nav-tab-wrapper" style="margin-top:1rem;">
+			<?php foreach ( $tabs as $key => $info ) : ?>
+				<a href="<?php echo esc_url( cordespace_reports_tab_url( $key ) ); ?>"
+				   class="nav-tab <?php echo $current_tab === $key ? 'nav-tab-active' : ''; ?>">
+					<?php echo esc_html( $info['icon'] . ' ' . $info['label'] ); ?>
+				</a>
+			<?php endforeach; ?>
+		</nav>
+
+		<?php
+		switch ( $current_tab ) {
+			case 'sommaire':
+				cordespace_reports_render_tab_sommaire();
+				break;
+			case 'credits':
+				cordespace_reports_render_tab_credits();
+				break;
+			case 'credits-globaux':
+				cordespace_reports_render_tab_credits_globaux();
+				break;
+			case 'achats':
+			default:
+				cordespace_reports_render_tab_achats();
+				break;
+		}
+		?>
+	</div>
+	<?php
+}
+
+/**
+ * Onglet 📦 ACHATS : rapport de ventes avec ventilation par section
+ * (boutique + cours + salles) et catégorie compta (réel / pronostic / annulé).
+ */
+function cordespace_reports_render_tab_achats(): void {
 	// Lecture des filtres depuis GET
 	$period_mode      = isset( $_GET['period_mode'] ) && $_GET['period_mode'] === 'event' ? 'event' : 'purchase';
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
@@ -480,12 +553,11 @@ function cordespace_reports_render_page(): void {
 		admin_url( 'admin-post.php' )
 	);
 	?>
-	<div class="wrap" style="max-width:1400px;">
-		<h1>📊 Rapports — Cordespace</h1>
-		<p style="color:#666;">Rapport unifié des ventes (boutique + cours + salles) sur une période donnée, calculé depuis les vrais montants WooCommerce.</p>
+		<p style="color:#666; margin-top:1rem;">Ventes (boutique + cours + salles) sur une période donnée, calculées depuis les vrais montants WooCommerce, avec ventilation par catégorie comptable.</p>
 
 		<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
 			<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
+			<input type="hidden" name="tab" value="achats">
 			<input type="hidden" name="filtered" value="1">
 
 			<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
@@ -560,6 +632,203 @@ function cordespace_reports_render_page(): void {
 		<?php cordespace_reports_render_section( '📚 Boutique', $totals['sections']['boutique'], 'boutique' ); ?>
 		<?php cordespace_reports_render_section( '🎓 Cours', $totals['sections']['cours'], 'cours' ); ?>
 		<?php cordespace_reports_render_section( '🏠 Salles', $totals['sections']['salle'], 'salle' ); ?>
+	<?php
+}
+
+/**
+ * Onglet 📊 SOMMAIRE BOUTIQUE : agrégation par produit boutique pour une
+ * période d'achat donnée. Pas de noms de clients, juste un sommaire :
+ * "Quels produits ont été vendus en N unités pour M $ en mai ?"
+ */
+function cordespace_reports_render_tab_sommaire(): void {
+	global $wpdb;
+
+	// Filtres : période + statuts (mêmes que Achats, mais pas de period_mode)
+	$preset       = isset( $_GET['preset'] )     ? sanitize_key( (string) $_GET['preset'] )       : 'this_month';
+	$custom_start = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
+	$custom_end   = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
+
+	$available_statuses_for_default = cordespace_reports_get_available_statuses();
+	$default_statuses = [];
+	foreach ( [ 'wc-completed', 'wc-refunded' ] as $s ) {
+		if ( isset( $available_statuses_for_default[ $s ] ) ) {
+			$default_statuses[] = $s;
+		}
+	}
+
+	$has_explicit_filter = isset( $_GET['filtered'] ) && $_GET['filtered'] === '1';
+	$selected_statuses   = isset( $_GET['statuses'] ) && is_array( $_GET['statuses'] )
+		? array_map( 'sanitize_text_field', wp_unslash( $_GET['statuses'] ) )
+		: ( $has_explicit_filter ? [] : $default_statuses );
+
+	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
+		$range = [ 'start' => $custom_start . ' 00:00:00', 'end' => $custom_end . ' 23:59:59' ];
+	} else {
+		$range = cordespace_reports_get_preset_range( $preset );
+	}
+
+	$items     = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses, 'purchase' );
+	$boutique  = array_filter( $items, fn( $it ) => $it['section'] === 'boutique' );
+
+	// Agrégation par produit (key = item_name)
+	$grouped = [];
+	foreach ( $boutique as $it ) {
+		$key = $it['item_name'] !== '' ? $it['item_name'] : 'Produit inconnu';
+		if ( ! isset( $grouped[ $key ] ) ) {
+			$grouped[ $key ] = [
+				'name'      => $key,
+				'qty_real'  => 0, 'qty_pending' => 0, 'qty_cancelled' => 0,
+				'rev_real'  => 0, 'rev_pending' => 0, 'rev_cancelled' => 0,
+				'orders'    => [],
+			];
+		}
+		$cat = cordespace_reports_status_category( $it['status'] );
+		$grouped[ $key ][ 'qty_' . $cat ] += (int) $it['qty'];
+		$grouped[ $key ][ 'rev_' . $cat ] += $it['total'];
+		$grouped[ $key ]['orders'][]       = (int) $it['order_id'];
+	}
+
+	// Tri par quantité réelle desc
+	uasort( $grouped, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
+
+	$export_url = add_query_arg(
+		array_merge(
+			[ 'action' => 'cordespace_reports_csv_sommaire', '_wpnonce' => wp_create_nonce( 'cordespace_reports_csv_sommaire' ) ],
+			$_GET
+		),
+		admin_url( 'admin-post.php' )
+	);
+	?>
+	<p style="color:#666; margin-top:1rem;">Agrégation par produit boutique sur la période d'achat. Pratique pour l'inventaire mensuel : combien d'unités de chaque produit ont été vendues.</p>
+
+	<form method="get" action="" style="background:#fff; border:1px solid #e0e0e0; border-radius:6px; padding:1.2rem 1.5rem; margin-top:1.2rem;">
+		<input type="hidden" name="page" value="<?php echo esc_attr( CORDESPACE_REPORTS_MENU_SLUG ); ?>">
+		<input type="hidden" name="tab" value="sommaire">
+		<input type="hidden" name="filtered" value="1">
+
+		<div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+			<div>
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Période d'achat</label>
+				<select name="preset" onchange="document.getElementById('custom_dates_sommaire').style.display = this.value === 'custom' ? 'block' : 'none';">
+					<option value="this_month"   <?php selected( $preset, 'this_month' );   ?>>Ce mois</option>
+					<option value="last_month"   <?php selected( $preset, 'last_month' );   ?>>Mois précédent</option>
+					<option value="this_year"    <?php selected( $preset, 'this_year' );    ?>>Cette année</option>
+					<option value="last_30_days" <?php selected( $preset, 'last_30_days' ); ?>>30 derniers jours</option>
+					<option value="custom"       <?php selected( $preset, 'custom' );       ?>>Période personnalisée</option>
+				</select>
+				<div id="custom_dates_sommaire" style="margin-top:0.6rem; display:<?php echo $preset === 'custom' ? 'block' : 'none'; ?>;">
+					<label style="font-size:0.9em; display:block; margin-bottom:0.2rem;">Du</label>
+					<input type="date" name="date_start" value="<?php echo esc_attr( $custom_start ); ?>">
+					<label style="font-size:0.9em; display:block; margin:0.4rem 0 0.2rem;">Au</label>
+					<input type="date" name="date_end" value="<?php echo esc_attr( $custom_end ); ?>">
+				</div>
+			</div>
+
+			<div style="flex:1; min-width:280px;">
+				<label style="font-weight:600; display:block; margin-bottom:0.4rem;">Statuts de commande</label>
+				<div style="display:flex; flex-wrap:wrap; gap:0.6rem 1.4rem;">
+					<?php foreach ( $available_statuses_for_default as $slug => $info ) :
+						$checked = in_array( $slug, $selected_statuses, true );
+						?>
+						<label style="display:flex; align-items:center; gap:0.3rem; font-size:0.95em;">
+							<input type="checkbox" name="statuses[]" value="<?php echo esc_attr( $slug ); ?>" <?php checked( $checked ); ?>>
+							<?php echo esc_html( $info['label'] ); ?>
+							<span style="color:#999;">(<?php echo (int) $info['count']; ?>)</span>
+						</label>
+					<?php endforeach; ?>
+				</div>
+			</div>
+
+			<div style="align-self:flex-end;">
+				<button type="submit" class="button button-primary">Filtrer</button>
+			</div>
+		</div>
+	</form>
+
+	<div style="margin-top:1.2rem; padding:1rem 1.4rem; background:#eef5fd; border-left:4px solid #2c70b8; border-radius:5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
+		<div>
+			<strong>📦 Période d'achat :</strong>
+			<?php echo esc_html( mysql2date( 'j F Y', $range['start'] ) ); ?>
+			→
+			<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
+			·
+			<strong><?php echo count( $grouped ); ?> produits distincts</strong>
+		</div>
+		<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
+	</div>
+
+	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
+		<?php if ( empty( $grouped ) ) : ?>
+			<p style="color:#999; font-style:italic; margin:0;">Aucun produit boutique vendu sur cette période avec les statuts sélectionnés.</p>
+		<?php else :
+			$tot_qty_real = $tot_qty_pen = $tot_qty_can = 0;
+			$tot_rev_real = $tot_rev_pen = $tot_rev_can = 0;
+			foreach ( $grouped as $g ) {
+				$tot_qty_real += $g['qty_real'];     $tot_rev_real += $g['rev_real'];
+				$tot_qty_pen  += $g['qty_pending']; $tot_rev_pen  += $g['rev_pending'];
+				$tot_qty_can  += $g['qty_cancelled']; $tot_rev_can  += $g['rev_cancelled'];
+			}
+			?>
+			<table class="widefat striped" style="font-size:0.92em;">
+				<thead>
+					<tr>
+						<th>Produit</th>
+						<th style="text-align:right;">✅ Qté réelle</th>
+						<th style="text-align:right;">✅ Revenu réel</th>
+						<th style="text-align:right;">🔮 Qté pronostic</th>
+						<th style="text-align:right;">🔮 Revenu pronostic</th>
+						<th style="text-align:right;">🚫 Qté annulée</th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $grouped as $g ) : ?>
+						<tr>
+							<td><strong><?php echo esc_html( $g['name'] ); ?></strong></td>
+							<td style="text-align:right; color:#2a7a2a;"><strong><?php echo (int) $g['qty_real']; ?></strong></td>
+							<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $g['rev_real'], 2, ',', ' ' ); ?> $</td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo (int) $g['qty_pending']; ?></td>
+							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $g['rev_pending'], 2, ',', ' ' ); ?> $</td>
+							<td style="text-align:right; color:#999;"><?php echo (int) $g['qty_cancelled']; ?></td>
+						</tr>
+					<?php endforeach; ?>
+					<tr style="background:#eef9ee; font-weight:700;">
+						<td>TOTAUX</td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo (int) $tot_qty_real; ?></td>
+						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $tot_rev_real, 2, ',', ' ' ); ?> $</td>
+						<td style="text-align:right; color:#7a5d00;"><?php echo (int) $tot_qty_pen; ?></td>
+						<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $tot_rev_pen, 2, ',', ' ' ); ?> $</td>
+						<td style="text-align:right; color:#999;"><?php echo (int) $tot_qty_can; ?></td>
+					</tr>
+				</tbody>
+			</table>
+		<?php endif; ?>
+	</div>
+	<?php
+}
+
+/**
+ * Onglet 💳 HISTORIQUE CRÉDITS : stub temporaire.
+ * Implémentation à venir dans le prochain commit (lecture wphu_myCRED_log).
+ */
+function cordespace_reports_render_tab_credits(): void {
+	?>
+	<div style="margin-top:1.5rem; padding:2rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00;">
+		<h2 style="margin:0 0 0.5rem;">🚧 Bientôt disponible</h2>
+		<p style="margin:0;">L'onglet <strong>Historique crédits</strong> sera disponible dans une prochaine version. Il affichera tous les mouvements MyCred (achats, compensations, remboursements) sur une période avec leurs noms/courriels, et un export CSV.</p>
+	</div>
+	<?php
+}
+
+/**
+ * Onglet 💰 SOLDES CRÉDITS : stub temporaire.
+ * Implémentation à venir : snapshot des soldes utilisateur à une date donnée
+ * avec indicateur de rôle (client/prof).
+ */
+function cordespace_reports_render_tab_credits_globaux(): void {
+	?>
+	<div style="margin-top:1.5rem; padding:2rem; background:#fff8e6; border-left:4px solid #f5b800; border-radius:5px; color:#7a5d00;">
+		<h2 style="margin:0 0 0.5rem;">🚧 Bientôt disponible</h2>
+		<p style="margin:0;">L'onglet <strong>Soldes crédits</strong> sera disponible dans une prochaine version. Il affichera le solde MyCred de chaque utilisateur·trice à une date donnée, avec indicateur client/prof (les profs liés à un compte client seront marqués comme tels).</p>
 	</div>
 	<?php
 }
@@ -830,6 +1099,92 @@ function cordespace_reports_handle_csv_export(): void {
 			number_format( $b['total'], 2, '.', '' ),
 		], ';' );
 	}
+
+	fclose( $out );
+	exit;
+}
+
+// ============================================================================
+// 6) Export CSV — Sommaire boutique
+// ============================================================================
+add_action( 'admin_post_cordespace_reports_csv_sommaire', 'cordespace_reports_handle_csv_sommaire' );
+function cordespace_reports_handle_csv_sommaire(): void {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( 'forbidden', 403 );
+	}
+	check_admin_referer( 'cordespace_reports_csv_sommaire' );
+
+	$preset       = isset( $_GET['preset'] )     ? sanitize_key( (string) $_GET['preset'] )       : 'this_month';
+	$custom_start = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
+	$custom_end   = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
+	$selected_statuses = isset( $_GET['statuses'] ) && is_array( $_GET['statuses'] )
+		? array_map( 'sanitize_text_field', wp_unslash( $_GET['statuses'] ) )
+		: [ 'wc-completed', 'wc-refunded' ];
+
+	if ( $preset === 'custom' && $custom_start !== '' && $custom_end !== '' ) {
+		$range = [ 'start' => $custom_start . ' 00:00:00', 'end' => $custom_end . ' 23:59:59' ];
+	} else {
+		$range = cordespace_reports_get_preset_range( $preset );
+	}
+
+	$items    = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses, 'purchase' );
+	$boutique = array_filter( $items, fn( $it ) => $it['section'] === 'boutique' );
+
+	$grouped = [];
+	foreach ( $boutique as $it ) {
+		$key = $it['item_name'] !== '' ? $it['item_name'] : 'Produit inconnu';
+		if ( ! isset( $grouped[ $key ] ) ) {
+			$grouped[ $key ] = [
+				'name'      => $key,
+				'qty_real'  => 0, 'qty_pending' => 0, 'qty_cancelled' => 0,
+				'rev_real'  => 0, 'rev_pending' => 0, 'rev_cancelled' => 0,
+			];
+		}
+		$cat = cordespace_reports_status_category( $it['status'] );
+		$grouped[ $key ][ 'qty_' . $cat ] += (int) $it['qty'];
+		$grouped[ $key ][ 'rev_' . $cat ] += $it['total'];
+	}
+	uasort( $grouped, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
+
+	$filename = sprintf(
+		'cordespace-sommaire-boutique-%s-au-%s.csv',
+		substr( $range['start'], 0, 10 ),
+		substr( $range['end'], 0, 10 )
+	);
+
+	nocache_headers();
+	header( 'Content-Type: text/csv; charset=utf-8' );
+	header( 'Content-Disposition: attachment; filename=' . $filename );
+
+	$out = fopen( 'php://output', 'w' );
+	fwrite( $out, "\xEF\xBB\xBF" ); // BOM UTF-8
+
+	fputcsv( $out, [
+		'Produit',
+		'Qté réelle', 'Revenu réel',
+		'Qté pronostic', 'Revenu pronostic',
+		'Qté annulée', 'Revenu annulé',
+	], ';' );
+
+	$tot_qr = $tot_qp = $tot_qc = 0;
+	$tot_rr = $tot_rp = $tot_rc = 0;
+	foreach ( $grouped as $g ) {
+		fputcsv( $out, [
+			$g['name'],
+			$g['qty_real'],     number_format( $g['rev_real'], 2, '.', '' ),
+			$g['qty_pending'],  number_format( $g['rev_pending'], 2, '.', '' ),
+			$g['qty_cancelled'], number_format( $g['rev_cancelled'], 2, '.', '' ),
+		], ';' );
+		$tot_qr += $g['qty_real'];     $tot_rr += $g['rev_real'];
+		$tot_qp += $g['qty_pending'];  $tot_rp += $g['rev_pending'];
+		$tot_qc += $g['qty_cancelled']; $tot_rc += $g['rev_cancelled'];
+	}
+	fputcsv( $out, [
+		'TOTAUX',
+		$tot_qr, number_format( $tot_rr, 2, '.', '' ),
+		$tot_qp, number_format( $tot_rp, 2, '.', '' ),
+		$tot_qc, number_format( $tot_rc, 2, '.', '' ),
+	], ';' );
 
 	fclose( $out );
 	exit;

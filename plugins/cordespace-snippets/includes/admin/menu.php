@@ -52,7 +52,17 @@ if ( ! function_exists( 'cordespace_admin_register_menu' ) ) {
 			);
 		}
 
-		// Sous-menu "Voir sur GitHub" : pointe vers le repo public.
+	}
+}
+add_action( 'admin_menu', 'cordespace_admin_register_menu' );
+
+/**
+ * Enregistre le lien externe « Voir sur GitHub » à la fin du sous-menu.
+ * Hooké à priorité 100 pour qu'il soit ajouté APRÈS les sous-menus des autres
+ * modules (Rapports, etc.), donc apparaît toujours en dernier de la liste.
+ */
+if ( ! function_exists( 'cordespace_admin_register_github_link' ) ) {
+	function cordespace_admin_register_github_link(): void {
 		add_submenu_page(
 			'cordespace-modules',
 			__( 'Voir sur GitHub', 'cordespace-snippets' ),
@@ -62,7 +72,7 @@ if ( ! function_exists( 'cordespace_admin_register_menu' ) ) {
 		);
 	}
 }
-add_action( 'admin_menu', 'cordespace_admin_register_menu' );
+add_action( 'admin_menu', 'cordespace_admin_register_github_link', 100 );
 
 /**
  * Force le lien GitHub à s'ouvrir dans un nouvel onglet.
