@@ -506,41 +506,8 @@ function cordespace_reports_compute_top_sellers( array $items, int $top_n = 5 ):
 // (la fonction render_top_performers a été supprimée — les tops sont maintenant
 //  rendus directement dans cordespace_reports_render_grand_total via $opts.)
 
-/**
- * Rendu : graphique barres horizontales du top N produits par quantité réelle.
- * Utilisé dans Sommaire boutique au-dessus du tableau détaillé.
- */
-function cordespace_reports_render_qty_bars( array $grouped, int $top_n = 7 ): void {
-	$candidates = array_filter( $grouped, fn( $g ) => ( $g['qty_real'] ?? 0 ) > 0 );
-	if ( empty( $candidates ) ) {
-		return;
-	}
-	uasort( $candidates, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
-	$top = array_slice( array_values( $candidates ), 0, $top_n );
-	$max = (int) $top[0]['qty_real'];
-	if ( $max <= 0 ) {
-		return;
-	}
-	$rank_emoji = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
-	?>
-	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px;">
-		<h2 style="margin:0 0 1rem; color:#fff; font-size:1.3em;">📊 Top <?php echo count( $top ); ?> par quantité vendue <span style="opacity:0.7; font-size:0.7em; font-weight:normal;">(réel comptable)</span></h2>
-		<?php foreach ( $top as $i => $g ) :
-			$pct  = $g['qty_real'] / $max * 100;
-			$rank = $i + 1;
-			?>
-			<div style="display:flex; align-items:center; gap:0.8rem; padding:0.4rem 0; border-bottom:1px solid rgba(255,255,255,0.12);">
-				<span style="min-width:1.8em; text-align:center; font-size:1.05em;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
-				<strong style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?php echo esc_html( $g['name'] ); ?></strong>
-				<div style="width:140px; background:rgba(255,255,255,0.15); border-radius:4px; height:0.55em; overflow:hidden; flex-shrink:0;">
-					<div style="background:linear-gradient(90deg, #c490f0 0%, #f5b1b1 100%); height:100%; width:<?php echo number_format( $pct, 1 ); ?>%;"></div>
-				</div>
-				<strong style="min-width:5.5em; text-align:right; white-space:nowrap;"><?php echo (int) $g['qty_real']; ?> unité<?php echo $g['qty_real'] > 1 ? 's' : ''; ?></strong>
-			</div>
-		<?php endforeach; ?>
-	</div>
-	<?php
-}
+// (la fonction render_qty_bars a été supprimée — les barres sont maintenant
+//  rendues directement dans cordespace_reports_render_grand_total via $opts.)
 
 // ============================================================================
 // 4) Page admin (UI) — routage par onglets
@@ -948,16 +915,16 @@ function cordespace_reports_render_tab_sommaire(): void {
 	</div>
 
 	<?php
-	// Bandeau violet "💰 Total général ventilé" (boutique uniquement). Mêmes
-	// règles d'affichage que dans Achats : pas de tops ici, blocs pronostic /
-	// annulé masqués si statuts correspondants non cochés.
+	// Bandeau violet "💰 Total général ventilé" (boutique uniquement). On y
+	// inclut aussi le Top 7 par quantité vendue, comme on inclut les Tops
+	// acheteurs/ventes dans le bandeau d'Achats — un seul encadré pour tout.
 	cordespace_reports_render_grand_total( $boutique_totals['grand'], [
+		'qty_bars'       => $grouped,
+		'qty_bars_top_n' => 7,
 		'show_pending'   => ! empty( $sommaire_categories['pending'] ),
 		'show_cancelled' => ! empty( $sommaire_categories['cancelled'] ),
 	] );
 	?>
-
-	<?php cordespace_reports_render_qty_bars( $grouped, 7 ); ?>
 
 	<div style="margin-top:1.5rem; padding:1.2rem 1.5rem; background:#fff; border:1px solid #e0e0e0; border-radius:6px;">
 		<?php if ( empty( $grouped ) ) : ?>
@@ -1566,15 +1533,50 @@ function cordespace_reports_render_tab_credits_globaux(): void {
 }
 
 function cordespace_reports_render_grand_total( array $grand, array $opts = [] ): void {
-	$top_buyers     = $opts['top_buyers']     ?? [];
-	$top_sellers    = $opts['top_sellers']    ?? [];
-	$show_pending   = $opts['show_pending']   ?? true;
-	$show_cancelled = $opts['show_cancelled'] ?? true;
-	$section_emoji  = [ 'boutique' => '🛍️', 'cours' => '🎓', 'salle' => '🏠' ];
-	$rank_emoji     = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
+	$top_buyers      = $opts['top_buyers']     ?? [];
+	$top_sellers     = $opts['top_sellers']    ?? [];
+	$qty_bars        = $opts['qty_bars']       ?? [];   // $grouped brut (Sommaire boutique)
+	$qty_bars_top_n  = $opts['qty_bars_top_n'] ?? 7;
+	$show_pending    = $opts['show_pending']   ?? true;
+	$show_cancelled  = $opts['show_cancelled'] ?? true;
+	$section_emoji   = [ 'boutique' => '🛍️', 'cours' => '🎓', 'salle' => '🏠' ];
+	$rank_emoji      = [ 1 => '🥇', 2 => '🥈', 3 => '🥉' ];
+
+	// Précompute du top N pour les barres (si fourni). Pareil que l'ancienne
+	// fonction render_qty_bars : on filtre qty_real>0, on trie desc, on slice.
+	$qty_bars_top = [];
+	$qty_bars_max = 0;
+	if ( ! empty( $qty_bars ) ) {
+		$candidates = array_filter( $qty_bars, fn( $g ) => ( $g['qty_real'] ?? 0 ) > 0 );
+		if ( ! empty( $candidates ) ) {
+			uasort( $candidates, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
+			$qty_bars_top = array_slice( array_values( $candidates ), 0, $qty_bars_top_n );
+			$qty_bars_max = (int) $qty_bars_top[0]['qty_real'];
+		}
+	}
 	?>
 	<div style="margin-top:1.5rem; padding:1.5rem 1.8rem; background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%); color:#fff; border-radius:8px; position:relative;">
 		<h2 style="margin:0 0 1.2rem; color:#fff; font-size:1.3em;">💰 Total général ventilé <span class="cordespace-dino-hidden" title="rawr">🦖</span></h2>
+
+		<?php if ( ! empty( $qty_bars_top ) ) : ?>
+			<div style="padding:1rem 1.2rem; background:rgba(255,255,255,0.08); border-radius:6px; margin-bottom:1.2rem;">
+				<h3 style="margin:0 0 0.8rem; color:#fff; font-size:1em;">📊 Top <?php echo count( $qty_bars_top ); ?> par quantité vendue <span style="opacity:0.6; font-size:0.78em; font-weight:normal;">(réel comptable)</span></h3>
+				<?php foreach ( $qty_bars_top as $i => $g ) :
+					$pct  = $qty_bars_max > 0 ? $g['qty_real'] / $qty_bars_max * 100 : 0;
+					$rank = $i + 1;
+					?>
+					<div style="display:flex; align-items:center; gap:0.8rem; padding:0.35rem 0; border-bottom:1px solid rgba(255,255,255,0.1);">
+						<span style="min-width:1.8em; text-align:center; font-size:1.05em;"><?php echo esc_html( $rank_emoji[ $rank ] ?? '#' . $rank ); ?></span>
+						<strong style="flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"><?php echo esc_html( $g['name'] ); ?></strong>
+						<div style="width:140px; background:rgba(255,255,255,0.15); border-radius:4px; height:0.55em; overflow:hidden; flex-shrink:0;">
+							<div style="background:linear-gradient(90deg, #c490f0 0%, #f5b1b1 100%); height:100%; width:<?php echo number_format( $pct, 1 ); ?>%;"></div>
+						</div>
+						<strong style="min-width:5.5em; text-align:right; white-space:nowrap;"><?php echo (int) $g['qty_real']; ?> unité<?php echo $g['qty_real'] > 1 ? 's' : ''; ?></strong>
+					</div>
+				<?php endforeach; ?>
+			</div>
+			<hr style="border:none; border-top:1px solid rgba(255,255,255,0.18); margin:0 0 1.2rem;">
+		<?php endif; ?>
 
 		<?php if ( ! empty( $top_buyers ) || ! empty( $top_sellers ) ) : ?>
 			<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(310px, 1fr)); gap:1rem; margin-bottom:1.2rem;">
