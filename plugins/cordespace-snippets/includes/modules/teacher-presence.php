@@ -198,7 +198,12 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 					  WHERE p.customerBookingId = b.id
 					    AND p.wcOrderId IS NOT NULL
 					  ORDER BY p.id DESC
-					  LIMIT 1) AS wc_order_id
+					  LIMIT 1) AS wc_order_id,
+					COALESCE((SELECT p.amount
+					   FROM {$wpdb->prefix}amelia_payments p
+					  WHERE p.customerBookingId = b.id
+					  ORDER BY p.id DESC
+					  LIMIT 1), 0) AS booking_amount
 			   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep
 			   JOIN {$wpdb->prefix}amelia_customer_bookings b ON b.id = bep.customerBookingId
 			   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
@@ -366,8 +371,13 @@ function cordespace_render_today_students( $atts ) {
 			// (Montréal) avant de formater pour afficher les heures locales.
 			$when  = mysql2date( 'l j F — H\hi', get_date_from_gmt( $event['periodStart'] ) );
 			$end   = mysql2date( 'H\hi',          get_date_from_gmt( $event['periodEnd']   ) );
-			$total = count( $event['bookings'] );
-			$pres  = count( array_filter( $event['bookings'], fn($b) => $b['is_checked_in'] ) );
+			// On compte les PERSONNES (somme des billets), pas les réservations,
+			// pour qu'un booking de groupe (Marie ×3) compte pour 3 et pas 1.
+			$total = (int) array_sum( array_map( fn($b) => (int) ( $b['persons'] ?? 1 ), $event['bookings'] ) );
+			$pres  = (int) array_sum( array_map(
+				fn($b) => ! empty( $b['is_checked_in'] ) ? (int) ( $b['persons'] ?? 1 ) : 0,
+				$event['bookings']
+			) );
 		?>
 			<details class="cordespace-event-block" open style="margin-bottom:1.8rem;padding:1.2rem 1.4rem;background:#fafafa;border-radius:8px;border:1px solid #e0e0e0;">
 				<summary style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:0.6rem;margin-bottom:0.8rem;padding-bottom:0.8rem;border-bottom:1px solid #e5e5e5;cursor:pointer;list-style:none;">
@@ -406,6 +416,9 @@ function cordespace_render_today_students( $atts ) {
 												echo ' #' . $wc_order_id;
 											}
 											?></span>
+										<?php endif; ?>
+										<?php $amount = (float) ( $b['booking_amount'] ?? 0 ); if ( $amount > 0 ) : ?>
+											<span class="cordespace-amount-badge" style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:600;letter-spacing:0.2px;" title="Valeur du billet enregistrée dans Amelia">💰 <?php echo number_format( $amount, 2, ',', ' ' ); ?> $</span>
 										<?php endif; ?>
 									</div>
 									<div style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
