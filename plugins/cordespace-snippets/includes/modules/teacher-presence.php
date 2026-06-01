@@ -444,6 +444,7 @@ function cordespace_render_today_students( $atts ) {
 										   class="cordespace-checkin-btn"
 										   data-booking-id="<?php echo (int) $b['booking_id']; ?>"
 										   data-scan-date="<?php echo esc_attr( $b['scan_date'] ); ?>"
+										   data-persons="<?php echo (int) ( $b['persons'] ?? 1 ); ?>"
 										   data-state="<?php echo $is_present ? 'present' : 'not_present'; ?>"
 										   <?php checked( $is_present ); ?>
 										   style="position:absolute;opacity:0;pointer-events:none;">
@@ -585,8 +586,15 @@ function cordespace_render_today_students( $atts ) {
 
 		function updateCounters() {
 			document.querySelectorAll('.cordespace-event-block').forEach(function (blk) {
-				var all = blk.querySelectorAll('.cordespace-checkin-btn').length;
-				var pres = blk.querySelectorAll('.cordespace-checkin-btn[data-state="present"]').length;
+				// On somme data-persons (= billets) au lieu de compter les éléments
+				// (= bookings) pour qu'un groupe Marie ×3 compte pour 3 personnes
+				// dans le compteur, cohérent avec le badge 🎫 ×N.
+				var all = 0, pres = 0;
+				blk.querySelectorAll('.cordespace-checkin-btn').forEach(function (b) {
+					var n = parseInt(b.dataset.persons || '1', 10) || 1;
+					all += n;
+					if (b.dataset.state === 'present') pres += n;
+				});
 				var c = blk.querySelector('.cordespace-counter');
 				if (c) c.textContent = pres + ' / ' + all + ' présent·e·s';
 			});
@@ -598,8 +606,16 @@ function cordespace_render_today_students( $atts ) {
 		function maybeCelebrateEventCompletion(triggerBtn) {
 			var eventBlock = triggerBtn.closest('.cordespace-event-block');
 			if (!eventBlock) return;
-			var all = eventBlock.querySelectorAll('.cordespace-checkin-btn').length;
-			var pres = eventBlock.querySelectorAll('.cordespace-checkin-btn[data-state="present"]').length;
+			// Confettis quand TOUTES les personnes sont présentes (somme persons),
+			// pas seulement quand toutes les réservations sont cochées — sinon
+			// un groupe Marie ×3 où Marie a cliqué une fois déclencherait avant
+			// que les 3 personnes soient effectivement dans la salle.
+			var all = 0, pres = 0;
+			eventBlock.querySelectorAll('.cordespace-checkin-btn').forEach(function (b) {
+				var n = parseInt(b.dataset.persons || '1', 10) || 1;
+				all += n;
+				if (b.dataset.state === 'present') pres += n;
+			});
 			if (all === 0 || pres < all) return;
 			// Cours complet ! On dégaine les confettis.
 			fireConfettiBurst(eventBlock);
