@@ -203,7 +203,10 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 					   FROM {$wpdb->prefix}amelia_payments p
 					  WHERE p.customerBookingId = b.id
 					  ORDER BY p.id DESC
-					  LIMIT 1), 0) AS booking_amount
+					  LIMIT 1), 0) AS booking_amount,
+					COALESCE((SELECT SUM(bt.persons * bt.price)
+					   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_tickets bt
+					  WHERE bt.customerBookingId = b.id), 0) AS ticket_face_value
 			   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep
 			   JOIN {$wpdb->prefix}amelia_customer_bookings b ON b.id = bep.customerBookingId
 			   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
@@ -417,8 +420,17 @@ function cordespace_render_today_students( $atts ) {
 											}
 											?></span>
 										<?php endif; ?>
-										<?php $amount = (float) ( $b['booking_amount'] ?? 0 ); if ( $amount > 0 ) : ?>
-											<span class="cordespace-amount-badge" style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:600;letter-spacing:0.2px;" title="Valeur du billet enregistrée dans Amelia">💰 <?php echo number_format( $amount, 2, ',', ' ' ); ?> $</span>
+										<?php
+										// Priorité d'affichage :
+										//   1. payment.amount > 0  → personne A PAYÉ via WC (Interac/CB/crédits) → badge vert
+										//   2. tickets price × persons > 0 → réservation Amelia onSite, NON encaissée → badge orange "💵 SUR PLACE"
+										//   3. les 2 à zéro → vraie invitation / billet gratuit → aucun badge
+										$paid_amount = (float) ( $b['booking_amount']     ?? 0 );
+										$face_value  = (float) ( $b['ticket_face_value']  ?? 0 );
+										if ( $paid_amount > 0 ) : ?>
+											<span class="cordespace-amount-badge" style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:600;letter-spacing:0.2px;" title="Montant payé via WooCommerce (incl. taxes)">💰 <?php echo number_format( $paid_amount, 2, ',', ' ' ); ?> $</span>
+										<?php elseif ( $face_value > 0 ) : ?>
+											<span class="cordespace-amount-onsite-badge" style="display:inline-block;background:#fff3cd;color:#856404;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Réservation Amelia avec paiement « sur place » (gateway onSite) — pas de transaction WooCommerce. À encaisser pendant le cours.">💵 <?php echo number_format( $face_value, 2, ',', ' ' ); ?> $ SUR PLACE</span>
 										<?php endif; ?>
 									</div>
 									<div style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
