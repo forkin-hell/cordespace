@@ -19,7 +19,11 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const CORDESPACE_EVENT_TYPE_POST_TYPE      = 'cordespace_event_type';
+// Slug court (max 20 char autorisés par WP pour un CPT). 'cordespace_event_type'
+// aurait fait 21 caractères → erreur 'Type de contenu non valide'. On garde
+// les constantes meta avec leur nom long, c'est juste le slug du CPT qui
+// est compact.
+const CORDESPACE_EVENT_TYPE_POST_TYPE      = 'cordespace_evtype';
 const CORDESPACE_EVENT_TYPE_META_TAGS      = '_cordespace_event_type_amelia_tags';
 const CORDESPACE_EVENT_TYPE_META_INFO_URL  = '_cordespace_event_type_info_url';
 
@@ -31,15 +35,15 @@ function cordespace_event_gating_register_cpt(): void {
 	register_post_type(
 		CORDESPACE_EVENT_TYPE_POST_TYPE,
 		[
-			'label'           => __( "Types d'événements gated", 'cordespace-snippets' ),
+			'label'           => __( "Types d'événements à validation", 'cordespace-snippets' ),
 			'labels'          => [
-				'name'          => __( "Types d'événements gated", 'cordespace-snippets' ),
-				'singular_name' => __( "Type d'événement", 'cordespace-snippets' ),
+				'name'          => __( "Types d'événements à validation", 'cordespace-snippets' ),
+				'singular_name' => __( "Type d'événement à validation", 'cordespace-snippets' ),
 				'add_new'       => __( 'Ajouter', 'cordespace-snippets' ),
-				'add_new_item'  => __( "Nouveau type d'événement", 'cordespace-snippets' ),
+				'add_new_item'  => __( "Nouveau type", 'cordespace-snippets' ),
 				'edit_item'     => __( 'Éditer le type', 'cordespace-snippets' ),
 				'search_items'  => __( 'Rechercher un type', 'cordespace-snippets' ),
-				'not_found'     => __( 'Aucun type.', 'cordespace-snippets' ),
+				'not_found'     => __( 'Aucun type configuré.', 'cordespace-snippets' ),
 			],
 			'public'          => false,
 			'show_ui'         => true,
@@ -62,8 +66,8 @@ add_action( 'init', 'cordespace_event_gating_register_cpt' );
 function cordespace_event_gating_register_admin_submenu(): void {
 	add_submenu_page(
 		'cordespace-modules',
-		__( "Types d'événements gated", 'cordespace-snippets' ),
-		__( 'Events gated', 'cordespace-snippets' ),
+		__( "Types d'événements à validation", 'cordespace-snippets' ),
+		__( 'Événements à validation', 'cordespace-snippets' ),
 		'edit_posts',
 		'edit.php?post_type=' . CORDESPACE_EVENT_TYPE_POST_TYPE
 	);

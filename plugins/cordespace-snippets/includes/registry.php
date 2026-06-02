@@ -16,7 +16,7 @@ return [
 		'payments'   => [ 'label' => 'Paiements et crédits', 'icon' => '💰', 'order' => 20 ],
 		'admin'        => [ 'label' => 'Outils admin',         'icon' => '🛠️', 'order' => 25 ],
 		'waivers'      => [ 'label' => 'Waivers',              'icon' => '📝', 'order' => 27 ],
-		'event-gating' => [ 'label' => "Events gated",          'icon' => '🔒', 'order' => 28 ],
+		'event-gating' => [ 'label' => "Événements à validation", 'icon' => '🔒', 'order' => 28 ],
 		'styles'       => [ 'label' => 'Styles',               'icon' => '🎨', 'order' => 30 ],
 	],
 
@@ -241,8 +241,8 @@ return [
 			'default_active'  => true,
 		],
 		'event-gating.cpt' => [
-			'label'           => "CPT « Types d'événements gated »",
-			'description'     => "Custom Post Type cordespace_event_type pour définir les types d'événements qui nécessitent l'approbation admin (semi-privé, privé, atelier expert, etc.). Chaque type a un texte de bandeau, une whitelist d'étiquettes Amelia (matching auto avec les events), et une URL d'info. Sous-menu Cordespace → Events gated.",
+			'label'           => "CPT « Types d'événements à validation »",
+			'description'     => "Custom Post Type cordespace_evtype pour définir les types d'événements qui nécessitent l'approbation admin (semi-privé, privé, atelier expert, etc.). Chaque type a un texte de bandeau, une whitelist d'étiquettes Amelia (matching auto avec les events), et une URL d'info. Sous-menu Cordespace → Événements à validation.",
 			'category'        => 'event-gating',
 			'type'            => 'php',
 			'file'            => 'includes/modules/event-gating-cpt.php',
