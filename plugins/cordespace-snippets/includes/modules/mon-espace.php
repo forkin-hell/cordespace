@@ -199,6 +199,15 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	 * Si le module est désactivé, rien ne s'affiche.
 	 */
 	do_action( 'cordespace_mon_espace_section_client_qr', $user );
+
+	/**
+	 * Slot : banderoles d'alerte au top (avant le greeting block).
+	 * Ex : module waivers-post-purchase-prompt qui rappelle de signer un
+	 * document avant le prochain cours.
+	 *
+	 * Args : $user (WP_User).
+	 */
+	do_action( 'cordespace_mon_espace_section_client_top_banner', $user );
 	?>
 
 	<div class="cordespace-greeting-block" style="background:linear-gradient(135deg,#5b2c8f 0%,#1a1a2e 100%);color:#fff;padding:2rem;border-radius:10px;margin-bottom:1.5rem;">
@@ -231,14 +240,27 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<?php echo do_shortcode( '[ameliacustomerpanel events=1]' ); ?>
 	</section>
 
-	<section id="section-waivers" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
-		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📋 Mes waivers</h2>
-		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Les décharges et formulaires que tu as signés.</p>
-		<div style="padding:1.2rem;background:#fff8e6;border-left:4px solid #f5b800;border-radius:5px;color:#7a5d00;">
-			<strong>🚧 Bientôt disponible</strong><br>
-			Le système de waivers sera ajouté dans la prochaine phase.
-		</div>
-	</section>
+	<?php
+	/**
+	 * Slot : section "Mes waivers" (sous-module waivers.mon-espace).
+	 * Si le module est désactivé, on retombe sur un placeholder pour ne pas casser
+	 * l'ancre #section-waivers du nav du haut.
+	 */
+	if ( has_action( 'cordespace_mon_espace_section_client_waivers' ) ) {
+		do_action( 'cordespace_mon_espace_section_client_waivers', $user );
+	} else {
+		?>
+		<section id="section-waivers" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
+			<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📋 Mes waivers</h2>
+			<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Les décharges et formulaires que tu as signés.</p>
+			<div style="padding:1.2rem;background:#fff8e6;border-left:4px solid #f5b800;border-radius:5px;color:#7a5d00;">
+				<strong>🚧 Bientôt disponible</strong><br>
+				Le système de waivers sera ajouté dans la prochaine phase.
+			</div>
+		</section>
+		<?php
+	}
+	?>
 
 	<?php
 	/**

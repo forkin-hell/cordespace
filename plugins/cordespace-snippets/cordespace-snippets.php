@@ -39,3 +39,11 @@ if ( is_admin() ) {
 	require_once CORDESPACE_SNIPPETS_DIR . '/includes/admin/page-modules.php';
 	require_once CORDESPACE_SNIPPETS_DIR . '/includes/admin/ajax-toggle.php';
 }
+
+// Création de la table waiver_signatures à l'activation du plugin.
+// Le self-heal admin_init dans waivers-schema.php couvre les updates via WP Pusher
+// (où l'activation hook ne re-tourne pas).
+register_activation_hook( __FILE__, static function (): void {
+	require_once __DIR__ . '/includes/modules/waivers-schema.php';
+	cordespace_waivers_install_table();
+} );

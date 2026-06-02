@@ -1,0 +1,39 @@
+/**
+ * Marges latérales sur les pages WC panier et checkout.
+ *
+ * Cible :
+ *   - WC Blocks (nouveau) : .wp-block-woocommerce-cart, .wp-block-woocommerce-checkout
+ *   - WC classique (shortcode) : .woocommerce sur les body.woocommerce-cart/checkout
+ *
+ * On utilise !important pour outrepasser les overrides du thème ou des
+ * snippets WPCode externes qui peuvent forcer une largeur full-bleed.
+ */
+
+body.woocommerce-cart .wp-block-woocommerce-cart,
+body.woocommerce-checkout .wp-block-woocommerce-checkout,
+body.woocommerce-cart .woocommerce,
+body.woocommerce-checkout .woocommerce {
+	box-sizing: border-box !important;
+	max-width: 1200px !important;
+	margin-left: auto !important;
+	margin-right: auto !important;
+	padding-left: 2rem !important;
+	padding-right: 2rem !important;
+	float: none !important;
+}
+
+@media (max-width: 767px) {
+	body.woocommerce-cart .wp-block-woocommerce-cart,
+	body.woocommerce-checkout .wp-block-woocommerce-checkout,
+	body.woocommerce-cart .woocommerce,
+	body.woocommerce-checkout .woocommerce {
+		padding-left: 1rem !important;
+		padding-right: 1rem !important;
+	}
+}
+
+/* Notre encadré waiver gating respire mieux dans son conteneur */
+.cordespace-waivers-gate {
+	padding: 1.2rem 1.5rem;
+	border-radius: 6px;
+}

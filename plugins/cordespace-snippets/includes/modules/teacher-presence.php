@@ -190,6 +190,7 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 		$bookings = $wpdb->get_results( $wpdb->prepare(
 			"SELECT b.id AS booking_id, b.status,
 					u.firstName, u.lastName, u.email,
+					u.externalId AS wp_user_id,
 					COALESCE((SELECT SUM(bt.persons)
 					            FROM {$wpdb->prefix}amelia_customer_bookings_to_events_tickets bt
 					           WHERE bt.customerBookingId = b.id), 1) AS persons,
@@ -432,6 +433,14 @@ function cordespace_render_today_students( $atts ) {
 										<?php elseif ( $face_value > 0 ) : ?>
 											<span class="cordespace-amount-onsite-badge" style="display:inline-block;background:#fff3cd;color:#856404;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Réservation Amelia avec paiement « sur place » (gateway onSite) — pas de transaction WooCommerce. À encaisser pendant le cours.">💵 <?php echo number_format( $face_value, 2, ',', ' ' ); ?> $ SUR PLACE</span>
 										<?php endif; ?>
+										<?php
+										/**
+										 * Slot : badges supplémentaires à côté du nom (ex: ⚠️ WAIVER MANQUANT).
+										 * Hook : cordespace_teacher_presence_student_badges
+										 * Args : booking array + event array.
+										 */
+										do_action( 'cordespace_teacher_presence_student_badges', $b, $event );
+										?>
 									</div>
 									<div style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
 								</div>
