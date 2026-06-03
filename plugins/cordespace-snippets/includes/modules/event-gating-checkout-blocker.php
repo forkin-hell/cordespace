@@ -211,10 +211,15 @@ function cordespace_evgating_render_block_banner(): void {
 		<?php endif; ?>
 
 		<?php foreach ( $blocked as $row ) :
-			$type        = $row['type'];
-			$events      = $row['event_names'];
-			$info_url    = cordespace_event_gating_get_info_url( (int) $type->ID );
-			$banner_html = apply_filters( 'the_content', (string) $type->post_content );
+			$type     = $row['type'];
+			$events   = $row['event_names'];
+			$info_url = cordespace_event_gating_get_info_url( (int) $type->ID );
+			// IMPORTANT : ne PAS appeler apply_filters('the_content', ...) ici
+			// parce que cette fonction est elle-même appelée DEPUIS le filtre
+			// the_content (via cordespace_evgating_inject_banner_via_content).
+			// Ça causerait une récursion infinie → fatal memory exhausted.
+			// On utilise wpautop + wp_kses_post pour le rendu HTML basique.
+			$banner_html = wpautop( wp_kses_post( (string) $type->post_content ) );
 			?>
 			<div style="margin:0.8rem 0; padding:0.9rem 1.1rem; background:rgba(255,255,255,0.55); border-radius:5px;">
 				<p style="margin:0 0 0.4rem; font-weight:700; font-size:1.05em;">
@@ -260,15 +265,27 @@ add_action( 'woocommerce_before_checkout_form', 'cordespace_evgating_render_bloc
  * pas dans ce contexte — même approche que prof-warning et waivers.
  */
 function cordespace_evgating_inject_banner_via_content( $content ) {
+	// Garde anti-récursion : si on est déjà dans cette fonction
+	// (parce que le_content est appliqué dans le banner par mégarde), on
+	// renvoie le content tel quel sans repasser dans la logique.
+	static $running = false;
+	if ( $running ) {
+		return $content;
+	}
+
 	if ( ! function_exists( 'is_cart' ) || ! function_exists( 'is_checkout' ) ) {
 		return $content;
 	}
 	if ( ! is_cart() && ! is_checkout() ) {
 		return $content;
 	}
+
+	$running = true;
 	ob_start();
 	cordespace_evgating_render_block_banner();
 	$banner = ob_get_clean();
+	$running = false;
+
 	if ( $banner === '' ) {
 		return $content;
 	}
