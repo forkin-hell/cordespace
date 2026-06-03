@@ -28,6 +28,28 @@ defined( 'ABSPATH' ) || exit;
 
 const CORDESPACE_REPORTS_MENU_SLUG = 'cordespace-reports';
 
+// Capacité custom pour voir les Rapports. Permet de donner accès à des
+// rôles non-admin (ex : « rapport finance » pour Hanna) sans leur donner
+// le pouvoir total de 'manage_options'.
+// Une fois cette cap accordée à l'administrateur (ci-dessous), elle apparaît
+// dans la liste de User Role Editor et peut être cochée pour d'autres rôles.
+const CORDESPACE_REPORTS_CAP = 'cordespace_view_reports';
+
+/**
+ * Accorde la capacité aux administrateurs au premier admin_init après déploiement.
+ * Idempotent : si la cap existe déjà sur le rôle, ne fait rien.
+ *
+ * Pour les autres rôles (ex : « rapport finance »), Tess les configure
+ * manuellement via User Role Editor (URE) → cocher cordespace_view_reports.
+ */
+add_action( 'admin_init', 'cordespace_reports_ensure_admin_cap', 1 );
+function cordespace_reports_ensure_admin_cap(): void {
+	$role = get_role( 'administrator' );
+	if ( $role && ! $role->has_cap( CORDESPACE_REPORTS_CAP ) ) {
+		$role->add_cap( CORDESPACE_REPORTS_CAP );
+	}
+}
+
 // ============================================================================
 // 1) Sous-menu wp-admin
 // ============================================================================
@@ -37,7 +59,7 @@ function cordespace_reports_register_menu(): void {
 		'cordespace-modules',
 		__( 'Cordespace — Rapports', 'cordespace-snippets' ),
 		__( 'Rapports', 'cordespace-snippets' ),
-		'manage_options',
+		CORDESPACE_REPORTS_CAP,
 		CORDESPACE_REPORTS_MENU_SLUG,
 		'cordespace_reports_render_page'
 	);
@@ -545,7 +567,7 @@ function cordespace_reports_tab_url( string $tab ): string {
  * Page principale : nav onglets + dispatch vers la fonction de rendu du tab.
  */
 function cordespace_reports_render_page(): void {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! current_user_can( CORDESPACE_REPORTS_CAP ) ) {
 		wp_die( esc_html__( 'Accès refusé.', 'cordespace-snippets' ) );
 	}
 
@@ -1775,7 +1797,7 @@ function cordespace_reports_render_section( string $title, array $section, strin
 // ============================================================================
 add_action( 'admin_post_cordespace_reports_csv', 'cordespace_reports_handle_csv_export' );
 function cordespace_reports_handle_csv_export(): void {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! current_user_can( CORDESPACE_REPORTS_CAP ) ) {
 		wp_die( 'forbidden', 403 );
 	}
 	check_admin_referer( 'cordespace_reports_csv' );
@@ -1889,7 +1911,7 @@ function cordespace_reports_handle_csv_export(): void {
 // ============================================================================
 add_action( 'admin_post_cordespace_reports_csv_balances', 'cordespace_reports_handle_csv_balances' );
 function cordespace_reports_handle_csv_balances(): void {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! current_user_can( CORDESPACE_REPORTS_CAP ) ) {
 		wp_die( 'forbidden', 403 );
 	}
 	check_admin_referer( 'cordespace_reports_csv_balances' );
@@ -1965,7 +1987,7 @@ function cordespace_reports_handle_csv_balances(): void {
 // ============================================================================
 add_action( 'admin_post_cordespace_reports_csv_credits', 'cordespace_reports_handle_csv_credits' );
 function cordespace_reports_handle_csv_credits(): void {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! current_user_can( CORDESPACE_REPORTS_CAP ) ) {
 		wp_die( 'forbidden', 403 );
 	}
 	check_admin_referer( 'cordespace_reports_csv_credits' );
@@ -2041,7 +2063,7 @@ function cordespace_reports_handle_csv_credits(): void {
 // ============================================================================
 add_action( 'admin_post_cordespace_reports_csv_sommaire', 'cordespace_reports_handle_csv_sommaire' );
 function cordespace_reports_handle_csv_sommaire(): void {
-	if ( ! current_user_can( 'manage_options' ) ) {
+	if ( ! current_user_can( CORDESPACE_REPORTS_CAP ) ) {
 		wp_die( 'forbidden', 403 );
 	}
 	check_admin_referer( 'cordespace_reports_csv_sommaire' );
