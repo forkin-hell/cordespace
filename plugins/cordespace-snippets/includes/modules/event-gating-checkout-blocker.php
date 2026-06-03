@@ -41,7 +41,9 @@ defined( 'ABSPATH' ) || exit;
 // ============================================================================
 
 /**
- * Vérifie si un user est approved pour un type d'événement donné.
+ * Vérifie si un user est approved DIRECTEMENT pour un type d'événement donné.
+ * Pour le check qui prend en compte l'inclusion hiérarchique, voir
+ * cordespace_evgating_is_user_approved_recursive() ci-dessous.
  */
 function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id ): bool {
 	if ( $user_id <= 0 || $event_type_id <= 0 ) {
@@ -58,6 +60,37 @@ function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id 
 }
 
 /**
+ * Vérifie si un user est approved pour un type, EN TENANT COMPTE de
+ * l'inclusion hiérarchique : un user validé sur « Semi-privés complets »
+ * (qui inclut « Semi-privés performances ») est aussi considéré comme validé
+ * sur « performances ».
+ *
+ * Protection contre les cycles : si Type A inclut B et B inclut A, on
+ * ne tournera pas en rond.
+ */
+function cordespace_evgating_is_user_approved_recursive( int $user_id, int $event_type_id, array $visited = [] ): bool {
+	if ( $user_id <= 0 || in_array( $event_type_id, $visited, true ) ) {
+		return false;
+	}
+	$visited[] = $event_type_id;
+
+	// 1. Approval directe sur ce type ?
+	if ( cordespace_evgating_is_user_approved( $user_id, $event_type_id ) ) {
+		return true;
+	}
+
+	// 2. Approval sur un type qui INCLUT celui-ci (parent dans la hiérarchie) ?
+	$parents = cordespace_event_gating_types_that_include( $event_type_id );
+	foreach ( $parents as $parent_id ) {
+		if ( cordespace_evgating_is_user_approved_recursive( $user_id, (int) $parent_id, $visited ) ) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
  * Renvoie les types d'événements qui bloquent le panier actuel, pour le user
  * actuellement connecté (ou anonyme).
  *
@@ -71,54 +104,81 @@ function cordespace_evgating_blocked_types_for_current_cart(): array {
 
 	$user_id = get_current_user_id();
 
-	// Collecte des events Amelia présents dans le panier
-	$amelia_events = []; // [event_id => event_name]
+	// Collecte des bookings Amelia présents dans le panier, séparés en 2
+	// listes : events et appointments (salles). Les events matchent par
+	// étiquette, les appointments matchent par toggle global sur le type.
+	$amelia_events       = []; // [event_id => event_name]
+	$amelia_appointments = []; // [service_id => service_name] - on garde 1 par item
 	foreach ( WC()->cart->get_cart() as $cart_item ) {
 		if ( empty( $cart_item['ameliabooking'] ) || ! is_array( $cart_item['ameliabooking'] ) ) {
 			continue;
 		}
 		$booking = $cart_item['ameliabooking'];
-		if ( ( $booking['type'] ?? '' ) !== 'event' ) {
-			continue;
+		$btype   = (string) ( $booking['type'] ?? '' );
+
+		if ( $btype === 'event' ) {
+			$event_id = isset( $booking['eventId'] ) ? (int) $booking['eventId'] : 0;
+			if ( $event_id <= 0 ) {
+				continue;
+			}
+			$amelia_events[ $event_id ] = (string) ( $booking['name'] ?? '' );
+		} elseif ( $btype === 'appointment' ) {
+			// Identifie chaque appointment par son nom de service. On ne se
+			// sert pas du service_id directement parce que le matching est
+			// global ('s'applique à TOUS les appointments'), mais on garde
+			// le nom pour l'afficher dans le bandeau.
+			$svc_name = (string) ( $booking['name'] ?? $booking['serviceName'] ?? __( 'Réservation de salle', 'cordespace-snippets' ) );
+			$svc_key  = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : md5( $svc_name );
+			$amelia_appointments[ $svc_key ] = $svc_name;
 		}
-		$event_id = isset( $booking['eventId'] ) ? (int) $booking['eventId'] : 0;
-		if ( $event_id <= 0 ) {
-			continue;
-		}
-		$amelia_events[ $event_id ] = (string) ( $booking['name'] ?? '' );
 	}
 
-	if ( empty( $amelia_events ) ) {
+	if ( empty( $amelia_events ) && empty( $amelia_appointments ) ) {
 		return [];
 	}
 
-	// Pour chaque event, quels types s'appliquent ? Pour chaque type, l'user
-	// est-iel approved ?
+	// Pour chaque event/appointment, quels types s'appliquent ?
+	// Pour chaque type, l'user est-iel approved (récursivement, en suivant
+	// la hiérarchie d'inclusion) ?
 	$blocked = []; // [type_id => ['type' => WP_Post, 'event_names' => string[]]]
+
+	$register_blocked = function ( int $type_id, string $item_name ) use ( $user_id, &$blocked ) {
+		if ( $user_id > 0 && cordespace_evgating_is_user_approved_recursive( $user_id, $type_id ) ) {
+			return; // approved (directement ou via parent) → pas bloqué
+		}
+		if ( ! isset( $blocked[ $type_id ] ) ) {
+			$type = get_post( $type_id );
+			if ( ! $type ) {
+				return;
+			}
+			$blocked[ $type_id ] = [
+				'type'        => $type,
+				'event_names' => [],
+			];
+		}
+		if ( $item_name !== '' && ! in_array( $item_name, $blocked[ $type_id ]['event_names'], true ) ) {
+			$blocked[ $type_id ]['event_names'][] = $item_name;
+		}
+	};
+
+	// Events : matching par étiquette Amelia
 	foreach ( $amelia_events as $event_id => $event_name ) {
 		$applicable = cordespace_event_gating_applicable_types_for_amelia_event( $event_id );
 		foreach ( $applicable as $type_id ) {
-			$type_id = (int) $type_id;
-			// User connecté ET approved pour ce type → on skip (pas bloqué)
-			if ( $user_id > 0 && cordespace_evgating_is_user_approved( $user_id, $type_id ) ) {
-				continue;
-			}
-			// Sinon bloqué : on collecte
-			if ( ! isset( $blocked[ $type_id ] ) ) {
-				$type = get_post( $type_id );
-				if ( ! $type ) {
-					continue;
-				}
-				$blocked[ $type_id ] = [
-					'type'        => $type,
-					'event_names' => [],
-				];
-			}
-			if ( $event_name !== '' && ! in_array( $event_name, $blocked[ $type_id ]['event_names'], true ) ) {
-				$blocked[ $type_id ]['event_names'][] = $event_name;
+			$register_blocked( (int) $type_id, $event_name );
+		}
+	}
+
+	// Appointments : matching par toggle global (s'applique à toutes salles)
+	if ( ! empty( $amelia_appointments ) ) {
+		$appt_types = cordespace_event_gating_applicable_types_for_amelia_appointment();
+		foreach ( $amelia_appointments as $svc_name ) {
+			foreach ( $appt_types as $type_id ) {
+				$register_blocked( (int) $type_id, $svc_name );
 			}
 		}
 	}
+
 	return $blocked;
 }
 

@@ -23,9 +23,11 @@ defined( 'ABSPATH' ) || exit;
 // aurait fait 21 caractères → erreur 'Type de contenu non valide'. On garde
 // les constantes meta avec leur nom long, c'est juste le slug du CPT qui
 // est compact.
-const CORDESPACE_EVENT_TYPE_POST_TYPE      = 'cordespace_evtype';
-const CORDESPACE_EVENT_TYPE_META_TAGS      = '_cordespace_event_type_amelia_tags';
-const CORDESPACE_EVENT_TYPE_META_INFO_URL  = '_cordespace_event_type_info_url';
+const CORDESPACE_EVENT_TYPE_POST_TYPE              = 'cordespace_evtype';
+const CORDESPACE_EVENT_TYPE_META_TAGS              = '_cordespace_event_type_amelia_tags';
+const CORDESPACE_EVENT_TYPE_META_INFO_URL          = '_cordespace_event_type_info_url';
+const CORDESPACE_EVENT_TYPE_META_INCLUDES          = '_cordespace_event_type_includes';
+const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT      = '_cordespace_event_type_applies_to_appointments';
 
 // ============================================================================
 // 1) Enregistrement du CPT
@@ -194,7 +196,92 @@ function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void 
 }
 
 // ============================================================================
-// 5) Sauvegarde des metas (commune aux 2 metaboxes)
+// 4b) Metabox : Hiérarchie d'inclusion (un type peut inclure d'autres types)
+// ============================================================================
+
+function cordespace_event_gating_add_includes_metabox(): void {
+	add_meta_box(
+		'cordespace-event-type-includes',
+		__( '🔗 Inclut aussi les types', 'cordespace-snippets' ),
+		'cordespace_event_gating_render_includes_metabox',
+		CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'normal',
+		'default'
+	);
+}
+add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_includes_metabox' );
+
+function cordespace_event_gating_render_includes_metabox( WP_Post $post ): void {
+	$all_types = get_posts( [
+		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'post_status'    => 'publish',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+		'exclude'        => [ $post->ID ],
+		'orderby'        => 'title',
+		'order'          => 'ASC',
+	] );
+
+	$selected = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_INCLUDES, true );
+	$selected = is_array( $selected ) ? array_map( 'intval', $selected ) : [];
+	?>
+	<p style="margin-top:0;">
+		<?php esc_html_e( "Coche les autres types pour lesquels les membres validé·es de CE type ont AUSSI le droit de réserver. Pratique pour les hiérarchies : un membre « Semi-privés complets » qui inclut « Semi-privés performances » a automatiquement accès aux 2 sans devoir être listé deux fois.", 'cordespace-snippets' ); ?>
+	</p>
+
+	<?php if ( empty( $all_types ) ) : ?>
+		<p style="padding:1rem 1.2rem; background:#f7f7f9; border-radius:5px; color:#666; font-style:italic;">
+			<?php esc_html_e( "Aucun autre type configuré encore. Crée d'abord d'autres types pour pouvoir les inclure ici.", 'cordespace-snippets' ); ?>
+		</p>
+	<?php else : ?>
+		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.5rem 1rem; padding:0.6rem 0;">
+			<?php foreach ( $all_types as $tid ) :
+				$tid     = (int) $tid;
+				$checked = in_array( $tid, $selected, true );
+				?>
+				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+					<input type="checkbox" name="cordespace_evtype_includes[]" value="<?php echo (int) $tid; ?>" <?php checked( $checked ); ?>>
+					<span><?php echo esc_html( get_the_title( $tid ) ); ?></span>
+				</label>
+			<?php endforeach; ?>
+		</div>
+	<?php endif; ?>
+	<?php
+}
+
+// ============================================================================
+// 4c) Metabox : Réservations de salle (toggle global)
+// ============================================================================
+
+function cordespace_event_gating_add_appointments_metabox(): void {
+	add_meta_box(
+		'cordespace-event-type-appointments',
+		__( '🏠 Réservations de salle', 'cordespace-snippets' ),
+		'cordespace_event_gating_render_appointments_metabox',
+		CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'normal',
+		'default'
+	);
+}
+add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_appointments_metabox' );
+
+function cordespace_event_gating_render_appointments_metabox( WP_Post $post ): void {
+	$applies = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, true );
+	?>
+	<p style="margin-top:0;">
+		<label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+			<input type="checkbox" name="cordespace_evtype_applies_to_appointments" value="1" <?php checked( $applies, '1' ); ?>>
+			<strong><?php esc_html_e( "S'applique à TOUTES les réservations de salle (appointments Amelia)", 'cordespace-snippets' ); ?></strong>
+		</label>
+	</p>
+	<p class="description" style="font-size:0.92em;">
+		<?php esc_html_e( "Si coché, ce type bloque la réservation de N'IMPORTE QUELLE salle Amelia tant que la personne n'est pas validée pour ce type (ou un type qui l'inclut). Les étiquettes Amelia ne s'appliquent pas aux appointments — c'est ce toggle qui détermine si le type s'applique aux salles.", 'cordespace-snippets' ); ?>
+	</p>
+	<?php
+}
+
+// ============================================================================
+// 5) Sauvegarde des metas (commune à toutes les metaboxes)
 // ============================================================================
 
 function cordespace_event_gating_save_meta( int $post_id ): void {
@@ -226,6 +313,18 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		? esc_url_raw( wp_unslash( $_POST['cordespace_event_type_info_url'] ) )
 		: '';
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INFO_URL, $url );
+
+	// Includes : array d'IDs de types
+	$includes = isset( $_POST['cordespace_evtype_includes'] ) && is_array( $_POST['cordespace_evtype_includes'] )
+		? array_values( array_unique( array_filter( array_map( 'intval', wp_unslash( $_POST['cordespace_evtype_includes'] ) ) ) ) )
+		: [];
+	// Sécurité : on retire le post lui-même si jamais quelqu'un trafique le form
+	$includes = array_values( array_diff( $includes, [ $post_id ] ) );
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INCLUDES, $includes );
+
+	// Applies to appointments : '0' ou '1'
+	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, $applies_appt );
 }
 add_action( 'save_post_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_save_meta' );
 
@@ -292,4 +391,63 @@ function cordespace_event_gating_applicable_types_for_amelia_event( int $amelia_
 		}
 	}
 	return $matching;
+}
+
+/**
+ * Renvoie les types d'events applicables à un appointment Amelia (= salles).
+ * Les appointments n'ont pas d'étiquettes Amelia, donc on prend tous les
+ * types qui ont coché « S'applique à TOUTES les réservations de salle ».
+ *
+ * @return int[] Liste des post IDs de cordespace_event_type applicables.
+ */
+function cordespace_event_gating_applicable_types_for_amelia_appointment(): array {
+	$type_ids = get_posts( [
+		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'post_status'    => 'publish',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+		'meta_query'     => [
+			[
+				'key'   => CORDESPACE_EVENT_TYPE_META_APPLIES_APPT,
+				'value' => '1',
+			],
+		],
+	] );
+	return array_map( 'intval', (array) $type_ids );
+}
+
+/**
+ * Renvoie les IDs des types qui incluent (parent dans la hiérarchie) le
+ * type cible. Si Type A a CORDESPACE_EVENT_TYPE_META_INCLUDES = [Type B],
+ * alors A est un « parent » de B → les membres de A peuvent réserver
+ * les events de B.
+ *
+ * Utilisé par le check récursif d'approbation au checkout.
+ *
+ * @return int[]
+ */
+function cordespace_event_gating_types_that_include( int $event_type_id ): array {
+	if ( $event_type_id <= 0 ) {
+		return [];
+	}
+	$all_type_ids = get_posts( [
+		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'post_status'    => 'publish',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+		'exclude'        => [ $event_type_id ],
+	] );
+
+	$including = [];
+	foreach ( $all_type_ids as $tid ) {
+		$includes = get_post_meta( (int) $tid, CORDESPACE_EVENT_TYPE_META_INCLUDES, true );
+		if ( ! is_array( $includes ) ) {
+			continue;
+		}
+		$includes = array_map( 'intval', $includes );
+		if ( in_array( $event_type_id, $includes, true ) ) {
+			$including[] = (int) $tid;
+		}
+	}
+	return $including;
 }
