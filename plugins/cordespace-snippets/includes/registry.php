@@ -14,9 +14,10 @@ return [
 	'categories' => [
 		'mon-espace' => [ 'label' => 'Mon espace',           'icon' => '📋', 'order' => 10 ],
 		'payments'   => [ 'label' => 'Paiements et crédits', 'icon' => '💰', 'order' => 20 ],
-		'admin'      => [ 'label' => 'Outils admin',         'icon' => '🛠️', 'order' => 25 ],
-		'waivers'    => [ 'label' => 'Waivers',              'icon' => '📝', 'order' => 27 ],
-		'styles'     => [ 'label' => 'Styles',               'icon' => '🎨', 'order' => 30 ],
+		'admin'        => [ 'label' => 'Outils admin',         'icon' => '🛠️', 'order' => 25 ],
+		'waivers'      => [ 'label' => 'Waivers',              'icon' => '📝', 'order' => 27 ],
+		'event-gating' => [ 'label' => "Événements à validation", 'icon' => '🔒', 'order' => 28 ],
+		'styles'       => [ 'label' => 'Styles',               'icon' => '🎨', 'order' => 30 ],
 	],
 
 	'modules' => [
@@ -227,6 +228,26 @@ return [
 			'file'            => 'includes/modules/waivers-email-reminder.php',
 			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/waivers-email-reminder.php',
+			'default_active'  => true,
+		],
+		'event-gating.schema' => [
+			'label'           => 'Table des approbations',
+			'description'     => 'Crée et maintient la table wp_cordespace_event_type_approvals (event_type_id, user_id, status, notes, approved_at). 3 statuts possibles : pending / approved / rejected. Self-heal au admin_init.',
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-schema.php',
+			'requires_plugin' => [],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-schema.php',
+			'default_active'  => true,
+		],
+		'event-gating.cpt' => [
+			'label'           => "CPT « Types d'événements à validation »",
+			'description'     => "Custom Post Type cordespace_evtype pour définir les types d'événements qui nécessitent l'approbation admin (semi-privé, privé, atelier expert, etc.). Chaque type a un texte de bandeau, une whitelist d'étiquettes Amelia (matching auto avec les events), et une URL d'info. Sous-menu Cordespace → Événements à validation.",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-cpt.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-cpt.php',
 			'default_active'  => true,
 		],
 		'styles.wc-checkout-layout' => [
