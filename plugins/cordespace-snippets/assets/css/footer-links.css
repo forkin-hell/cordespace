@@ -1,48 +1,94 @@
 /* ============================================================================
  * Module : styles.footer-links
  *
- * Override de la couleur des liens du footer. Le thème actif force une
- * couleur de lien qu'on ne peut pas modifier via le customizer ; sur fond
- * violet foncé (cohérent avec le menu Cordespace), ces liens deviennent
- * illisibles.
+ * Personnalisation visuelle du footer Cordespace, en 5 axes :
+ *   1. Couleur des liens en lavande clair (#e9d8f5, même teinte que les badges
+ *      de la vue prof) → lisible sur fond violet foncé
+ *   2. Hover/focus en blanc + souligné pour bien marquer l'interaction
+ *   3. Séparateur vertical entre les colonnes (Français / English)
+ *   4. Spacing vertical réduit pour un footer plus compact
+ *   5. Masque la mention « Politique de confidentialité » ajoutée
+ *      automatiquement par WordPress sous le footer du thème
+ *      (voir aussi Réglages → Confidentialité pour la retirer à la source)
  *
- * Solution : on force la couleur des liens à lavande clair (#e9d8f5,
- * même teinte que les badges 🎫 ×N de la vue prof — cohérence de marque),
- * et hover/focus en blanc pour bien marquer l'interaction.
- *
- * Les sélecteurs sont volontairement larges pour couvrir les principaux
- * thèmes WordPress (classiques + blocs FSE + ARIA roles).
+ * Sélecteurs volontairement larges pour couvrir Inspiro (Cordespace),
+ * Astra, Kadence, GeneratePress et autres thèmes courants.
  * ============================================================================ */
 
-footer a,
-footer a:visited,
-.footer a,
-.footer a:visited,
-.site-footer a,
-.site-footer a:visited,
-#colophon a,
-#colophon a:visited,
-.wp-block-footer a,
-.wp-block-footer a:visited,
-[role="contentinfo"] a,
-[role="contentinfo"] a:visited {
+/* 1-2. Couleurs des liens */
+footer a, footer a:visited,
+.footer a, .footer a:visited,
+.site-footer a, .site-footer a:visited,
+#colophon a, #colophon a:visited,
+.wp-block-footer a, .wp-block-footer a:visited,
+[role="contentinfo"] a, [role="contentinfo"] a:visited {
 	color: #e9d8f5;
 	text-decoration: none;
 	transition: color 0.15s ease;
 }
 
-footer a:hover,
-footer a:focus,
-.footer a:hover,
-.footer a:focus,
-.site-footer a:hover,
-.site-footer a:focus,
-#colophon a:hover,
-#colophon a:focus,
-.wp-block-footer a:hover,
-.wp-block-footer a:focus,
-[role="contentinfo"] a:hover,
-[role="contentinfo"] a:focus {
+footer a:hover, footer a:focus,
+.footer a:hover, .footer a:focus,
+.site-footer a:hover, .site-footer a:focus,
+#colophon a:hover, #colophon a:focus,
+.wp-block-footer a:hover, .wp-block-footer a:focus,
+[role="contentinfo"] a:hover, [role="contentinfo"] a:focus {
 	color: #ffffff;
 	text-decoration: underline;
+}
+
+/* 3. Séparateur vertical entre colonnes adjacentes
+ *    Cible plusieurs structures courantes : widgets WP, colonnes de bloc,
+ *    et grilles de footer Inspiro. La 1ère colonne reste sans bordure,
+ *    seules les suivantes en ont une à gauche. */
+.site-footer .widget + .widget,
+.site-footer .footer-column + .footer-column,
+.site-footer .footer-widget + .footer-widget,
+#colophon .widget + .widget,
+.wp-block-footer .wp-block-column + .wp-block-column,
+footer .widget + .widget {
+	border-left: 1px solid rgba(255, 255, 255, 0.18);
+	padding-left: 1.5rem;
+}
+
+/* 4. Spacing plus compact dans le contenu du footer */
+.site-footer p,
+.site-footer ul,
+#colophon p,
+#colophon ul,
+footer p,
+footer ul,
+.wp-block-footer p,
+.wp-block-footer ul {
+	margin-top: 0.25rem;
+	margin-bottom: 0.25rem;
+}
+
+.site-footer ul li,
+#colophon ul li,
+footer ul li,
+.wp-block-footer ul li {
+	margin-bottom: 0.2rem;
+	line-height: 1.4;
+}
+
+/* Réduit aussi le padding du widget area sous les colonnes (l'espace vide
+ * que Tess voit entre la dernière ligne de liens et la barre du bas) */
+.site-footer .widget,
+#colophon .widget,
+footer .widget,
+.wp-block-footer .widget {
+	margin-bottom: 0.5rem;
+}
+
+/* 5. Masque la mention « Politique de confidentialité » auto-ajoutée par
+ *    WordPress sous le footer du thème.
+ *    Le sélecteur officiel WP est .privacy-policy-link. Certains thèmes
+ *    (dont Inspiro) la wrappent dans un span/div spécifique, on cible
+ *    largement pour couvrir tous les cas. */
+.privacy-policy-link,
+.wp-footer-policy-link,
+.site-info .privacy-policy-link,
+.site-info > .privacy-policy-link {
+	display: none !important;
 }

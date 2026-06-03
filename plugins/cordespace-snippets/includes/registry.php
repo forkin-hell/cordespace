@@ -291,8 +291,8 @@ return [
 			'default_active'  => true,
 		],
 		'styles.footer-links' => [
-			'label'           => 'Couleur des liens du footer',
-			'description'     => 'Force la couleur des liens du footer en lavande clair (#e9d8f5) avec blanc au hover. Utile pour utiliser un fond violet foncé dans le footer sans que les liens deviennent illisibles (le thème ne permet pas de modifier la couleur des liens via le Customizer).',
+			'label'           => 'Mise en forme du footer (couleurs, séparateur, spacing)',
+			'description'     => 'Personnalisation visuelle du footer : (1) liens en lavande clair sur fond violet foncé avec blanc au hover ; (2) séparateur vertical entre les colonnes Français/English ; (3) spacing vertical réduit pour un footer compact ; (4) masque la mention "Politique de confidentialité" auto-ajoutée par WordPress (voir aussi Réglages → Confidentialité pour la retirer à la source).',
 			'category'        => 'styles',
 			'type'            => 'css',
 			'file'            => 'assets/css/footer-links.css',
