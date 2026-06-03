@@ -260,6 +260,19 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-members.php',
 			'default_active'  => true,
 		],
+		'event-gating.checkout-blocker' => [
+			'label'           => 'Blocage panier/checkout pour les non-validé·es',
+			'description'     => "Affiche un bandeau rouge bloquant sur le panier et le checkout quand la personne tente de réserver un événement gated sans être validée pour son type. BLOQUE serveur-side via le Store API WC Blocks (RouteException) + filet de sécurité sur le checkout classique (wc_add_notice error). Bandeau affiche le titre du type, son texte WYSIWYG, et un bouton « En savoir plus » vers l'URL d'info. Pour les non-connecté·es, ajoute aussi un bouton « Me connecter ».",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-checkout-blocker.php',
+			'requires_plugin' => [
+				'woocommerce/woocommerce.php'     => 'WooCommerce',
+				'ameliabooking/ameliabooking.php' => 'Amelia',
+			],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-checkout-blocker.php',
+			'default_active'  => true,
+		],
 		'styles.wc-checkout-layout' => [
 			'label'           => 'Marges WC panier / checkout',
 			'description'     => 'Ajoute des marges latérales et un max-width sur les pages panier et checkout WooCommerce. Évite que le contenu colle aux bords du viewport sur grands écrans.',
