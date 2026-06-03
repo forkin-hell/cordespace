@@ -37,24 +37,18 @@ footer a:hover, footer a:focus,
 	text-decoration: underline;
 }
 
-/* 3. Séparateur vertical entre colonnes adjacentes du footer.
- *    Structure réelle Inspiro (vérifiée sur cordespace.com) :
- *      <aside class="footer-widgets widgets widget-columns-4">
- *          <div class="widget-column footer-widget-1"> ... </div>
- *          <div class="widget-column footer-widget-2"> ... </div>
- *    On cible la classe Inspiro `.widget-column` + des fallbacks pour
- *    d'autres thèmes (Astra, Kadence, FSE blocks). La 1ère colonne reste
- *    sans bordure, seules les suivantes en ont une à gauche. */
-.footer-widgets .widget-column + .widget-column,
-.site-footer .widget-column + .widget-column,
+/* 3. Séparateur vertical entre colonnes adjacentes
+ *    Cible plusieurs structures courantes : widgets WP, colonnes de bloc,
+ *    et grilles de footer Inspiro. La 1ère colonne reste sans bordure,
+ *    seules les suivantes en ont une à gauche. */
 .site-footer .widget + .widget,
 .site-footer .footer-column + .footer-column,
-#colophon .widget-column + .widget-column,
+.site-footer .footer-widget + .footer-widget,
 #colophon .widget + .widget,
 .wp-block-footer .wp-block-column + .wp-block-column,
-footer .widget-column + .widget-column {
-	border-left: 1px solid rgba(255, 255, 255, 0.25);
-	padding-left: 2rem;
+footer .widget + .widget {
+	border-left: 1px solid rgba(255, 255, 255, 0.18);
+	padding-left: 1.5rem;
 }
 
 /* 4. Spacing plus compact dans le contenu du footer */
@@ -87,7 +81,14 @@ footer .widget,
 	margin-bottom: 0.5rem;
 }
 
-/* Note : on NE cache PAS la mention « Politique de confidentialité » auto-
- * ajoutée par WordPress sous le footer (.privacy-policy-link). Tess préfère
- * la gérer elle-même via Réglages → Confidentialité (mettre à "Aucune"
- * pour la retirer à la source si désiré). */
+/* 5. Masque la mention « Politique de confidentialité » auto-ajoutée par
+ *    WordPress sous le footer du thème.
+ *    Le sélecteur officiel WP est .privacy-policy-link. Certains thèmes
+ *    (dont Inspiro) la wrappent dans un span/div spécifique, on cible
+ *    largement pour couvrir tous les cas. */
+.privacy-policy-link,
+.wp-footer-policy-link,
+.site-info .privacy-policy-link,
+.site-info > .privacy-policy-link {
+	display: none !important;
+}
