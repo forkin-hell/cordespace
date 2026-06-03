@@ -250,6 +250,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-cpt.php',
 			'default_active'  => true,
 		],
+		'event-gating.members' => [
+			'label'           => 'Gestion des membres validé·es',
+			'description'     => "Metabox « 👥 Membres et statuts » sur l'écran d'édition d'un type d'événement. Recherche autocomplete (Select2) parmi les WP users, ajout avec statut (validé·e / en attente / refusé·e) + notes admin optionnelles. Liste triée par statut avec changement inline. 4 endpoints AJAX sécurisés (nonce + capability). Compte les membres par statut en haut.",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-members.php',
+			'requires_plugin' => [],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-members.php',
+			'default_active'  => true,
+		],
 		'styles.wc-checkout-layout' => [
 			'label'           => 'Marges WC panier / checkout',
 			'description'     => 'Ajoute des marges latérales et un max-width sur les pages panier et checkout WooCommerce. Évite que le contenu colle aux bords du viewport sur grands écrans.',
