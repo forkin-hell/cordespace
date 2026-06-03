@@ -503,7 +503,11 @@ function cordespace_evgating_print_inline_js(): void {
 					.replace(/\{\{notes_dot\}\}/g, data.notes ? ' <span style="color:#2c70b8;">●</span>' : '')
 					.replace(/\{\{notes_display\}\}/g, data.notes ? '' : 'display:none;');
 				var $list = $root.find('.cordespace-evgating-list');
-				if ($list.find('p').length) $list.empty();
+				// Si la liste ne contient AUCUNE ligne membre (= juste le placeholder
+				// 'Aucun membre ajouté'), on la vide d'abord. Avant on cherchait
+				// 'find p' mais ça matchait aussi les <p> dans la zone notes des
+				// membres existants → ça vidait la liste a chaque ajout.
+				if (!$list.find('.cordespace-evgating-member').length) $list.empty();
 				$list.prepend(html);
 				// Reset le form
 				$sel.val(null).trigger('change');
