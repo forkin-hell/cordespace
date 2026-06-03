@@ -37,17 +37,24 @@ footer a:hover, footer a:focus,
 	text-decoration: underline;
 }
 
-/* 3. Espacement de la zone copyright/privacy en bas du footer
- *    (Inspiro : <div class="site-info"> sous .site-footer-separator)
- *    Par défaut le thème laisse un gros trou entre la ligne horizontale
- *    et le texte du copyright. On le réduit pour que ce soit plus compact. */
-.site-info {
-	margin-top: 0.5rem;
-	padding-top: 0.5rem;
-}
-
-.site-footer-separator {
-	margin-bottom: 0.25rem;
+/* 3. Séparateur vertical entre colonnes adjacentes du footer.
+ *    Structure réelle Inspiro (vérifiée sur cordespace.com) :
+ *      <aside class="footer-widgets widgets widget-columns-4">
+ *          <div class="widget-column footer-widget-1"> ... </div>
+ *          <div class="widget-column footer-widget-2"> ... </div>
+ *    On cible la classe Inspiro `.widget-column` + des fallbacks pour
+ *    d'autres thèmes (Astra, Kadence, FSE blocks). La 1ère colonne reste
+ *    sans bordure, seules les suivantes en ont une à gauche. */
+.footer-widgets .widget-column + .widget-column,
+.site-footer .widget-column + .widget-column,
+.site-footer .widget + .widget,
+.site-footer .footer-column + .footer-column,
+#colophon .widget-column + .widget-column,
+#colophon .widget + .widget,
+.wp-block-footer .wp-block-column + .wp-block-column,
+footer .widget-column + .widget-column {
+	border-left: 1px solid rgba(255, 255, 255, 0.25);
+	padding-left: 2rem;
 }
 
 /* 4. Spacing plus compact dans le contenu du footer */
