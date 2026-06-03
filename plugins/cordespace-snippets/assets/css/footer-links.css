@@ -38,28 +38,16 @@ footer a:hover, footer a:focus,
 }
 
 /* 3. Espacement de la zone copyright/privacy en bas du footer
- *    Structure Inspiro :
- *      <aside class="footer-widgets">...</aside>
- *      <div class="site-footer-separator"></div>   <-- la ligne horizontale
- *      <div class="site-info">...</div>            <-- copyright + privacy
- *    Le thème laisse un gros trou entre la ligne et le bloc copyright.
- *    On l'écrase agressivement avec !important parce que le thème pousse
- *    fort sur les marges/padding par défaut. */
+ *    (Inspiro : <div class="site-info"> sous .site-footer-separator)
+ *    Par défaut le thème laisse un gros trou entre la ligne horizontale
+ *    et le texte du copyright. On le réduit pour que ce soit plus compact. */
 .site-info {
-	margin-top: 0 !important;
-	padding-top: 0.4rem !important;
-	padding-bottom: 0.4rem !important;
+	margin-top: 0.5rem;
+	padding-top: 0.5rem;
 }
 
 .site-footer-separator {
-	margin-top: 0 !important;
-	margin-bottom: 0 !important;
-}
-
-.site-footer .footer-widgets,
-#colophon .footer-widgets {
-	margin-bottom: 0.4rem !important;
-	padding-bottom: 0 !important;
+	margin-bottom: 0.25rem;
 }
 
 /* 4. Spacing plus compact dans le contenu du footer */
