@@ -311,7 +311,7 @@ function cordespace_evgating_render_members_metabox( WP_Post $post ): void {
 			</div>
 			<details style="margin-top:0.6rem;">
 				<summary style="cursor:pointer; font-size:0.9em; color:#666;"><?php esc_html_e( 'Ajouter une note (optionnel)', 'cordespace-snippets' ); ?></summary>
-				<textarea class="cordespace-evgating-add-notes" rows="2" style="width:100%; margin-top:0.4rem;" placeholder="<?php esc_attr_e( 'Ex : validée après entretien, à recontacter en juin, etc.', 'cordespace-snippets' ); ?>"></textarea>
+				<textarea class="cordespace-evgating-add-notes" rows="2" style="width:100%; margin-top:0.4rem;" placeholder="<?php esc_attr_e( 'Ex : validé·e après entretien, à recontacter en juin, etc.', 'cordespace-snippets' ); ?>"></textarea>
 			</details>
 			<p class="cordespace-evgating-add-status-msg" style="margin:0.6rem 0 0; font-size:0.92em;"></p>
 		</div>

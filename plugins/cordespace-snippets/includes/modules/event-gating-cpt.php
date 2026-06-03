@@ -7,10 +7,10 @@
  * Chaque type a :
  *   - un titre (post_title)
  *   - un texte de bandeau (post_content, WYSIWYG) qui s'affichera au panier
- *     si la cliente n'est pas approuvée
+ *     si la personne n'est pas approuvée
  *   - une liste d'étiquettes Amelia qui déclenchent l'application du type
  *     (= matching auto avec les events Amelia)
- *   - une URL d'info (où la cliente va apprendre comment se faire valider)
+ *   - une URL d'info (où la personne va apprendre comment se faire valider)
  *
  * Sous-menu Cordespace → Events gated (priorité 40, entre Waivers à 30 et
  * Voir sur GitHub à 100). show_in_menu=false sur le CPT + add_submenu_page
@@ -121,7 +121,7 @@ function cordespace_event_gating_render_tags_metabox( WP_Post $post ): void {
 	wp_nonce_field( 'cordespace_event_gating_meta_save', 'cordespace_event_gating_nonce' );
 	?>
 	<p style="margin-top:0;">
-		<?php esc_html_e( "Coche les étiquettes Amelia pour lesquelles ce type s'applique. Tout événement portant AU MOINS UNE de ces étiquettes nécessitera l'approbation admin avant que la cliente puisse le réserver.", 'cordespace-snippets' ); ?>
+		<?php esc_html_e( "Coche les étiquettes Amelia pour lesquelles ce type s'applique. Tout événement portant AU MOINS UNE de ces étiquettes nécessitera l'approbation admin avant que la personne puisse le réserver.", 'cordespace-snippets' ); ?>
 	</p>
 
 	<?php if ( empty( $all_tags ) ) : ?>
@@ -178,7 +178,7 @@ function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void 
 	$url = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_INFO_URL, true );
 	?>
 	<p style="margin-top:0;">
-		<?php esc_html_e( "URL où la cliente non-approuvée sera redirigée pour apprendre comment se faire valider. Affichée dans le bandeau de gating sous la forme d'un bouton « En savoir plus ».", 'cordespace-snippets' ); ?>
+		<?php esc_html_e( "URL où la personne non-approuvée sera redirigée pour apprendre comment se faire valider. Affichée dans le bandeau de gating sous la forme d'un bouton « En savoir plus ».", 'cordespace-snippets' ); ?>
 	</p>
 	<p>
 		<input type="url"
@@ -254,7 +254,7 @@ function cordespace_event_gating_get_info_url( int $event_type_id ): string {
  * Renvoie les types d'events applicables à un event Amelia donné (= types
  * dont les tags configurés matchent au moins UN tag de l'event Amelia).
  *
- * Utilisé par le module de gating au checkout pour décider si une cliente
+ * Utilisé par le module de gating au checkout pour décider si une personne
  * a besoin d'être approuvée pour réserver cet event.
  *
  * @return int[] Liste des post IDs de cordespace_event_type applicables.
