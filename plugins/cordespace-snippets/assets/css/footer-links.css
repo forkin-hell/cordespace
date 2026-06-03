@@ -1,0 +1,48 @@
+/* ============================================================================
+ * Module : styles.footer-links
+ *
+ * Override de la couleur des liens du footer. Le thème actif force une
+ * couleur de lien qu'on ne peut pas modifier via le customizer ; sur fond
+ * violet foncé (cohérent avec le menu Cordespace), ces liens deviennent
+ * illisibles.
+ *
+ * Solution : on force la couleur des liens à lavande clair (#e9d8f5,
+ * même teinte que les badges 🎫 ×N de la vue prof — cohérence de marque),
+ * et hover/focus en blanc pour bien marquer l'interaction.
+ *
+ * Les sélecteurs sont volontairement larges pour couvrir les principaux
+ * thèmes WordPress (classiques + blocs FSE + ARIA roles).
+ * ============================================================================ */
+
+footer a,
+footer a:visited,
+.footer a,
+.footer a:visited,
+.site-footer a,
+.site-footer a:visited,
+#colophon a,
+#colophon a:visited,
+.wp-block-footer a,
+.wp-block-footer a:visited,
+[role="contentinfo"] a,
+[role="contentinfo"] a:visited {
+	color: #e9d8f5;
+	text-decoration: none;
+	transition: color 0.15s ease;
+}
+
+footer a:hover,
+footer a:focus,
+.footer a:hover,
+.footer a:focus,
+.site-footer a:hover,
+.site-footer a:focus,
+#colophon a:hover,
+#colophon a:focus,
+.wp-block-footer a:hover,
+.wp-block-footer a:focus,
+[role="contentinfo"] a:hover,
+[role="contentinfo"] a:focus {
+	color: #ffffff;
+	text-decoration: underline;
+}

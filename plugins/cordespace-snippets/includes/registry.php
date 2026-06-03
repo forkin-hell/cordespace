@@ -290,5 +290,15 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/assets/css/callouts.css',
 			'default_active'  => true,
 		],
+		'styles.footer-links' => [
+			'label'           => 'Couleur des liens du footer',
+			'description'     => 'Force la couleur des liens du footer en lavande clair (#e9d8f5) avec blanc au hover. Utile pour utiliser un fond violet foncé dans le footer sans que les liens deviennent illisibles (le thème ne permet pas de modifier la couleur des liens via le Customizer).',
+			'category'        => 'styles',
+			'type'            => 'css',
+			'file'            => 'assets/css/footer-links.css',
+			'requires_plugin' => [],
+			'github_path'     => 'plugins/cordespace-snippets/assets/css/footer-links.css',
+			'default_active'  => true,
+		],
 	],
 ];
