@@ -292,7 +292,7 @@ return [
 		],
 		'styles.footer-links' => [
 			'label'           => 'Mise en forme du footer (couleurs, séparateur, spacing)',
-			'description'     => 'Personnalisation visuelle du footer : (1) liens en lavande clair sur fond violet foncé avec blanc au hover ; (2) séparateur vertical entre les colonnes Français/English ; (3) spacing vertical réduit pour un footer compact ; (4) masque la mention "Politique de confidentialité" auto-ajoutée par WordPress (voir aussi Réglages → Confidentialité pour la retirer à la source).',
+			'description'     => 'Personnalisation visuelle du footer : (1) liens en lavande clair sur fond violet foncé avec blanc au hover ; (2) séparateur vertical entre les colonnes Français/English (Inspiro : .widget-column) ; (3) spacing vertical réduit pour un footer compact.',
 			'category'        => 'styles',
 			'type'            => 'css',
 			'file'            => 'assets/css/footer-links.css',
