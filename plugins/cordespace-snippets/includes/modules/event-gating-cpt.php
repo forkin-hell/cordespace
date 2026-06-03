@@ -195,59 +195,14 @@ function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void 
 	<?php
 }
 
-// ============================================================================
-// 4b) Metabox : Hiérarchie d'inclusion (un type peut inclure d'autres types)
-// ============================================================================
-
-function cordespace_event_gating_add_includes_metabox(): void {
-	add_meta_box(
-		'cordespace-event-type-includes',
-		__( '🔗 Inclut aussi les types', 'cordespace-snippets' ),
-		'cordespace_event_gating_render_includes_metabox',
-		CORDESPACE_EVENT_TYPE_POST_TYPE,
-		'normal',
-		'default'
-	);
-}
-add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_includes_metabox' );
-
-function cordespace_event_gating_render_includes_metabox( WP_Post $post ): void {
-	$all_types = get_posts( [
-		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
-		'post_status'    => 'publish',
-		'posts_per_page' => -1,
-		'fields'         => 'ids',
-		'exclude'        => [ $post->ID ],
-		'orderby'        => 'title',
-		'order'          => 'ASC',
-	] );
-
-	$selected = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_INCLUDES, true );
-	$selected = is_array( $selected ) ? array_map( 'intval', $selected ) : [];
-	?>
-	<p style="margin-top:0;">
-		<?php esc_html_e( "Coche les autres types pour lesquels les membres validé·es de CE type ont AUSSI le droit de réserver. Pratique pour les hiérarchies : un membre « Semi-privés complets » qui inclut « Semi-privés performances » a automatiquement accès aux 2 sans devoir être listé deux fois.", 'cordespace-snippets' ); ?>
-	</p>
-
-	<?php if ( empty( $all_types ) ) : ?>
-		<p style="padding:1rem 1.2rem; background:#f7f7f9; border-radius:5px; color:#666; font-style:italic;">
-			<?php esc_html_e( "Aucun autre type configuré encore. Crée d'abord d'autres types pour pouvoir les inclure ici.", 'cordespace-snippets' ); ?>
-		</p>
-	<?php else : ?>
-		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.5rem 1rem; padding:0.6rem 0;">
-			<?php foreach ( $all_types as $tid ) :
-				$tid     = (int) $tid;
-				$checked = in_array( $tid, $selected, true );
-				?>
-				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-					<input type="checkbox" name="cordespace_evtype_includes[]" value="<?php echo (int) $tid; ?>" <?php checked( $checked ); ?>>
-					<span><?php echo esc_html( get_the_title( $tid ) ); ?></span>
-				</label>
-			<?php endforeach; ?>
-		</div>
-	<?php endif; ?>
-	<?php
-}
+// Note : la metabox « 🔗 Inclut aussi les types » a été retirée. La logique
+// de gating utilise maintenant un OR sur les types applicables : si l'user
+// est validé·e dans AU MOINS UN type applicable à un event, l'event passe.
+// Du coup l'inclusion explicite est inutile : il suffit de cocher les bons
+// tags dans chaque type pour couvrir les bons events. Helper
+// cordespace_event_gating_types_that_include() reste exporté au cas où, et
+// la constante META_INCLUDES reste définie pour ne pas casser d'éventuelles
+// données stockées en DB par les essais précédents.
 
 // ============================================================================
 // 4c) Metabox : Réservations de salle (toggle global)
@@ -314,13 +269,10 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		: '';
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INFO_URL, $url );
 
-	// Includes : array d'IDs de types
-	$includes = isset( $_POST['cordespace_evtype_includes'] ) && is_array( $_POST['cordespace_evtype_includes'] )
-		? array_values( array_unique( array_filter( array_map( 'intval', wp_unslash( $_POST['cordespace_evtype_includes'] ) ) ) ) )
-		: [];
-	// Sécurité : on retire le post lui-même si jamais quelqu'un trafique le form
-	$includes = array_values( array_diff( $includes, [ $post_id ] ) );
-	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INCLUDES, $includes );
+	// (Le champ « Inclut aussi les types » a été retiré : la logique OR
+	// rend l'inclusion explicite inutile. La meta key reste définie pour
+	// que les données déjà enregistrées en DB ne soient pas perdues, mais
+	// on n'écrit plus dessus.)
 
 	// Applies to appointments : '0' ou '1'
 	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';

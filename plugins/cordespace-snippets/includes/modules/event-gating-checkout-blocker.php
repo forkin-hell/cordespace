@@ -41,9 +41,7 @@ defined( 'ABSPATH' ) || exit;
 // ============================================================================
 
 /**
- * Vérifie si un user est approved DIRECTEMENT pour un type d'événement donné.
- * Pour le check qui prend en compte l'inclusion hiérarchique, voir
- * cordespace_evgating_is_user_approved_recursive() ci-dessous.
+ * Vérifie si un user est approved pour un type d'événement donné.
  */
 function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id ): bool {
 	if ( $user_id <= 0 || $event_type_id <= 0 ) {
@@ -60,55 +58,28 @@ function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id 
 }
 
 /**
- * Vérifie si un user est approved pour un type, EN TENANT COMPTE de
- * l'inclusion hiérarchique : un user validé sur « Semi-privés complets »
- * (qui inclut « Semi-privés performances ») est aussi considéré comme validé
- * sur « performances ».
+ * Renvoie les items du panier qui sont BLOQUÉS pour l'user actuellement
+ * connecté (ou anonyme).
  *
- * Protection contre les cycles : si Type A inclut B et B inclut A, on
- * ne tournera pas en rond.
- */
-function cordespace_evgating_is_user_approved_recursive( int $user_id, int $event_type_id, array $visited = [] ): bool {
-	if ( $user_id <= 0 || in_array( $event_type_id, $visited, true ) ) {
-		return false;
-	}
-	$visited[] = $event_type_id;
-
-	// 1. Approval directe sur ce type ?
-	if ( cordespace_evgating_is_user_approved( $user_id, $event_type_id ) ) {
-		return true;
-	}
-
-	// 2. Approval sur un type qui INCLUT celui-ci (parent dans la hiérarchie) ?
-	$parents = cordespace_event_gating_types_that_include( $event_type_id );
-	foreach ( $parents as $parent_id ) {
-		if ( cordespace_evgating_is_user_approved_recursive( $user_id, (int) $parent_id, $visited ) ) {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-/**
- * Renvoie les types d'événements qui bloquent le panier actuel, pour le user
- * actuellement connecté (ou anonyme).
+ * Logique OR : un item est bloqué si AUCUN des types applicables à cet item
+ * n'a l'user en approved. Autrement dit, il suffit d'être validé·e dans 1 seul
+ * type applicable pour avoir accès. C'est ce qui permet à un membre de
+ * « Semi-privé (complet) » de réserver des events « performances » sans avoir
+ * besoin d'être aussi listé·e dans le type « Semi-privé (performances) » :
+ * l'event a 2 types applicables, et il suffit que l'user soit dans 1 des 2.
  *
- * @return array<int, array{type: WP_Post, event_names: string[]}>
- *               Indexé par event_type_id. Vide si rien ne bloque.
+ * @return array<string, array{name: string, kind: 'event'|'appointment', applicable_types: int[]}>
+ *               Indexé par une clé unique de l'item (event_<id> ou appt_<svcid>).
+ *               Vide si rien ne bloque.
  */
-function cordespace_evgating_blocked_types_for_current_cart(): array {
+function cordespace_evgating_blocked_items_for_current_cart(): array {
 	if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
 		return [];
 	}
 
 	$user_id = get_current_user_id();
+	$blocked = []; // [item_key => [name, kind, applicable_types]]
 
-	// Collecte des bookings Amelia présents dans le panier, séparés en 2
-	// listes : events et appointments (salles). Les events matchent par
-	// étiquette, les appointments matchent par toggle global sur le type.
-	$amelia_events       = []; // [event_id => event_name]
-	$amelia_appointments = []; // [service_id => service_name] - on garde 1 par item
 	foreach ( WC()->cart->get_cart() as $cart_item ) {
 		if ( empty( $cart_item['ameliabooking'] ) || ! is_array( $cart_item['ameliabooking'] ) ) {
 			continue;
@@ -116,70 +87,90 @@ function cordespace_evgating_blocked_types_for_current_cart(): array {
 		$booking = $cart_item['ameliabooking'];
 		$btype   = (string) ( $booking['type'] ?? '' );
 
+		$applicable = [];
+		$item_name  = '';
+		$item_key   = '';
+		$kind       = '';
+
 		if ( $btype === 'event' ) {
 			$event_id = isset( $booking['eventId'] ) ? (int) $booking['eventId'] : 0;
 			if ( $event_id <= 0 ) {
 				continue;
 			}
-			$amelia_events[ $event_id ] = (string) ( $booking['name'] ?? '' );
+			$applicable = cordespace_event_gating_applicable_types_for_amelia_event( $event_id );
+			$item_name  = (string) ( $booking['name'] ?? '' );
+			$item_key   = 'event_' . $event_id;
+			$kind       = 'event';
 		} elseif ( $btype === 'appointment' ) {
-			// Identifie chaque appointment par son nom de service. On ne se
-			// sert pas du service_id directement parce que le matching est
-			// global ('s'applique à TOUS les appointments'), mais on garde
-			// le nom pour l'afficher dans le bandeau.
-			$svc_name = (string) ( $booking['name'] ?? $booking['serviceName'] ?? __( 'Réservation de salle', 'cordespace-snippets' ) );
-			$svc_key  = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : md5( $svc_name );
-			$amelia_appointments[ $svc_key ] = $svc_name;
+			$applicable = cordespace_event_gating_applicable_types_for_amelia_appointment();
+			$item_name  = (string) ( $booking['name'] ?? $booking['serviceName'] ?? __( 'Réservation de salle', 'cordespace-snippets' ) );
+			$svc_id     = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : 0;
+			$item_key   = 'appt_' . ( $svc_id > 0 ? $svc_id : md5( $item_name ) );
+			$kind       = 'appointment';
+		} else {
+			continue;
 		}
-	}
 
-	if ( empty( $amelia_events ) && empty( $amelia_appointments ) ) {
-		return [];
-	}
-
-	// Pour chaque event/appointment, quels types s'appliquent ?
-	// Pour chaque type, l'user est-iel approved (récursivement, en suivant
-	// la hiérarchie d'inclusion) ?
-	$blocked = []; // [type_id => ['type' => WP_Post, 'event_names' => string[]]]
-
-	$register_blocked = function ( int $type_id, string $item_name ) use ( $user_id, &$blocked ) {
-		if ( $user_id > 0 && cordespace_evgating_is_user_approved_recursive( $user_id, $type_id ) ) {
-			return; // approved (directement ou via parent) → pas bloqué
+		if ( empty( $applicable ) ) {
+			continue; // pas de type applicable → pas de gating sur cet item
 		}
-		if ( ! isset( $blocked[ $type_id ] ) ) {
-			$type = get_post( $type_id );
-			if ( ! $type ) {
-				return;
+
+		// OR : si l'user est validé·e dans AU MOINS UN type applicable, OK.
+		$approved_in_any = false;
+		if ( $user_id > 0 ) {
+			foreach ( $applicable as $type_id ) {
+				if ( cordespace_evgating_is_user_approved( $user_id, (int) $type_id ) ) {
+					$approved_in_any = true;
+					break;
+				}
 			}
-			$blocked[ $type_id ] = [
-				'type'        => $type,
-				'event_names' => [],
+		}
+
+		if ( $approved_in_any ) {
+			continue; // accès accordé pour cet item
+		}
+
+		// Bloqué : on enregistre l'item + ses types alternatifs (validation
+		// dans n'importe lequel suffirait à débloquer).
+		if ( ! isset( $blocked[ $item_key ] ) ) {
+			$blocked[ $item_key ] = [
+				'name'             => $item_name,
+				'kind'             => $kind,
+				'applicable_types' => array_values( array_map( 'intval', $applicable ) ),
 			];
-		}
-		if ( $item_name !== '' && ! in_array( $item_name, $blocked[ $type_id ]['event_names'], true ) ) {
-			$blocked[ $type_id ]['event_names'][] = $item_name;
-		}
-	};
-
-	// Events : matching par étiquette Amelia
-	foreach ( $amelia_events as $event_id => $event_name ) {
-		$applicable = cordespace_event_gating_applicable_types_for_amelia_event( $event_id );
-		foreach ( $applicable as $type_id ) {
-			$register_blocked( (int) $type_id, $event_name );
-		}
-	}
-
-	// Appointments : matching par toggle global (s'applique à toutes salles)
-	if ( ! empty( $amelia_appointments ) ) {
-		$appt_types = cordespace_event_gating_applicable_types_for_amelia_appointment();
-		foreach ( $amelia_appointments as $svc_name ) {
-			foreach ( $appt_types as $type_id ) {
-				$register_blocked( (int) $type_id, $svc_name );
-			}
 		}
 	}
 
 	return $blocked;
+}
+
+/**
+ * Alias rétro-compatible : certains modules externes pourraient l'appeler
+ * sous l'ancien nom. Renvoie une structure compatible (groupée par type)
+ * dérivée du nouveau résultat. Préférer blocked_items_for_current_cart()
+ * pour tout nouveau code.
+ *
+ * @return array<int, array{type: WP_Post, event_names: string[]}>
+ */
+function cordespace_evgating_blocked_types_for_current_cart(): array {
+	$items   = cordespace_evgating_blocked_items_for_current_cart();
+	$by_type = [];
+	foreach ( $items as $item ) {
+		foreach ( $item['applicable_types'] as $type_id ) {
+			$type_id = (int) $type_id;
+			if ( ! isset( $by_type[ $type_id ] ) ) {
+				$type = get_post( $type_id );
+				if ( ! $type ) {
+					continue;
+				}
+				$by_type[ $type_id ] = [ 'type' => $type, 'event_names' => [] ];
+			}
+			if ( $item['name'] !== '' && ! in_array( $item['name'], $by_type[ $type_id ]['event_names'], true ) ) {
+				$by_type[ $type_id ]['event_names'][] = $item['name'];
+			}
+		}
+	}
+	return $by_type;
 }
 
 // ============================================================================
@@ -187,8 +178,8 @@ function cordespace_evgating_blocked_types_for_current_cart(): array {
 // ============================================================================
 
 function cordespace_evgating_render_block_banner(): void {
-	$blocked = cordespace_evgating_blocked_types_for_current_cart();
-	if ( empty( $blocked ) ) {
+	$items = cordespace_evgating_blocked_items_for_current_cart();
+	if ( empty( $items ) ) {
 		return;
 	}
 
@@ -199,50 +190,62 @@ function cordespace_evgating_render_block_banner(): void {
 	?>
 	<div class="cordespace-evgating-block" role="alert" style="margin:0 0 1.5rem; padding:1.4rem 1.6rem; background:#fdecea; border:2px solid #d63638; border-left:6px solid #d63638; border-radius:6px; color:#3c1c1c;">
 		<h3 style="margin:0 0 0.6rem; color:#3c1c1c; font-size:1.15em; font-weight:700;">
-			⛔ <?php echo count( $blocked ) > 1
-				? esc_html__( 'Validation requise pour ces événements', 'cordespace-snippets' )
-				: esc_html__( 'Validation requise pour cet événement', 'cordespace-snippets' ); ?>
+			⛔ <?php echo count( $items ) > 1
+				? esc_html__( 'Validation requise pour ces réservations', 'cordespace-snippets' )
+				: esc_html__( 'Validation requise pour cette réservation', 'cordespace-snippets' ); ?>
 		</h3>
 
 		<?php if ( ! $is_logged_in ) : ?>
 			<p style="margin:0 0 1rem;">
-				<?php esc_html_e( 'Ton panier contient un ou plusieurs événements qui nécessitent une validation préalable par l\'équipe Cordespace. Tu dois te connecter avec un compte validé pour pouvoir les réserver.', 'cordespace-snippets' ); ?>
+				<?php esc_html_e( 'Ton panier contient une ou plusieurs réservations qui nécessitent une validation préalable par l\'équipe Cordespace. Tu dois te connecter avec un compte validé pour pouvoir les réserver.', 'cordespace-snippets' ); ?>
 			</p>
 		<?php endif; ?>
 
-		<?php foreach ( $blocked as $row ) :
-			$type     = $row['type'];
-			$events   = $row['event_names'];
-			$info_url = cordespace_event_gating_get_info_url( (int) $type->ID );
-			// IMPORTANT : ne PAS appeler apply_filters('the_content', ...) ici
-			// parce que cette fonction est elle-même appelée DEPUIS le filtre
-			// the_content (via cordespace_evgating_inject_banner_via_content).
-			// Ça causerait une récursion infinie → fatal memory exhausted.
-			// On utilise wpautop + wp_kses_post pour le rendu HTML basique.
-			$banner_html = wpautop( wp_kses_post( (string) $type->post_content ) );
+		<?php foreach ( $items as $item ) :
+			$icon            = $item['kind'] === 'appointment' ? '🏠' : '📅';
+			$applicable_ids  = $item['applicable_types'];
+			$multi_types     = count( $applicable_ids ) > 1;
 			?>
 			<div style="margin:0.8rem 0; padding:0.9rem 1.1rem; background:rgba(255,255,255,0.55); border-radius:5px;">
-				<p style="margin:0 0 0.4rem; font-weight:700; font-size:1.05em;">
-					🔒 <?php echo esc_html( get_the_title( $type ) ); ?>
+				<p style="margin:0 0 0.6rem; font-weight:700; font-size:1.05em;">
+					<?php echo esc_html( $icon ); ?> <?php echo esc_html( $item['name'] ); ?>
 				</p>
-				<?php if ( ! empty( $events ) ) : ?>
-					<p style="margin:0 0 0.5rem; font-size:0.9em; color:#5c1c1c;">
-						<?php esc_html_e( 'Concerné·e dans ton panier :', 'cordespace-snippets' ); ?>
-						<em><?php echo esc_html( implode( ', ', $events ) ); ?></em>
-					</p>
-				<?php endif; ?>
-				<?php if ( $banner_html !== '' ) : ?>
-					<div class="cordespace-evgating-block-text" style="margin:0 0 0.6rem; font-size:0.95em; line-height:1.5;">
-						<?php echo wp_kses_post( $banner_html ); ?>
-					</div>
-				<?php endif; ?>
-				<?php if ( $info_url !== '' ) : ?>
-					<p style="margin:0.5rem 0 0;">
-						<a href="<?php echo esc_url( $info_url ); ?>" class="button" style="background:#1a1a2e; color:#fff; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block;">
-							ℹ️ <?php esc_html_e( 'En savoir plus', 'cordespace-snippets' ); ?>
-						</a>
-					</p>
-				<?php endif; ?>
+				<p style="margin:0 0 0.6rem; font-size:0.95em; color:#5c1c1c;">
+					<?php if ( $multi_types ) :
+						esc_html_e( 'Pour pouvoir réserver, tu dois être validé·e dans AU MOINS UN de ces types :', 'cordespace-snippets' );
+					else :
+						esc_html_e( 'Pour pouvoir réserver, tu dois être validé·e dans :', 'cordespace-snippets' );
+					endif; ?>
+				</p>
+				<ul style="margin:0; padding:0; list-style:none;">
+					<?php foreach ( $applicable_ids as $type_id ) :
+						$type = get_post( (int) $type_id );
+						if ( ! $type ) {
+							continue;
+						}
+						$info_url = cordespace_event_gating_get_info_url( (int) $type_id );
+						// IMPORTANT : ne PAS appeler apply_filters('the_content', ...) ici
+						// parce que cette fonction est elle-même appelée DEPUIS le filtre
+						// the_content (via inject_banner_via_content). Récursion infinie.
+						$type_html = wpautop( wp_kses_post( (string) $type->post_content ) );
+						?>
+						<li style="margin:0.4rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.45); border-radius:4px;">
+							<p style="margin:0 0 0.3rem; font-weight:600;">
+								🔒 <?php echo esc_html( get_the_title( $type ) ); ?>
+							</p>
+							<?php if ( $type_html !== '' ) : ?>
+								<div class="cordespace-evgating-block-text" style="margin:0 0 0.5rem; font-size:0.9em; line-height:1.45;">
+									<?php echo wp_kses_post( $type_html ); ?>
+								</div>
+							<?php endif; ?>
+							<?php if ( $info_url !== '' ) : ?>
+								<a href="<?php echo esc_url( $info_url ); ?>" class="button" style="background:#1a1a2e; color:#fff; padding:0.45rem 0.95rem; text-decoration:none; border-radius:4px; display:inline-block; font-size:0.9em;">
+									ℹ️ <?php esc_html_e( 'En savoir plus', 'cordespace-snippets' ); ?>
+								</a>
+							<?php endif; ?>
+						</li>
+					<?php endforeach; ?>
+				</ul>
 			</div>
 		<?php endforeach; ?>
 
@@ -315,29 +318,42 @@ function cordespace_evgating_store_api_block( $order, $request ): void {
 		}
 	}
 
-	$blocked = cordespace_evgating_blocked_types_for_current_cart();
-	if ( empty( $blocked ) ) {
+	$items = cordespace_evgating_blocked_items_for_current_cart();
+	if ( empty( $items ) ) {
 		return;
 	}
 
 	$messages = [];
-	foreach ( $blocked as $row ) {
-		$type     = $row['type'];
-		$type_lbl = get_the_title( $type );
-		$info_url = cordespace_event_gating_get_info_url( (int) $type->ID );
-		$msg      = sprintf(
-			/* translators: %s = type label */
-			__( 'Tu dois être validé·e pour réserver « %s ».', 'cordespace-snippets' ),
-			$type_lbl
-		);
-		if ( $info_url !== '' ) {
-			$msg .= ' ' . sprintf(
-				/* translators: %s = info URL */
-				__( 'Pour en savoir plus : %s', 'cordespace-snippets' ),
-				$info_url
+	foreach ( $items as $item ) {
+		$type_titles = [];
+		foreach ( $item['applicable_types'] as $type_id ) {
+			$t = get_post( (int) $type_id );
+			if ( $t ) {
+				$type_titles[] = get_the_title( $t );
+			}
+		}
+		if ( empty( $type_titles ) ) {
+			continue;
+		}
+		if ( count( $type_titles ) > 1 ) {
+			$messages[] = sprintf(
+				/* translators: 1: item name (event or appointment), 2: comma-separated list of type names */
+				__( 'Tu dois être validé·e dans au moins un de ces types pour réserver « %1$s » : %2$s.', 'cordespace-snippets' ),
+				$item['name'],
+				implode( ', ', $type_titles )
+			);
+		} else {
+			$messages[] = sprintf(
+				/* translators: 1: item name (event or appointment), 2: type name */
+				__( 'Tu dois être validé·e pour le type « %2$s » pour réserver « %1$s ».', 'cordespace-snippets' ),
+				$item['name'],
+				$type_titles[0]
 			);
 		}
-		$messages[] = $msg;
+	}
+
+	if ( empty( $messages ) ) {
+		return;
 	}
 
 	throw new $exception_class(
@@ -353,27 +369,37 @@ add_action( 'woocommerce_store_api_checkout_update_order_from_request', 'cordesp
  * Ajoute une erreur de validation qui empêche la création de l'order.
  */
 function cordespace_evgating_classic_checkout_block(): void {
-	$blocked = cordespace_evgating_blocked_types_for_current_cart();
-	if ( empty( $blocked ) ) {
+	$items = cordespace_evgating_blocked_items_for_current_cart();
+	if ( empty( $items ) ) {
 		return;
 	}
 	if ( ! function_exists( 'wc_add_notice' ) ) {
 		return;
 	}
-	foreach ( $blocked as $row ) {
-		$type     = $row['type'];
-		$type_lbl = get_the_title( $type );
-		$info_url = cordespace_event_gating_get_info_url( (int) $type->ID );
-		$notice   = sprintf(
-			/* translators: %s = type label */
-			__( '⛔ Tu dois être validé·e pour réserver « %s ».', 'cordespace-snippets' ),
-			$type_lbl
-		);
-		if ( $info_url !== '' ) {
-			$notice .= sprintf(
-				/* translators: %s = info URL */
-				__( ' Plus d\'infos : %s', 'cordespace-snippets' ),
-				esc_url( $info_url )
+	foreach ( $items as $item ) {
+		$type_titles = [];
+		foreach ( $item['applicable_types'] as $type_id ) {
+			$t = get_post( (int) $type_id );
+			if ( $t ) {
+				$type_titles[] = get_the_title( $t );
+			}
+		}
+		if ( empty( $type_titles ) ) {
+			continue;
+		}
+		if ( count( $type_titles ) > 1 ) {
+			$notice = sprintf(
+				/* translators: 1: item name, 2: comma-separated type names */
+				__( '⛔ Tu dois être validé·e dans au moins un de ces types pour réserver « %1$s » : %2$s.', 'cordespace-snippets' ),
+				$item['name'],
+				implode( ', ', $type_titles )
+			);
+		} else {
+			$notice = sprintf(
+				/* translators: 1: item name, 2: type name */
+				__( '⛔ Tu dois être validé·e pour le type « %2$s » pour réserver « %1$s ».', 'cordespace-snippets' ),
+				$item['name'],
+				$type_titles[0]
 			);
 		}
 		wc_add_notice( $notice, 'error' );
