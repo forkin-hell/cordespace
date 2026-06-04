@@ -1051,7 +1051,12 @@ function cordespace_evgating_print_inline_js(): void {
 			$result.text('En cours…').css('color', '#555');
 			ajax('apply_implications', {}, function (data) {
 				$btn.prop('disabled', false);
-				$result.html('✓ Terminé : <strong>' + data.cascaded + '</strong> validations ajoutées sur <strong>' + data.members_processed + '</strong> membre(s). <a href="" style="color:#1a1a2e;">Rafraîchir</a>').css('color', '#1a5c1a');
+				var html = '✓ Terminé : <strong>' + data.cascaded + '</strong> validations ajoutées sur <strong>' + data.members_processed + '</strong> membre(s) WP';
+				if (data.pending_cascaded > 0) {
+					html += ' + <strong>' + data.pending_cascaded + '</strong> validations sur <strong>' + data.pending_processed + '</strong> email(s) en attente';
+				}
+				html += '. <a href="" style="color:#1a1a2e;">Rafraîchir</a>';
+				$result.html(html).css('color', '#1a5c1a');
 			}, function (msg) {
 				$btn.prop('disabled', false);
 				$result.text('✗ ' + msg).css('color', '#a00');
@@ -1558,6 +1563,7 @@ function cordespace_evgating_ajax_apply_implications(): void {
 	$cascaded          = 0;
 	$members_processed = 0;
 
+	// 1. WP users (matrice principale)
 	foreach ( $members as $m ) {
 		$user_id  = (int) $m['user_id'];
 		$statuses = (array) $m['statuses'];
@@ -1577,10 +1583,8 @@ function cordespace_evgating_ajax_apply_implications(): void {
 				}
 				$current = (string) ( $statuses[ $child_tag ] ?? '' );
 				if ( $current === CORDESPACE_EVTYPE_STATUS_APPROVED ) {
-					continue; // déjà OK, pas besoin de cascade
+					continue;
 				}
-				// On set_tag_status sur l'enfant (la fonction gère la cascade
-				// récursive si l'enfant est lui-même parent d'un autre).
 				if ( cordespace_evgating_set_tag_status( $event_type_id, $user_id, $child_tag, CORDESPACE_EVTYPE_STATUS_APPROVED, $by_user_id, [ $tag ] ) ) {
 					$cascaded++;
 					$any_cascade_for_this_member = true;
@@ -1593,9 +1597,50 @@ function cordespace_evgating_ajax_apply_implications(): void {
 		}
 	}
 
+	// 2. Pending emails (les imports CSV pour les emails sans compte WP)
+	$pending_cascaded = 0;
+	$pending_emails_processed = 0;
+	if ( function_exists( 'cordespace_evgating_pending_get_for_type' ) && function_exists( 'cordespace_evgating_pending_add' ) ) {
+		$pending_list = cordespace_evgating_pending_get_for_type( $event_type_id );
+		foreach ( $pending_list as $p ) {
+			$email    = (string) $p['email'];
+			$statuses = (array) $p['statuses'];
+			$any_for_this_email = false;
+
+			foreach ( $statuses as $tag => $status ) {
+				if ( $status !== CORDESPACE_EVTYPE_STATUS_APPROVED ) {
+					continue;
+				}
+				$implied = isset( $implications[ $tag ] ) && is_array( $implications[ $tag ] )
+					? $implications[ $tag ]
+					: [];
+				foreach ( $implied as $child_tag ) {
+					$child_tag = (string) $child_tag;
+					if ( $child_tag === '' ) {
+						continue;
+					}
+					$current = (string) ( $statuses[ $child_tag ] ?? '' );
+					if ( $current === CORDESPACE_EVTYPE_STATUS_APPROVED ) {
+						continue;
+					}
+					if ( cordespace_evgating_pending_add( $email, $event_type_id, $child_tag, CORDESPACE_EVTYPE_STATUS_APPROVED, '', $by_user_id, [ $tag ] ) > 0 ) {
+						$pending_cascaded++;
+						$any_for_this_email = true;
+					}
+				}
+			}
+
+			if ( $any_for_this_email ) {
+				$pending_emails_processed++;
+			}
+		}
+	}
+
 	wp_send_json_success( [
 		'cascaded'          => $cascaded,
 		'members_processed' => $members_processed,
+		'pending_cascaded'  => $pending_cascaded,
+		'pending_processed' => $pending_emails_processed,
 	] );
 }
 

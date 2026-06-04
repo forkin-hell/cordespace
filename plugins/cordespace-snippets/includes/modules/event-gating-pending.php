@@ -61,7 +61,8 @@ function cordespace_evgating_pending_add(
 	string $tag,
 	string $status,
 	string $notes,
-	int $by_user_id
+	int $by_user_id,
+	array $visited = []
 ): int {
 	$email = cordespace_evgating_normalize_email( $email );
 	if ( $email === '' || $type_id <= 0 ) {
@@ -92,22 +93,42 @@ function cordespace_evgating_pending_add(
 			[ '%s', '%s', '%d' ],
 			[ '%d' ]
 		);
-		return $result === false ? 0 : 1;
+		$ok = ( $result !== false );
+	} else {
+		$result = $wpdb->insert(
+			$table,
+			[
+				'email'         => $email,
+				'event_type_id' => $type_id,
+				'tag'           => $tag,
+				'status'        => $status,
+				'notes'         => $notes,
+				'created_by'    => $by_user_id ?: null,
+			],
+			[ '%s', '%d', '%s', '%s', '%s', '%d' ]
+		);
+		$ok = (bool) $result;
 	}
 
-	$result = $wpdb->insert(
-		$table,
-		[
-			'email'         => $email,
-			'event_type_id' => $type_id,
-			'tag'           => $tag,
-			'status'        => $status,
-			'notes'         => $notes,
-			'created_by'    => $by_user_id ?: null,
-		],
-		[ '%s', '%d', '%s', '%s', '%s', '%d' ]
-	);
-	return $result ? 1 : 0;
+	// Cascade des implications (uniquement sur 'approved'), même logique que
+	// cordespace_evgating_set_tag_status pour les WP users. Protection cycle
+	// via $visited.
+	if ( $ok && $status === CORDESPACE_EVTYPE_STATUS_APPROVED && function_exists( 'cordespace_event_gating_get_tag_implications' ) ) {
+		$visited[] = $tag;
+		$implications = cordespace_event_gating_get_tag_implications( $type_id );
+		$implied      = isset( $implications[ $tag ] ) && is_array( $implications[ $tag ] )
+			? $implications[ $tag ]
+			: [];
+		foreach ( $implied as $child_tag ) {
+			$child_tag = (string) $child_tag;
+			if ( $child_tag === '' || in_array( $child_tag, $visited, true ) ) {
+				continue;
+			}
+			cordespace_evgating_pending_add( $email, $type_id, $child_tag, CORDESPACE_EVTYPE_STATUS_APPROVED, $notes, $by_user_id, $visited );
+		}
+	}
+
+	return $ok ? 1 : 0;
 }
 
 /**
