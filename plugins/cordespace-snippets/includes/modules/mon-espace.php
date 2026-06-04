@@ -165,8 +165,13 @@ function cordespace_render_logged_out_view() {
 	</div>
 
 	<div style="padding:1.4rem 1.6rem;background:#eef5fd;border-left:4px solid #2c70b8;border-radius:6px;color:#1d4d7e;font-size:0.97em;margin-bottom:3rem;">
-		<strong>💡 Utilise tes identifiants Amelia</strong> via le bouton « Se connecter » ci-dessus.<br>
-		Que tu sois enseignant·e ou client·e, ta vue s'adaptera automatiquement après la connexion.
+		<p style="margin:0 0 0.8rem;">
+			<strong>💡 Utilise tes identifiants Amelia</strong> via le bouton « Se connecter » ci-dessus.<br>
+			Que tu sois enseignant·e ou client·e, ta vue s'adaptera automatiquement après la connexion.
+		</p>
+		<p style="margin:0;">
+			<strong>Pas encore de compte ?</strong> Un compte sera créé automatiquement à ton premier achat sur Cordespace. Si tu rencontres des soucis de connexion, ou si tu ne peux pas acheter ton billet faute de compte (par exemple pour un semi-privé), écris-nous à <a href="mailto:gestion@cordespace.com" style="color:#1d4d7e;text-decoration:underline;">gestion@cordespace.com</a>.
+		</p>
 	</div>
 	<?php
 	return ob_get_clean();

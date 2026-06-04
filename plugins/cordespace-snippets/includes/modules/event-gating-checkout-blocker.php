@@ -204,12 +204,15 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 		}
 
 		// Bloqué : on enregistre l'item + ses types alternatifs (validation
-		// dans n'importe lequel suffirait à débloquer).
+		// dans n'importe lequel suffirait à débloquer) + les tags Amelia de
+		// l'event pour permettre au render de calculer les tags communs
+		// event ∩ type et afficher la catégorie concernée.
 		if ( ! isset( $blocked[ $item_key ] ) ) {
 			$blocked[ $item_key ] = [
 				'name'             => $item_name,
 				'kind'             => $kind,
 				'applicable_types' => array_values( array_map( 'intval', $applicable ) ),
+				'event_tags'       => array_values( array_map( 'strval', $item_tags ) ),
 			];
 		}
 	}
@@ -310,11 +313,39 @@ function cordespace_evgating_render_block_banner(): void {
 						// parce que cette fonction est elle-même appelée DEPUIS le filtre
 						// the_content (via inject_banner_via_content). Récursion infinie.
 						$type_html = wpautop( wp_kses_post( (string) $type->post_content ) );
+
+						// Calcule les tags communs entre l'event et ce type (= les
+						// catégories spécifiques requises pour cet event précis).
+						// Pour les appointments (item kind = 'appointment'), event_tags
+						// est vide → pas de mention de catégorie affichée.
+						$type_tags = function_exists( 'cordespace_event_gating_get_tags' )
+							? cordespace_event_gating_get_tags( (int) $type_id )
+							: [];
+						$common_tags = array_values( array_intersect( (array) $item['event_tags'], $type_tags ) );
 						?>
 						<div style="margin:0.4rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.45); border-radius:4px;">
 							<p style="margin:0 0 0.3rem; font-weight:600;">
 								🔒 <?php echo esc_html( get_the_title( $type ) ); ?>
 							</p>
+							<?php if ( ! empty( $common_tags ) ) : ?>
+								<p style="margin:0 0 0.5rem; font-size:0.88em; color:#5c1c1c;">
+									<?php
+									if ( count( $common_tags ) === 1 ) {
+										printf(
+											/* translators: %s = tag name */
+											esc_html__( 'Catégorie concernée pour cet event : %s', 'cordespace-snippets' ),
+											'<em>' . esc_html( $common_tags[0] ) . '</em>'
+										);
+									} else {
+										printf(
+											/* translators: %s = comma-separated tag names */
+											esc_html__( 'Il suffit d\'être validé·e dans AU MOINS UNE de ces catégories : %s', 'cordespace-snippets' ),
+											'<em>' . esc_html( implode( ', ', $common_tags ) ) . '</em>'
+										);
+									}
+									?>
+								</p>
+							<?php endif; ?>
 							<?php if ( $type_html !== '' ) : ?>
 								<div class="cordespace-evgating-block-text" style="margin:0 0 0.5rem; font-size:0.9em; line-height:1.45;">
 									<?php echo wp_kses_post( $type_html ); ?>
