@@ -260,6 +260,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-members.php',
 			'default_active'  => true,
 		],
+		'event-gating.pending' => [
+			'label'           => 'Validations en attente d\'inscription',
+			'description'     => "Permet d'importer des emails (ex : CSV de Momence) pour pré-valider des personnes qui n'ont pas encore de compte WP. Les rows sont stockées dans wp_cordespace_pending_email_approvals. À la création du compte (hook user_register, ex : 1er achat WC), elles sont automatiquement promues dans la matrice principale. Logge la résolution dans le user meta _cordespace_evgating_auto_validated_at.",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-pending.php',
+			'requires_plugin' => [],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-pending.php',
+			'default_active'  => true,
+		],
 		'event-gating.checkout-blocker' => [
 			'label'           => 'Blocage panier/checkout pour les non-validé·es',
 			'description'     => "Affiche un bandeau rouge bloquant sur le panier et le checkout quand la personne tente de réserver un événement gated sans être validée pour son type. BLOQUE serveur-side via le Store API WC Blocks (RouteException) + filet de sécurité sur le checkout classique (wc_add_notice error). Bandeau affiche le titre du type, son texte WYSIWYG, et un bouton « En savoir plus » vers l'URL d'info. Pour les non-connecté·es, ajoute aussi un bouton « Me connecter ».",
