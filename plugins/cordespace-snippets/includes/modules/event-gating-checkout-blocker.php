@@ -41,20 +41,76 @@ defined( 'ABSPATH' ) || exit;
 // ============================================================================
 
 /**
- * Vérifie si un user est approved pour un type d'événement donné.
+ * Helper bas niveau : check du status pour une cellule précise (user, type, tag).
+ * Pour les types sans tags, passer $tag = '' (= row binaire).
  */
-function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id ): bool {
+function cordespace_evgating_is_user_approved_for_tag( int $user_id, int $event_type_id, string $tag ): bool {
 	if ( $user_id <= 0 || $event_type_id <= 0 ) {
 		return false;
 	}
 	global $wpdb;
 	$table  = cordespace_event_gating_table_name();
 	$status = $wpdb->get_var( $wpdb->prepare(
-		"SELECT status FROM {$table} WHERE event_type_id = %d AND user_id = %d LIMIT 1",
+		"SELECT status FROM {$table} WHERE event_type_id = %d AND user_id = %d AND tag = %s LIMIT 1",
 		$event_type_id,
-		$user_id
+		$user_id,
+		$tag
 	) );
 	return $status === 'approved';
+}
+
+/**
+ * Vérifie si un user est approved pour un type, en tenant compte des tags
+ * de l'event.
+ *
+ * Sémantique :
+ *   - Si le type a des tags configurés : calcule les tags COMMUNS entre
+ *     l'event et le type. Si AU MOINS UN tag commun a statut 'approved'
+ *     pour cet user → return true (OR par tag).
+ *   - Si le type n'a pas de tags configurés (cas appointments salles) :
+ *     check binaire sur la row (type, user, tag = '').
+ *
+ * @param int      $user_id     ID WP user
+ * @param int      $type_id     Post ID du CPT cordespace_evtype
+ * @param string[] $event_tags  Tags Amelia de l'event (vide pour appointments)
+ */
+function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_id, array $event_tags = [] ): bool {
+	if ( $user_id <= 0 || $type_id <= 0 ) {
+		return false;
+	}
+
+	$type_tags = function_exists( 'cordespace_event_gating_get_tags' )
+		? cordespace_event_gating_get_tags( $type_id )
+		: [];
+
+	if ( empty( $type_tags ) ) {
+		// Type sans tags : check binaire sur la row tag = ''
+		return cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, '' );
+	}
+
+	$common = array_values( array_intersect( $event_tags, $type_tags ) );
+	if ( empty( $common ) ) {
+		// Theoriquement n'arrive pas car applicable_types_for_amelia_event
+		// filtre deja sur le matching de tags. Mais defensif.
+		return false;
+	}
+
+	foreach ( $common as $tag ) {
+		if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, (string) $tag ) ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * @deprecated Préférer is_user_approved_for_type() ou is_user_approved_for_tag().
+ *
+ * Gardée pour rétro-compat éventuelle. Sans tags, tombe sur le check binaire
+ * (tag = '') — ce qui ne couvre PAS les types avec tags configurés.
+ */
+function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id ): bool {
+	return cordespace_evgating_is_user_approved_for_tag( $user_id, $event_type_id, '' );
 }
 
 /**
@@ -91,6 +147,7 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 		$item_name  = '';
 		$item_key   = '';
 		$kind       = '';
+		$item_tags  = []; // tags Amelia de l'event (vide pour appointments)
 
 		if ( $btype === 'event' ) {
 			$event_id = isset( $booking['eventId'] ) ? (int) $booking['eventId'] : 0;
@@ -98,6 +155,9 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 				continue;
 			}
 			$applicable = cordespace_event_gating_applicable_types_for_amelia_event( $event_id );
+			$item_tags  = function_exists( 'cordespace_event_gating_get_amelia_event_tags' )
+				? cordespace_event_gating_get_amelia_event_tags( $event_id )
+				: [];
 			$item_name  = (string) ( $booking['name'] ?? '' );
 			$item_key   = 'event_' . $event_id;
 			$kind       = 'event';
@@ -107,6 +167,9 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 			$svc_id     = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : 0;
 			$item_key   = 'appt_' . ( $svc_id > 0 ? $svc_id : md5( $item_name ) );
 			$kind       = 'appointment';
+			// $item_tags reste [] : les appointments matchent par toggle global,
+			// le check is_user_approved_for_type tombera dans la branche
+			// "type sans tags" (= check binaire sur tag = '').
 		} else {
 			continue;
 		}
@@ -115,11 +178,13 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 			continue; // pas de type applicable → pas de gating sur cet item
 		}
 
-		// OR : si l'user est validé·e dans AU MOINS UN type applicable, OK.
+		// OR par type : si l'user est validé·e dans AU MOINS UN type applicable, OK.
+		// Pour chaque type applicable, on délègue à is_user_approved_for_type qui
+		// gère lui-même le OR par tag commun (event ∩ type) en interne.
 		$approved_in_any = false;
 		if ( $user_id > 0 ) {
 			foreach ( $applicable as $type_id ) {
-				if ( cordespace_evgating_is_user_approved( $user_id, (int) $type_id ) ) {
+				if ( cordespace_evgating_is_user_approved_for_type( $user_id, (int) $type_id, $item_tags ) ) {
 					$approved_in_any = true;
 					break;
 				}

@@ -199,8 +199,8 @@ function cordespace_evgating_add_member( int $event_type_id, int $user_id, strin
 
 	// Récupère les tags configurés sur le type (via le helper exposé par
 	// le module CPT — si pas dispo, on tombe en mode binaire).
-	$tags = function_exists( 'cordespace_event_gating_get_tags_for_type' )
-		? cordespace_event_gating_get_tags_for_type( $event_type_id )
+	$tags = function_exists( 'cordespace_event_gating_get_tags' )
+		? cordespace_event_gating_get_tags( $event_type_id )
 		: [];
 	$tags_to_insert = empty( $tags ) ? [ '' ] : $tags;
 

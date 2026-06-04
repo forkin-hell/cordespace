@@ -311,17 +311,12 @@ function cordespace_event_gating_get_info_url( int $event_type_id ): string {
  * @return int[] Liste des post IDs de cordespace_event_type applicables.
  */
 function cordespace_event_gating_applicable_types_for_amelia_event( int $amelia_event_id ): array {
-	global $wpdb;
 	if ( $amelia_event_id <= 0 ) {
 		return [];
 	}
 
-	// 1. Tags de l'event Amelia
-	$event_tags = $wpdb->get_col( $wpdb->prepare(
-		"SELECT DISTINCT name FROM {$wpdb->prefix}amelia_events_tags WHERE eventId = %d",
-		$amelia_event_id
-	) );
-	$event_tags = array_filter( (array) $event_tags );
+	// 1. Tags de l'event Amelia (via le helper extrait)
+	$event_tags = cordespace_event_gating_get_amelia_event_tags( $amelia_event_id );
 	if ( empty( $event_tags ) ) {
 		return [];
 	}
@@ -343,6 +338,27 @@ function cordespace_event_gating_applicable_types_for_amelia_event( int $amelia_
 		}
 	}
 	return $matching;
+}
+
+/**
+ * Renvoie les tags Amelia configurés pour un event Amelia donné.
+ *
+ * Helper bas niveau extrait de applicable_types_for_amelia_event(), exposé
+ * pour que le module checkout-blocker puisse calculer le check par tag
+ * commun (event ∩ type).
+ *
+ * @return string[]
+ */
+function cordespace_event_gating_get_amelia_event_tags( int $amelia_event_id ): array {
+	if ( $amelia_event_id <= 0 ) {
+		return [];
+	}
+	global $wpdb;
+	$tags = $wpdb->get_col( $wpdb->prepare(
+		"SELECT DISTINCT name FROM {$wpdb->prefix}amelia_events_tags WHERE eventId = %d",
+		$amelia_event_id
+	) );
+	return array_values( array_map( 'strval', array_filter( (array) ( $tags ?: [] ) ) ) );
 }
 
 /**
