@@ -23,10 +23,11 @@ defined( 'ABSPATH' ) || exit;
 // aurait fait 21 caractères → erreur 'Type de contenu non valide'. On garde
 // les constantes meta avec leur nom long, c'est juste le slug du CPT qui
 // est compact.
-const CORDESPACE_EVENT_TYPE_POST_TYPE              = 'cordespace_evtype';
-const CORDESPACE_EVENT_TYPE_META_TAGS              = '_cordespace_event_type_amelia_tags';
-const CORDESPACE_EVENT_TYPE_META_INFO_URL          = '_cordespace_event_type_info_url';
-const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT      = '_cordespace_event_type_applies_to_appointments';
+const CORDESPACE_EVENT_TYPE_POST_TYPE                 = 'cordespace_evtype';
+const CORDESPACE_EVENT_TYPE_META_TAGS                 = '_cordespace_event_type_amelia_tags';
+const CORDESPACE_EVENT_TYPE_META_INFO_URL             = '_cordespace_event_type_info_url';
+const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT         = '_cordespace_event_type_applies_to_appointments';
+const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS     = '_cordespace_event_type_tag_implications';
 
 // ============================================================================
 // 1) Enregistrement du CPT
@@ -155,8 +156,96 @@ function cordespace_event_gating_render_tags_metabox( WP_Post $post ): void {
 			) );
 			?>
 		</p>
+
+		<?php cordespace_event_gating_render_tag_implications_ui( $post, $selected ); ?>
 	<?php endif; ?>
 	<?php
+}
+
+/**
+ * Sous-section de la metabox tags : configure la hiérarchie d'implications
+ * entre tags du type. Un tag « parent » peut impliquer un ou plusieurs tags
+ * « enfants » : valider un membre sur le parent l'auto-valide aussi sur les
+ * enfants. Asymétrique : refuser le parent n'a aucun effet sur les enfants.
+ *
+ * Note de design : on rend ce tableau à partir des tags ACTUELLEMENT
+ * SAUVEGARDÉS (pas ceux cochés dans la session courante). Pour configurer
+ * les implications d'un nouveau tag, l'admin doit d'abord cocher + sauver,
+ * puis revenir ici. Permet d'éviter du JS complexe.
+ */
+function cordespace_event_gating_render_tag_implications_ui( WP_Post $post, array $selected_tags ): void {
+	if ( count( $selected_tags ) < 2 ) {
+		return; // pas assez de tags pour avoir des implications
+	}
+
+	$implications = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS, true );
+	$implications = is_array( $implications ) ? $implications : [];
+	?>
+	<details style="margin-top:1.2rem; padding:0.8rem 1rem; background:#fffcf0; border:1px solid #f0e0a0; border-radius:6px;">
+		<summary style="cursor:pointer; font-weight:600; color:#5c4a00;">
+			🪜 <?php esc_html_e( "Hiérarchie d'implications (optionnel)", 'cordespace-snippets' ); ?>
+		</summary>
+		<p style="margin:0.6rem 0; font-size:0.9em; color:#5c4a00;">
+			<?php esc_html_e( "Permet de définir qu'un tag « parent » implique automatiquement un tag « enfant ». Quand tu valides un·e membre sur le parent, l'enfant est aussi validé automatiquement. Asymétrique : refuser le parent n'a pas d'effet sur l'enfant.", 'cordespace-snippets' ); ?>
+		</p>
+		<table class="widefat" style="margin-top:0.6rem;">
+			<thead>
+				<tr>
+					<th style="padding:0.4rem;"><?php esc_html_e( 'Si ce tag est validé…', 'cordespace-snippets' ); ?></th>
+					<th style="padding:0.4rem;"><?php esc_html_e( '…valider aussi automatiquement :', 'cordespace-snippets' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php foreach ( $selected_tags as $parent_tag ) :
+					$current_implied = isset( $implications[ $parent_tag ] ) && is_array( $implications[ $parent_tag ] )
+						? $implications[ $parent_tag ]
+						: [];
+					?>
+					<tr>
+						<td style="padding:0.5rem;"><strong><?php echo esc_html( $parent_tag ); ?></strong></td>
+						<td style="padding:0.5rem;">
+							<?php foreach ( $selected_tags as $child_tag ) :
+								if ( $child_tag === $parent_tag ) {
+									continue;
+								}
+								$is_checked = in_array( $child_tag, $current_implied, true );
+								?>
+								<label style="display:inline-flex; align-items:center; gap:0.3rem; margin-right:1rem;">
+									<input type="checkbox" name="cordespace_tag_implications[<?php echo esc_attr( $parent_tag ); ?>][]" value="<?php echo esc_attr( $child_tag ); ?>" <?php checked( $is_checked ); ?>>
+									<?php echo esc_html( $child_tag ); ?>
+								</label>
+							<?php endforeach; ?>
+						</td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+	</details>
+	<?php
+}
+
+/**
+ * Renvoie la map d'implications pour un type donné.
+ *
+ * @return array<string, string[]> [tag_parent => [tags_enfants_impliqués]]
+ *         Vide si pas configuré.
+ */
+function cordespace_event_gating_get_tag_implications( int $type_id ): array {
+	if ( $type_id <= 0 ) {
+		return [];
+	}
+	$raw = get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS, true );
+	if ( ! is_array( $raw ) ) {
+		return [];
+	}
+	$out = [];
+	foreach ( $raw as $parent => $children ) {
+		if ( ! is_string( $parent ) || ! is_array( $children ) ) {
+			continue;
+		}
+		$out[ $parent ] = array_values( array_unique( array_filter( array_map( 'strval', $children ) ) ) );
+	}
+	return $out;
 }
 
 // ============================================================================
@@ -258,6 +347,33 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		? esc_url_raw( wp_unslash( $_POST['cordespace_event_type_info_url'] ) )
 		: '';
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INFO_URL, $url );
+
+	// Implications entre tags : array<tag_parent, tag_enfant[]>. On filtre
+	// pour ne garder que les paires où les 2 tags sont dans la liste sauvée.
+	$raw_implications = isset( $_POST['cordespace_tag_implications'] ) && is_array( $_POST['cordespace_tag_implications'] )
+		? (array) wp_unslash( $_POST['cordespace_tag_implications'] )
+		: [];
+	$clean_implications = [];
+	foreach ( $raw_implications as $parent => $children ) {
+		$parent = sanitize_text_field( (string) $parent );
+		if ( ! in_array( $parent, $tags, true ) ) {
+			continue;
+		}
+		if ( ! is_array( $children ) ) {
+			continue;
+		}
+		$filtered = [];
+		foreach ( $children as $child ) {
+			$child = sanitize_text_field( (string) $child );
+			if ( $child !== '' && $child !== $parent && in_array( $child, $tags, true ) ) {
+				$filtered[] = $child;
+			}
+		}
+		if ( ! empty( $filtered ) ) {
+			$clean_implications[ $parent ] = array_values( array_unique( $filtered ) );
+		}
+	}
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS, $clean_implications );
 
 	// Applies to appointments : '0' ou '1'
 	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';

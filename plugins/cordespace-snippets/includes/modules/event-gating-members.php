@@ -249,9 +249,15 @@ function cordespace_evgating_add_member( int $event_type_id, int $user_id, strin
  *
  * Si la row (type, user, tag) n'existe pas encore, on l'insère.
  *
+ * CASCADE : si $status === 'approved' et que le type a des implications
+ * configurées pour ce tag, propage l'approbation aux tags enfants
+ * automatiquement (asymétrique : pas de cascade sur pending/rejected).
+ * Protection contre les cycles via $visited.
+ *
+ * @param string[] $visited Tags déjà traités dans la chaîne de cascade (interne).
  * @return bool true si succès (insert ou update).
  */
-function cordespace_evgating_set_tag_status( int $event_type_id, int $user_id, string $tag, string $status, int $by_user_id ): bool {
+function cordespace_evgating_set_tag_status( int $event_type_id, int $user_id, string $tag, string $status, int $by_user_id, array $visited = [] ): bool {
 	if ( $event_type_id <= 0 || $user_id <= 0 ) {
 		return false;
 	}
@@ -283,26 +289,43 @@ function cordespace_evgating_set_tag_status( int $event_type_id, int $user_id, s
 			[ '%s', '%s', '%d', '%s' ],
 			[ '%d' ]
 		);
-		return $result !== false;
+		$ok = ( $result !== false );
+	} else {
+		$result = $wpdb->insert(
+			$table,
+			[
+				'event_type_id' => $event_type_id,
+				'user_id'       => $user_id,
+				'tag'           => $tag,
+				'status'        => $status,
+				'notes'         => '',
+				'approved_at'   => $is_approved ? $now : null,
+				'approved_by'   => $is_approved ? $by_user_id : null,
+				'created_at'    => $now,
+				'updated_at'    => $now,
+			],
+			[ '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s' ]
+		);
+		$ok = ( $result !== false );
 	}
 
-	// Pas de row : on insère
-	$result = $wpdb->insert(
-		$table,
-		[
-			'event_type_id' => $event_type_id,
-			'user_id'       => $user_id,
-			'tag'           => $tag,
-			'status'        => $status,
-			'notes'         => '',
-			'approved_at'   => $is_approved ? $now : null,
-			'approved_by'   => $is_approved ? $by_user_id : null,
-			'created_at'    => $now,
-			'updated_at'    => $now,
-		],
-		[ '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s' ]
-	);
-	return $result !== false;
+	// Cascade des implications (uniquement sur 'approved')
+	if ( $ok && $is_approved && function_exists( 'cordespace_event_gating_get_tag_implications' ) ) {
+		$visited[] = $tag;
+		$implications = cordespace_event_gating_get_tag_implications( $event_type_id );
+		$implied      = isset( $implications[ $tag ] ) && is_array( $implications[ $tag ] )
+			? $implications[ $tag ]
+			: [];
+		foreach ( $implied as $child_tag ) {
+			$child_tag = (string) $child_tag;
+			if ( $child_tag === '' || in_array( $child_tag, $visited, true ) ) {
+				continue; // cycle protection
+			}
+			cordespace_evgating_set_tag_status( $event_type_id, $user_id, $child_tag, CORDESPACE_EVTYPE_STATUS_APPROVED, $by_user_id, $visited );
+		}
+	}
+
+	return $ok;
 }
 
 /**
@@ -681,6 +704,25 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
 			ℹ️ <?php esc_html_e( "Logique OR par tag : une personne peut réserver un event si elle est validée sur AU MOINS UN tag commun entre l'event et ce type.", 'cordespace-snippets' ); ?>
 		</p>
 
+		<?php
+		// Bouton "Appliquer la hiérarchie aux validations existantes" :
+		// disponible uniquement si des implications sont configurées pour ce type.
+		$implications = function_exists( 'cordespace_event_gating_get_tag_implications' )
+			? cordespace_event_gating_get_tag_implications( $event_type_id )
+			: [];
+		if ( ! empty( $implications ) ) :
+			?>
+			<p style="margin:0 0 1rem;">
+				<button type="button" class="button cordespace-evgating-apply-implications">
+					🪜 <?php esc_html_e( "Appliquer la hiérarchie aux validations existantes", 'cordespace-snippets' ); ?>
+				</button>
+				<small style="display:block; margin-top:0.3rem; color:#666;">
+					<?php esc_html_e( "Pour chaque membre déjà validé·e sur un tag « parent », valide aussi automatiquement les tags « enfants » configurés. Utile après import.", 'cordespace-snippets' ); ?>
+				</small>
+				<span class="cordespace-evgating-apply-implications-result" style="display:block; margin-top:0.4rem; font-size:0.9em;"></span>
+			</p>
+		<?php endif; ?>
+
 		<!-- Formulaire d'ajout -->
 		<div class="cordespace-evgating-add" style="padding:0.9rem 1.1rem; background:#f7f7f9; border-radius:6px; margin-bottom:1rem;">
 			<p style="margin-top:0; font-weight:600;">➕ <?php esc_html_e( 'Ajouter une personne', 'cordespace-snippets' ); ?></p>
@@ -998,6 +1040,21 @@ function cordespace_evgating_print_inline_js(): void {
 				$row.fadeOut(200, function () { $(this).remove(); });
 			}, function (msg) {
 				alert('Erreur : ' + msg);
+			});
+		});
+
+		// --- Appliquer la hiérarchie aux validations existantes ------------
+		$root.on('click', '.cordespace-evgating-apply-implications', function () {
+			if (!confirm('Pour chaque membre déjà validé·e sur un tag parent, le système va aussi valider automatiquement les tags enfants configurés. Continuer ?')) return;
+			var $btn    = $(this).prop('disabled', true);
+			var $result = $root.find('.cordespace-evgating-apply-implications-result');
+			$result.text('En cours…').css('color', '#555');
+			ajax('apply_implications', {}, function (data) {
+				$btn.prop('disabled', false);
+				$result.html('✓ Terminé : <strong>' + data.cascaded + '</strong> validations ajoutées sur <strong>' + data.members_processed + '</strong> membre(s). <a href="" style="color:#1a1a2e;">Rafraîchir</a>').css('color', '#1a5c1a');
+			}, function (msg) {
+				$btn.prop('disabled', false);
+				$result.text('✗ ' + msg).css('color', '#a00');
 			});
 		});
 
@@ -1481,6 +1538,65 @@ function cordespace_evgating_parse_csv_emails( string $file_path ): ?array {
 	}
 	fclose( $handle );
 	return $emails;
+}
+
+// Applique les implications configurées aux validations existantes
+add_action( 'wp_ajax_cordespace_evgating_apply_implications', 'cordespace_evgating_ajax_apply_implications' );
+function cordespace_evgating_ajax_apply_implications(): void {
+	$event_type_id = cordespace_evgating_ajax_authorize();
+	$by_user_id    = get_current_user_id();
+
+	if ( ! function_exists( 'cordespace_event_gating_get_tag_implications' ) ) {
+		wp_send_json_error( [ 'message' => 'Module CPT non chargé.' ], 500 );
+	}
+	$implications = cordespace_event_gating_get_tag_implications( $event_type_id );
+	if ( empty( $implications ) ) {
+		wp_send_json_success( [ 'cascaded' => 0, 'members_processed' => 0 ] );
+	}
+
+	$members           = cordespace_evgating_get_members( $event_type_id );
+	$cascaded          = 0;
+	$members_processed = 0;
+
+	foreach ( $members as $m ) {
+		$user_id  = (int) $m['user_id'];
+		$statuses = (array) $m['statuses'];
+		$any_cascade_for_this_member = false;
+
+		foreach ( $statuses as $tag => $status ) {
+			if ( $status !== CORDESPACE_EVTYPE_STATUS_APPROVED ) {
+				continue;
+			}
+			$implied = isset( $implications[ $tag ] ) && is_array( $implications[ $tag ] )
+				? $implications[ $tag ]
+				: [];
+			foreach ( $implied as $child_tag ) {
+				$child_tag = (string) $child_tag;
+				if ( $child_tag === '' ) {
+					continue;
+				}
+				$current = (string) ( $statuses[ $child_tag ] ?? '' );
+				if ( $current === CORDESPACE_EVTYPE_STATUS_APPROVED ) {
+					continue; // déjà OK, pas besoin de cascade
+				}
+				// On set_tag_status sur l'enfant (la fonction gère la cascade
+				// récursive si l'enfant est lui-même parent d'un autre).
+				if ( cordespace_evgating_set_tag_status( $event_type_id, $user_id, $child_tag, CORDESPACE_EVTYPE_STATUS_APPROVED, $by_user_id, [ $tag ] ) ) {
+					$cascaded++;
+					$any_cascade_for_this_member = true;
+				}
+			}
+		}
+
+		if ( $any_cascade_for_this_member ) {
+			$members_processed++;
+		}
+	}
+
+	wp_send_json_success( [
+		'cascaded'          => $cascaded,
+		'members_processed' => $members_processed,
+	] );
 }
 
 // Retire un email de la liste d'attente
