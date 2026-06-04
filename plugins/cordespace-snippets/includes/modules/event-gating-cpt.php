@@ -29,6 +29,11 @@ const CORDESPACE_EVENT_TYPE_META_INFO_URL              = '_cordespace_event_type
 const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT          = '_cordespace_event_type_applies_to_appointments';
 const CORDESPACE_EVENT_TYPE_META_APPT_TAGS             = '_cordespace_event_type_appt_tags';
 const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS      = '_cordespace_event_type_tag_implications';
+
+// Étiquette spéciale hardcodée pour les appointments (réservations de salle).
+// Ce n'est PAS une étiquette Amelia mais elle se comporte comme une étiquette
+// dans tout le système (colonne dans matrice, hiérarchie, cross-type, etc.).
+const CORDESPACE_EVENT_TYPE_TAG_SALLES                 = 'Réservation des salles';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES    = '_cordespace_event_type_implied_from_types';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP  = '_cordespace_event_type_implied_from_tag_filters';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE     = '_cordespace_event_type_implied_from_role';
@@ -163,109 +168,26 @@ function cordespace_event_gating_render_tags_metabox( WP_Post $post ): void {
 	<?php endif; ?>
 
 	<?php
-	// === Section : Étiquettes personnalisées (pour les appointments ou catégories sans event Amelia) ===
-	$custom_tags = array_values( array_diff( $selected, (array) $all_tags ) );
+	// === Étiquette spéciale hardcodée : « Réservation des salles » ===
+	// C'est une case à cocher unique qui se comporte comme une étiquette Amelia
+	// (colonne dans la matrice, apparait dans la hiérarchie, etc.) mais qui
+	// déclenche le gating sur les appointments Amelia (pas sur les events).
+	$salles_enabled = in_array( CORDESPACE_EVENT_TYPE_TAG_SALLES, $selected, true );
 	?>
-	<h4 style="margin:1.2rem 0 0.4rem;">✏️ <?php esc_html_e( 'Étiquettes personnalisées', 'cordespace-snippets' ); ?></h4>
+	<h4 style="margin:1.2rem 0 0.4rem;">🏠 <?php esc_html_e( 'Étiquette spéciale pour les réservations de salle', 'cordespace-snippets' ); ?></h4>
 	<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
-		<?php esc_html_e( "Pour ajouter une « catégorie de validation » qui ne correspond pas à une étiquette Amelia existante. Cas typique : « Réservation des salles » (qui concerne les appointments, pas les events). Ces étiquettes apparaissent comme colonnes dans la matrice membres exactement comme les étiquettes Amelia.", 'cordespace-snippets' ); ?>
+		<?php esc_html_e( "Cocher cette case ajoute une catégorie « Réservation des salles » à ce type. Elle se comporte comme une étiquette Amelia (colonne dans la matrice membres, apparaît dans la hiérarchie d'implications) mais déclenche le gating sur les appointments Amelia (les réservations de salle) au lieu des events.", 'cordespace-snippets' ); ?>
 	</p>
-	<div id="cordespace-custom-tags-container">
-		<?php foreach ( $custom_tags as $tag ) : ?>
-			<div class="cordespace-custom-tag" style="display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;">
-				<span><?php echo esc_html( $tag ); ?></span>
-				<input type="hidden" name="cordespace_event_type_custom_tags[]" value="<?php echo esc_attr( $tag ); ?>">
-				<button type="button" class="cordespace-custom-tag-remove" style="background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;">✗</button>
-			</div>
-		<?php endforeach; ?>
-	</div>
-	<div style="margin-top:0.6rem; display:flex; gap:0.4rem;">
-		<input type="text" id="cordespace-custom-tag-input" placeholder="<?php esc_attr_e( 'Ex : Réservation des salles', 'cordespace-snippets' ); ?>" style="flex:1; max-width:300px;">
-		<button type="button" id="cordespace-custom-tag-add" class="button"><?php esc_html_e( '+ Ajouter', 'cordespace-snippets' ); ?></button>
-	</div>
+	<label style="display:flex; align-items:center; gap:0.5rem; padding:0.5rem 0.8rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:5px; cursor:pointer;">
+		<input type="checkbox" name="cordespace_evtype_enable_salles" value="1" <?php checked( $salles_enabled ); ?>>
+		<strong>🏠 <?php esc_html_e( "Activer la catégorie « Réservation des salles »", 'cordespace-snippets' ); ?></strong>
+	</label>
 
 	<?php
-	// === Section : Étiquettes qui s'appliquent aux réservations de salle ===
-	$appt_tags = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
-	$appt_tags = is_array( $appt_tags ) ? $appt_tags : [];
-	if ( ! empty( $selected ) ) :
-		?>
-		<h4 style="margin:1.4rem 0 0.4rem;">🏠 <?php esc_html_e( 'Étiquettes qui gatent aussi les réservations de salle', 'cordespace-snippets' ); ?></h4>
-		<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
-			<?php esc_html_e( "Coche les étiquettes qui, lorsqu'une personne est validée dessus, donnent aussi accès aux réservations de salle (= appointments Amelia, peu importe le service). Les autres étiquettes ne déclenchent le gating QUE sur les events Amelia.", 'cordespace-snippets' ); ?>
-		</p>
-		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.4rem 1rem; padding:0.3rem 0;">
-			<?php foreach ( $selected as $tag ) :
-				$is_appt = in_array( $tag, $appt_tags, true );
-				?>
-				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-					<input type="checkbox" name="cordespace_event_type_appt_tags[]" value="<?php echo esc_attr( $tag ); ?>" <?php checked( $is_appt ); ?>>
-					<span><?php echo esc_html( $tag ); ?></span>
-				</label>
-			<?php endforeach; ?>
-		</div>
-		<p class="description" style="font-size:0.85em; color:#666; margin-top:0.4rem;">
-			<?php esc_html_e( "Note : sauvegarde d'abord les nouvelles étiquettes pour les voir apparaître ici.", 'cordespace-snippets' ); ?>
-		</p>
-	<?php endif; ?>
-
-	<?php
-	// === Section : Hiérarchie d'implications (existante) ===
+	// === Section : Hiérarchie d'implications (existante, lit META_TAGS donc
+	// inclut automatiquement "Réservation des salles" si activée) ===
 	cordespace_event_gating_render_tag_implications_ui( $post, $selected );
 	?>
-
-	<?php // JS pour gérer l'ajout/retrait de tags personnalisés ?>
-	<script>
-	(function () {
-		var $container = document.getElementById('cordespace-custom-tags-container');
-		var $input     = document.getElementById('cordespace-custom-tag-input');
-		var $addBtn    = document.getElementById('cordespace-custom-tag-add');
-		if ( ! $container || ! $input || ! $addBtn ) return;
-
-		function tagAlreadyExists(tag) {
-			var inputs = $container.querySelectorAll('input[name="cordespace_event_type_custom_tags[]"]');
-			for (var i = 0; i < inputs.length; i++) {
-				if (inputs[i].value === tag) return true;
-			}
-			return false;
-		}
-
-		function addTag() {
-			var tag = ($input.value || '').trim();
-			if (!tag) return;
-			if (tagAlreadyExists(tag)) { alert('Cette étiquette existe déjà.'); return; }
-			var div = document.createElement('div');
-			div.className = 'cordespace-custom-tag';
-			div.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;';
-			var span = document.createElement('span');
-			span.textContent = tag;
-			div.appendChild(span);
-			var hidden = document.createElement('input');
-			hidden.type = 'hidden';
-			hidden.name = 'cordespace_event_type_custom_tags[]';
-			hidden.value = tag;
-			div.appendChild(hidden);
-			var btn = document.createElement('button');
-			btn.type = 'button';
-			btn.className = 'cordespace-custom-tag-remove';
-			btn.style.cssText = 'background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;';
-			btn.textContent = '✗';
-			div.appendChild(btn);
-			$container.appendChild(div);
-			$input.value = '';
-		}
-
-		$addBtn.addEventListener('click', addTag);
-		$input.addEventListener('keypress', function (e) {
-			if (e.key === 'Enter') { e.preventDefault(); addTag(); }
-		});
-		$container.addEventListener('click', function (e) {
-			if (e.target && e.target.classList && e.target.classList.contains('cordespace-custom-tag-remove')) {
-				e.target.parentNode.remove();
-			}
-		});
-	})();
-	</script>
 	<?php
 }
 
@@ -394,17 +316,15 @@ function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void 
 // 4c) Metabox : Réservations de salle (toggle global)
 // ============================================================================
 
-function cordespace_event_gating_add_appointments_metabox(): void {
-	add_meta_box(
-		'cordespace-event-type-appointments',
-		__( '🏠 Réservations de salle', 'cordespace-snippets' ),
-		'cordespace_event_gating_render_appointments_metabox',
-		CORDESPACE_EVENT_TYPE_POST_TYPE,
-		'normal',
-		'default'
-	);
-}
-add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_appointments_metabox' );
+// L'ancienne metabox « 🏠 Réservations de salle » a été retirée. La case à
+// cocher « Réservation des salles » est maintenant directement dans la
+// metabox principale des étiquettes (= au même endroit que les étiquettes
+// Amelia, plus intuitif). Le toggle global META_APPLIES_APPT reste lu en
+// rétro-compat par applicable_types_for_amelia_appointment() mais n'est plus
+// modifiable via UI — utilise la case « Activer la catégorie Réservation des
+// salles » à la place.
+//
+// function cordespace_event_gating_add_appointments_metabox() {} (supprimée)
 
 function cordespace_event_gating_render_appointments_metabox( WP_Post $post ): void {
 	$applies = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, true );
@@ -614,21 +534,23 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		return;
 	}
 
-	// Tags : merger les étiquettes Amelia cochées + les étiquettes personnalisées
+	// Tags : étiquettes Amelia cochées + l'étiquette spéciale « Réservation des
+	// salles » si activée (hardcodée, pas d'input libre).
 	$amelia_tags = isset( $_POST['cordespace_event_type_tags'] ) && is_array( $_POST['cordespace_event_type_tags'] )
 		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_tags'] ) ) ) )
 		: [];
-	$custom_tags = isset( $_POST['cordespace_event_type_custom_tags'] ) && is_array( $_POST['cordespace_event_type_custom_tags'] )
-		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_custom_tags'] ) ) ) )
-		: [];
-	$tags = array_values( array_unique( array_merge( $amelia_tags, $custom_tags ) ) );
+	$salles_enabled = ! empty( $_POST['cordespace_evtype_enable_salles'] );
+	$tags = $amelia_tags;
+	if ( $salles_enabled && ! in_array( CORDESPACE_EVENT_TYPE_TAG_SALLES, $tags, true ) ) {
+		$tags[] = CORDESPACE_EVENT_TYPE_TAG_SALLES;
+	}
+	$tags = array_values( array_unique( $tags ) );
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_TAGS, $tags );
 
-	// Étiquettes qui s'appliquent aux réservations de salle (sous-ensemble des tags)
-	$appt_tags_raw = isset( $_POST['cordespace_event_type_appt_tags'] ) && is_array( $_POST['cordespace_event_type_appt_tags'] )
-		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_appt_tags'] ) ) ) )
-		: [];
-	$appt_tags = array_values( array_intersect( $appt_tags_raw, $tags ) ); // filtre : seulement tags réels
+	// META_APPT_TAGS : si « Réservation des salles » est activée, c'est la
+	// seule étiquette appt. Sinon vide. (Le concept "1 tag déclenche les salles"
+	// reste sur cette étiquette spéciale uniquement, par design.)
+	$appt_tags = $salles_enabled ? [ CORDESPACE_EVENT_TYPE_TAG_SALLES ] : [];
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, $appt_tags );
 
 	// URL : esc_url_raw
@@ -664,9 +586,11 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 	}
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS, $clean_implications );
 
-	// Applies to appointments : '0' ou '1'
-	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';
-	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, $applies_appt );
+	// META_APPLIES_APPT (ancien toggle global) : on NE TOUCHE PAS à cette
+	// valeur depuis le save (la metabox UI a été retirée). Les anciens types
+	// avec applies_appt='1' continuent de fonctionner en rétro-compat via
+	// applicable_types_for_amelia_appointment(). Les nouveaux types utilisent
+	// l'étiquette « Réservation des salles » à la place.
 
 	// Implied from types : array d'IDs de types (auto-validation cross-type).
 	// Filtre : pas le post lui-même + posts qui existent.
