@@ -27,15 +27,29 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const CORDESPACE_EVENT_GATING_TABLE_SUFFIX    = 'cordespace_event_type_approvals';
-const CORDESPACE_EVENT_GATING_SCHEMA_VERSION  = 2;
+const CORDESPACE_EVENT_GATING_TABLE_SUFFIX          = 'cordespace_event_type_approvals';
+const CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX  = 'cordespace_pending_email_approvals';
+const CORDESPACE_EVENT_GATING_SCHEMA_VERSION        = 3;
 
 /**
- * Renvoie le nom complet (avec préfixe) de la table.
+ * Renvoie le nom complet (avec préfixe) de la table principale (approbations
+ * de members WP : matrice user × tag).
  */
 function cordespace_event_gating_table_name(): string {
 	global $wpdb;
 	return $wpdb->prefix . CORDESPACE_EVENT_GATING_TABLE_SUFFIX;
+}
+
+/**
+ * Renvoie le nom complet de la table « pending » (approbations en attente
+ * d'inscription, stockées par email pour les personnes qui n'ont pas encore
+ * de compte WP). À la création du compte (hook user_register), les rows
+ * pending correspondant à l'email sont promues dans la table principale et
+ * supprimées d'ici.
+ */
+function cordespace_event_gating_pending_table_name(): string {
+	global $wpdb;
+	return $wpdb->prefix . CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX;
 }
 
 /**
@@ -95,6 +109,24 @@ function cordespace_event_gating_install_table(): void {
 
 	// Migration des données v1 → v2 (idempotente)
 	cordespace_event_gating_migrate_data_v1_to_v2();
+
+	// Table v3 : pending_email_approvals (validations en attente d'inscription)
+	$pending_table = cordespace_event_gating_pending_table_name();
+	$pending_sql   = "CREATE TABLE {$pending_table} (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		email VARCHAR(191) NOT NULL,
+		event_type_id BIGINT UNSIGNED NOT NULL,
+		tag VARCHAR(191) NOT NULL DEFAULT '',
+		status VARCHAR(20) NOT NULL DEFAULT 'approved',
+		notes TEXT NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		created_by BIGINT UNSIGNED NULL,
+		PRIMARY KEY  (id),
+		UNIQUE KEY uniq_email_type_tag (email, event_type_id, tag),
+		KEY idx_email (email),
+		KEY idx_event_type_id (event_type_id)
+	) {$charset};";
+	dbDelta( $pending_sql );
 
 	update_option( 'cordespace_event_gating_schema_version', CORDESPACE_EVENT_GATING_SCHEMA_VERSION );
 }
