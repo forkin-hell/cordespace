@@ -23,11 +23,13 @@ defined( 'ABSPATH' ) || exit;
 // aurait fait 21 caractères → erreur 'Type de contenu non valide'. On garde
 // les constantes meta avec leur nom long, c'est juste le slug du CPT qui
 // est compact.
-const CORDESPACE_EVENT_TYPE_POST_TYPE                 = 'cordespace_evtype';
-const CORDESPACE_EVENT_TYPE_META_TAGS                 = '_cordespace_event_type_amelia_tags';
-const CORDESPACE_EVENT_TYPE_META_INFO_URL             = '_cordespace_event_type_info_url';
-const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT         = '_cordespace_event_type_applies_to_appointments';
-const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS     = '_cordespace_event_type_tag_implications';
+const CORDESPACE_EVENT_TYPE_POST_TYPE                  = 'cordespace_evtype';
+const CORDESPACE_EVENT_TYPE_META_TAGS                  = '_cordespace_event_type_amelia_tags';
+const CORDESPACE_EVENT_TYPE_META_INFO_URL              = '_cordespace_event_type_info_url';
+const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT          = '_cordespace_event_type_applies_to_appointments';
+const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS      = '_cordespace_event_type_tag_implications';
+const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES    = '_cordespace_event_type_implied_from_types';
+const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE     = '_cordespace_event_type_implied_from_role';
 
 // ============================================================================
 // 1) Enregistrement du CPT
@@ -315,6 +317,111 @@ function cordespace_event_gating_render_appointments_metabox( WP_Post $post ): v
 }
 
 // ============================================================================
+// 4d) Metabox : Implications externes (cross-type + rôle)
+// ============================================================================
+
+function cordespace_event_gating_add_implied_from_metabox(): void {
+	add_meta_box(
+		'cordespace-event-type-implied-from',
+		__( '🔗 Implications externes', 'cordespace-snippets' ),
+		'cordespace_event_gating_render_implied_from_metabox',
+		CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'normal',
+		'default'
+	);
+}
+add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_implied_from_metabox' );
+
+function cordespace_event_gating_render_implied_from_metabox( WP_Post $post ): void {
+	$implied_types = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES, true );
+	$implied_types = is_array( $implied_types ) ? array_map( 'intval', $implied_types ) : [];
+	$implied_role  = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE, true );
+
+	$all_types = get_posts( [
+		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'post_status'    => 'publish',
+		'posts_per_page' => -1,
+		'fields'         => 'ids',
+		'exclude'        => [ $post->ID ],
+		'orderby'        => 'title',
+		'order'          => 'ASC',
+	] );
+
+	$wp_roles = wp_roles();
+	$roles    = $wp_roles ? $wp_roles->get_names() : [];
+	?>
+	<p style="margin-top:0;">
+		<?php esc_html_e( "Ce panneau permet d'auto-valider des personnes pour CE type, sans avoir à les lister une à une. Le check est dynamique : si la config change, l'effet est immédiat.", 'cordespace-snippets' ); ?>
+	</p>
+
+	<h4 style="margin:1rem 0 0.5rem;">📥 <?php esc_html_e( 'Inclut automatiquement les membres validé·es des types suivants', 'cordespace-snippets' ); ?></h4>
+	<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
+		<?php esc_html_e( "Toute personne validée pour AU MOINS UN tag d'un type coché ci-dessous sera aussi considérée comme validée pour CE type. Pratique pour dire « les membres semi-privé full ont aussi accès aux salles ».", 'cordespace-snippets' ); ?>
+	</p>
+
+	<?php if ( empty( $all_types ) ) : ?>
+		<p style="padding:0.6rem 0.9rem; background:#f7f7f9; border-radius:5px; color:#666; font-style:italic;">
+			<?php esc_html_e( 'Aucun autre type configuré.', 'cordespace-snippets' ); ?>
+		</p>
+	<?php else : ?>
+		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.4rem 1rem; padding:0.3rem 0 0.8rem;">
+			<?php foreach ( $all_types as $tid ) :
+				$tid     = (int) $tid;
+				$checked = in_array( $tid, $implied_types, true );
+				?>
+				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+					<input type="checkbox" name="cordespace_evtype_implied_from_types[]" value="<?php echo $tid; ?>" <?php checked( $checked ); ?>>
+					<span><?php echo esc_html( get_the_title( $tid ) ); ?></span>
+				</label>
+			<?php endforeach; ?>
+		</div>
+	<?php endif; ?>
+
+	<h4 style="margin:1.2rem 0 0.5rem;">👥 <?php esc_html_e( 'Auto-validé·e pour les utilisateurs avec ce rôle', 'cordespace-snippets' ); ?></h4>
+	<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
+		<?php esc_html_e( "Toute personne qui a ce rôle WordPress sera considérée comme validée pour ce type, sans avoir besoin d'être ajoutée à la matrice. Pratique pour « tous les profs ont accès » (rôle Amelia Provider).", 'cordespace-snippets' ); ?>
+	</p>
+	<select name="cordespace_evtype_implied_from_role" style="min-width:240px;">
+		<option value=""><?php esc_html_e( '— Aucun rôle —', 'cordespace-snippets' ); ?></option>
+		<?php foreach ( $roles as $slug => $label ) : ?>
+			<option value="<?php echo esc_attr( $slug ); ?>" <?php selected( $slug, $implied_role ); ?>>
+				<?php echo esc_html( $label ); ?> (<?php echo esc_html( $slug ); ?>)
+			</option>
+		<?php endforeach; ?>
+	</select>
+	<?php
+}
+
+/**
+ * Helper : renvoie les types « sources » qui implementent CE type.
+ * Validation cascade : être validé·e dans AU MOINS UN de ces types →
+ * implique validation sur CE type.
+ *
+ * @return int[]
+ */
+function cordespace_event_gating_get_implied_from_types( int $type_id ): array {
+	if ( $type_id <= 0 ) {
+		return [];
+	}
+	$raw = get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES, true );
+	if ( ! is_array( $raw ) ) {
+		return [];
+	}
+	return array_values( array_filter( array_map( 'intval', $raw ) ) );
+}
+
+/**
+ * Helper : renvoie le rôle WP qui auto-valide pour ce type.
+ * Chaîne vide si pas configuré.
+ */
+function cordespace_event_gating_get_implied_from_role( int $type_id ): string {
+	if ( $type_id <= 0 ) {
+		return '';
+	}
+	return (string) get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE, true );
+}
+
+// ============================================================================
 // 5) Sauvegarde des metas (commune à toutes les metaboxes)
 // ============================================================================
 
@@ -378,6 +485,20 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 	// Applies to appointments : '0' ou '1'
 	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, $applies_appt );
+
+	// Implied from types : array d'IDs de types (auto-validation cross-type).
+	// Filtre : pas le post lui-même + posts qui existent.
+	$implied_types = isset( $_POST['cordespace_evtype_implied_from_types'] ) && is_array( $_POST['cordespace_evtype_implied_from_types'] )
+		? array_values( array_unique( array_filter( array_map( 'intval', wp_unslash( $_POST['cordespace_evtype_implied_from_types'] ) ) ) ) )
+		: [];
+	$implied_types = array_values( array_diff( $implied_types, [ $post_id ] ) );
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES, $implied_types );
+
+	// Implied from role : slug WP (vide = pas de rôle)
+	$implied_role = isset( $_POST['cordespace_evtype_implied_from_role'] )
+		? sanitize_key( wp_unslash( $_POST['cordespace_evtype_implied_from_role'] ) )
+		: '';
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE, $implied_role );
 }
 add_action( 'save_post_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_save_meta' );
 

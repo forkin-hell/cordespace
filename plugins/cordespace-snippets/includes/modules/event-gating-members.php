@@ -493,6 +493,8 @@ function cordespace_evgating_render_members_metabox_binary( WP_Post $post ): voi
 			<span>❌ <strong><?php echo (int) $counts['rejected']; ?></strong> refusé·es</span>
 		</p>
 
+		<?php cordespace_evgating_render_implied_from_notice( $event_type_id ); ?>
+
 		<!-- Formulaire d'ajout -->
 		<div class="cordespace-evgating-add" style="padding:1rem 1.2rem; background:#f7f7f9; border-radius:6px; margin-bottom:1.2rem;">
 			<p style="margin-top:0; font-weight:600;">➕ <?php esc_html_e( 'Ajouter une personne', 'cordespace-snippets' ); ?></p>
@@ -549,6 +551,51 @@ function cordespace_evgating_render_members_metabox_binary( WP_Post $post ): voi
 	<?php cordespace_evgating_render_member_template(); ?>
 	<?php cordespace_evgating_print_inline_js(); ?>
 	<?php cordespace_evgating_print_inline_css(); ?>
+	<?php
+}
+
+/**
+ * Helper partagé : affiche une notice si la config « Implications externes »
+ * du type donne accès indirect à des personnes non listées dans la matrice
+ * (via cross-type ou rôle WP). Sert à expliquer à l'admin que la liste
+ * affichée n'est PAS exhaustive.
+ */
+function cordespace_evgating_render_implied_from_notice( int $event_type_id ): void {
+	$implied_types = function_exists( 'cordespace_event_gating_get_implied_from_types' )
+		? cordespace_event_gating_get_implied_from_types( $event_type_id )
+		: [];
+	$implied_role  = function_exists( 'cordespace_event_gating_get_implied_from_role' )
+		? cordespace_event_gating_get_implied_from_role( $event_type_id )
+		: '';
+
+	if ( empty( $implied_types ) && $implied_role === '' ) {
+		return;
+	}
+
+	$wp_roles  = wp_roles();
+	$role_name = ( $wp_roles && $implied_role !== '' && isset( $wp_roles->roles[ $implied_role ] ) )
+		? (string) $wp_roles->roles[ $implied_role ]['name']
+		: $implied_role;
+	?>
+	<div style="margin:0.4rem 0 1rem; padding:0.6rem 0.9rem; background:#eef5fd; border-left:3px solid #2c70b8; font-size:0.9em; color:#1d4d7e;">
+		<strong>🔗 <?php esc_html_e( 'Validation indirecte active :', 'cordespace-snippets' ); ?></strong>
+		<?php if ( ! empty( $implied_types ) ) : ?>
+			<br>
+			📥 <?php esc_html_e( 'Les membres approved sur au moins un tag des types suivants ont AUSSI accès :', 'cordespace-snippets' ); ?>
+			<?php
+			$type_names = array_filter( array_map( function ( $tid ) {
+				$t = get_post( (int) $tid );
+				return $t ? '« ' . get_the_title( $t ) . ' »' : '';
+			}, $implied_types ) );
+			echo wp_kses_post( implode( ', ', $type_names ) );
+			?>
+		<?php endif; ?>
+		<?php if ( $implied_role !== '' ) : ?>
+			<br>
+			👥 <?php printf( esc_html__( 'Tous les utilisateurs avec le rôle %s ont AUSSI accès.', 'cordespace-snippets' ), '<strong>' . esc_html( $role_name ) . '</strong>' ); ?>
+		<?php endif; ?>
+		<br><small><?php esc_html_e( "(Ces personnes ne sont pas affichées dans le tableau ci-dessous mais leur accès est garanti par la config « Implications externes ».)", 'cordespace-snippets' ); ?></small>
+	</div>
 	<?php
 }
 
@@ -706,6 +753,8 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
 		<p class="cordespace-evgating-help" style="background:#fff8e1; border-left:3px solid #fbc02d; padding:0.5rem 0.8rem; margin:0.4rem 0 1rem; font-size:0.9em; color:#5c3d00;">
 			ℹ️ <?php esc_html_e( "Logique OR par tag : une personne peut réserver un event si elle est validée sur AU MOINS UN tag commun entre l'event et ce type.", 'cordespace-snippets' ); ?>
 		</p>
+
+		<?php cordespace_evgating_render_implied_from_notice( $event_type_id ); ?>
 
 		<?php
 		// Bouton "Appliquer la hiérarchie aux validations existantes" :

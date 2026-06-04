@@ -82,8 +82,12 @@ function cordespace_evgating_is_user_approved_for_tag( int $user_id, int $event_
  * @param int      $type_id     Post ID du CPT cordespace_evtype
  * @param string[] $event_tags  Tags Amelia de l'event (vide pour appointments)
  */
-function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_id, array $event_tags = [] ): bool {
+function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_id, array $event_tags = [], array $visited = [] ): bool {
 	if ( $user_id <= 0 || $type_id <= 0 ) {
+		return false;
+	}
+	// Protection cycle (cross-type implications peuvent former une boucle)
+	if ( in_array( $type_id, $visited, true ) ) {
 		return false;
 	}
 
@@ -91,24 +95,74 @@ function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_
 		? cordespace_event_gating_get_tags( $type_id )
 		: [];
 
+	// CHECK 1 : direct (matrice DB)
 	if ( empty( $type_tags ) ) {
 		// Type sans tags : check binaire sur la row tag = ''
-		return cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, '' );
-	}
-
-	$common = array_values( array_intersect( $event_tags, $type_tags ) );
-	if ( empty( $common ) ) {
-		// Theoriquement n'arrive pas car applicable_types_for_amelia_event
-		// filtre deja sur le matching de tags. Mais defensif.
-		return false;
-	}
-
-	foreach ( $common as $tag ) {
-		if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, (string) $tag ) ) {
+		if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, '' ) ) {
 			return true;
 		}
+	} else {
+		$common = array_values( array_intersect( $event_tags, $type_tags ) );
+		foreach ( $common as $tag ) {
+			if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, (string) $tag ) ) {
+				return true;
+			}
+		}
 	}
+
+	// CHECK 2 : via rôle (config "Auto-validé·e pour les users avec ce rôle")
+	if ( function_exists( 'cordespace_event_gating_get_implied_from_role' ) ) {
+		$role = cordespace_event_gating_get_implied_from_role( $type_id );
+		if ( $role !== '' ) {
+			$user = get_user_by( 'id', $user_id );
+			if ( $user && in_array( $role, (array) $user->roles, true ) ) {
+				return true;
+			}
+		}
+	}
+
+	// CHECK 3 : via cross-type (config "Inclut automatiquement les membres
+	// validé·es des types suivants"). L'user est considéré validé pour CE
+	// type s'il est validé pour AU MOINS UN tag d'un type "source".
+	if ( function_exists( 'cordespace_event_gating_get_implied_from_types' ) ) {
+		$implied_from = cordespace_event_gating_get_implied_from_types( $type_id );
+		if ( ! empty( $implied_from ) ) {
+			$visited[] = $type_id;
+			foreach ( $implied_from as $source_type_id ) {
+				if ( cordespace_evgating_user_has_any_approved_in_type( $user_id, (int) $source_type_id ) ) {
+					return true;
+				}
+				// Récursion : un type source peut lui-même être implied_from d'autres.
+				// Mais ici on regarde si l'user a une validation directe ou via cascade
+				// dans le source — la fonction has_any_approved cherche en DB direct.
+				// Pour aller plus loin (validation transitive cross-type), on rappelle.
+				if ( cordespace_evgating_is_user_approved_for_type( $user_id, (int) $source_type_id, [], $visited ) ) {
+					return true;
+				}
+			}
+		}
+	}
+
 	return false;
+}
+
+/**
+ * Helper bas niveau : l'user a-t-il AU MOINS UNE row 'approved' dans la
+ * matrice pour ce type ? Utilisé par le check cross-type pour determiner
+ * si une personne est validée dans un type « source » sans avoir besoin
+ * de connaître le tag spécifique.
+ */
+function cordespace_evgating_user_has_any_approved_in_type( int $user_id, int $type_id ): bool {
+	if ( $user_id <= 0 || $type_id <= 0 ) {
+		return false;
+	}
+	global $wpdb;
+	$table = cordespace_event_gating_table_name();
+	$count = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT COUNT(*) FROM {$table} WHERE event_type_id = %d AND user_id = %d AND status = 'approved'",
+		$type_id, $user_id
+	) );
+	return $count > 0;
 }
 
 /**
