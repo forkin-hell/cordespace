@@ -29,6 +29,7 @@ const CORDESPACE_EVENT_TYPE_META_INFO_URL              = '_cordespace_event_type
 const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT          = '_cordespace_event_type_applies_to_appointments';
 const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS      = '_cordespace_event_type_tag_implications';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES    = '_cordespace_event_type_implied_from_types';
+const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP  = '_cordespace_event_type_implied_from_tag_filters';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE     = '_cordespace_event_type_implied_from_role';
 
 // ============================================================================
@@ -359,20 +360,46 @@ function cordespace_event_gating_render_implied_from_metabox( WP_Post $post ): v
 		<?php esc_html_e( "Toute personne validée pour AU MOINS UN tag d'un type coché ci-dessous sera aussi considérée comme validée pour CE type. Pratique pour dire « les membres semi-privé full ont aussi accès aux salles ».", 'cordespace-snippets' ); ?>
 	</p>
 
+	<?php
+	$tag_filters = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP, true );
+	$tag_filters = is_array( $tag_filters ) ? $tag_filters : [];
+	?>
 	<?php if ( empty( $all_types ) ) : ?>
 		<p style="padding:0.6rem 0.9rem; background:#f7f7f9; border-radius:5px; color:#666; font-style:italic;">
 			<?php esc_html_e( 'Aucun autre type configuré.', 'cordespace-snippets' ); ?>
 		</p>
 	<?php else : ?>
-		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:0.4rem 1rem; padding:0.3rem 0 0.8rem;">
+		<div style="padding:0.3rem 0 0.8rem;">
 			<?php foreach ( $all_types as $tid ) :
-				$tid     = (int) $tid;
-				$checked = in_array( $tid, $implied_types, true );
+				$tid          = (int) $tid;
+				$is_enabled   = in_array( $tid, $implied_types, true );
+				$source_tags  = get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_TAGS, true );
+				$source_tags  = is_array( $source_tags ) ? $source_tags : [];
+				$selected_tags_for_source = isset( $tag_filters[ $tid ] ) && is_array( $tag_filters[ $tid ] )
+					? $tag_filters[ $tid ]
+					: [];
 				?>
-				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-					<input type="checkbox" name="cordespace_evtype_implied_from_types[]" value="<?php echo $tid; ?>" <?php checked( $checked ); ?>>
-					<span><?php echo esc_html( get_the_title( $tid ) ); ?></span>
-				</label>
+				<div style="margin:0.5rem 0; padding:0.6rem 0.8rem; background:<?php echo $is_enabled ? '#f1faf3' : '#f7f7f9'; ?>; border:1px solid <?php echo $is_enabled ? '#c1e4ca' : '#e0e0e0'; ?>; border-radius:5px;">
+					<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer; font-weight:600;">
+						<input type="checkbox" name="cordespace_evtype_implied_from_types[]" value="<?php echo $tid; ?>" <?php checked( $is_enabled ); ?>>
+						<span><?php echo esc_html( get_the_title( $tid ) ); ?></span>
+					</label>
+					<?php if ( ! empty( $source_tags ) ) : ?>
+						<div style="margin:0.5rem 0 0 1.5rem; font-size:0.9em;">
+							<p style="margin:0 0 0.3rem; color:#666;">
+								<?php esc_html_e( "Filtre par tag (laisser tout vide = tous les tags du type comptent) :", 'cordespace-snippets' ); ?>
+							</p>
+							<?php foreach ( $source_tags as $stag ) :
+								$tag_checked = in_array( $stag, $selected_tags_for_source, true );
+								?>
+								<label style="display:inline-flex; align-items:center; gap:0.3rem; margin-right:1rem;">
+									<input type="checkbox" name="cordespace_evtype_implied_from_tag_filters[<?php echo $tid; ?>][]" value="<?php echo esc_attr( $stag ); ?>" <?php checked( $tag_checked ); ?>>
+									<?php echo esc_html( $stag ); ?>
+								</label>
+							<?php endforeach; ?>
+						</div>
+					<?php endif; ?>
+				</div>
 			<?php endforeach; ?>
 		</div>
 	<?php endif; ?>
@@ -408,6 +435,31 @@ function cordespace_event_gating_get_implied_from_types( int $type_id ): array {
 		return [];
 	}
 	return array_values( array_filter( array_map( 'intval', $raw ) ) );
+}
+
+/**
+ * Helper : renvoie les filtres par tag pour les types implementés.
+ *
+ * @return array<int, string[]> [type_id => [tag1, tag2]] où chaque entry
+ *   indique quels tags du type source comptent. Si un type est dans
+ *   `get_implied_from_types` mais PAS dans cette map, ça veut dire « tous
+ *   les tags du source comptent » (= comportement par défaut).
+ */
+function cordespace_event_gating_get_implied_from_tag_filters( int $type_id ): array {
+	if ( $type_id <= 0 ) {
+		return [];
+	}
+	$raw = get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP, true );
+	if ( ! is_array( $raw ) ) {
+		return [];
+	}
+	$out = [];
+	foreach ( $raw as $tid => $tags ) {
+		if ( is_array( $tags ) && ! empty( $tags ) ) {
+			$out[ (int) $tid ] = array_values( array_filter( array_map( 'strval', $tags ) ) );
+		}
+	}
+	return $out;
 }
 
 /**
@@ -493,6 +545,34 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		: [];
 	$implied_types = array_values( array_diff( $implied_types, [ $post_id ] ) );
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES, $implied_types );
+
+	// Filtres par tag pour chaque type implié : [type_id => [tag1, tag2]]
+	// (vide ou absent = "tous les tags du type source comptent")
+	$raw_filters    = isset( $_POST['cordespace_evtype_implied_from_tag_filters'] ) && is_array( $_POST['cordespace_evtype_implied_from_tag_filters'] )
+		? (array) wp_unslash( $_POST['cordespace_evtype_implied_from_tag_filters'] )
+		: [];
+	$clean_filters = [];
+	foreach ( $raw_filters as $tid => $tags ) {
+		$tid = (int) $tid;
+		// Ne garder que les filtres pour les types cochés
+		if ( ! in_array( $tid, $implied_types, true ) ) {
+			continue;
+		}
+		if ( ! is_array( $tags ) ) {
+			continue;
+		}
+		// Filtrer pour ne garder que les tags qui existent réellement sur le type source
+		$source_tags = get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_TAGS, true );
+		$source_tags = is_array( $source_tags ) ? $source_tags : [];
+		$valid_tags  = array_values( array_intersect(
+			array_map( 'sanitize_text_field', $tags ),
+			$source_tags
+		) );
+		if ( ! empty( $valid_tags ) ) {
+			$clean_filters[ $tid ] = $valid_tags;
+		}
+	}
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP, $clean_filters );
 
 	// Implied from role : slug WP (vide = pas de rôle)
 	$implied_role = isset( $_POST['cordespace_evtype_implied_from_role'] )

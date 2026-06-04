@@ -572,6 +572,10 @@ function cordespace_evgating_render_implied_from_notice( int $event_type_id ): v
 		return;
 	}
 
+	$tag_filters = function_exists( 'cordespace_event_gating_get_implied_from_tag_filters' )
+		? cordespace_event_gating_get_implied_from_tag_filters( $event_type_id )
+		: [];
+
 	$wp_roles  = wp_roles();
 	$role_name = ( $wp_roles && $implied_role !== '' && isset( $wp_roles->roles[ $implied_role ] ) )
 		? (string) $wp_roles->roles[ $implied_role ]['name']
@@ -581,13 +585,33 @@ function cordespace_evgating_render_implied_from_notice( int $event_type_id ): v
 		<strong>🔗 <?php esc_html_e( 'Validation indirecte active :', 'cordespace-snippets' ); ?></strong>
 		<?php if ( ! empty( $implied_types ) ) : ?>
 			<br>
-			📥 <?php esc_html_e( 'Les membres approved sur au moins un tag des types suivants ont AUSSI accès :', 'cordespace-snippets' ); ?>
+			📥 <?php esc_html_e( 'Sont aussi validé·es :', 'cordespace-snippets' ); ?>
 			<?php
-			$type_names = array_filter( array_map( function ( $tid ) {
+			$descriptions = [];
+			foreach ( $implied_types as $tid ) {
 				$t = get_post( (int) $tid );
-				return $t ? '« ' . get_the_title( $t ) . ' »' : '';
-			}, $implied_types ) );
-			echo wp_kses_post( implode( ', ', $type_names ) );
+				if ( ! $t ) {
+					continue;
+				}
+				$type_label = '« ' . get_the_title( $t ) . ' »';
+				$filter     = isset( $tag_filters[ (int) $tid ] ) ? (array) $tag_filters[ (int) $tid ] : [];
+				if ( empty( $filter ) ) {
+					$descriptions[] = sprintf(
+						/* translators: %s = type name */
+						__( 'les membres approved sur n\'importe quel tag de %s', 'cordespace-snippets' ),
+						$type_label
+					);
+				} else {
+					$tag_list = '<em>' . esc_html( implode( ', ', $filter ) ) . '</em>';
+					$descriptions[] = sprintf(
+						/* translators: 1: type name, 2: comma-separated tag names */
+						__( 'les membres approved sur le(s) tag(s) %2$s de %1$s', 'cordespace-snippets' ),
+						$type_label,
+						$tag_list
+					);
+				}
+			}
+			echo wp_kses_post( implode( ' ; ', $descriptions ) );
 			?>
 		<?php endif; ?>
 		<?php if ( $implied_role !== '' ) : ?>

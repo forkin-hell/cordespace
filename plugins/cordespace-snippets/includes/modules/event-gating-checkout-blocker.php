@@ -123,20 +123,26 @@ function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_
 
 	// CHECK 3 : via cross-type (config "Inclut automatiquement les membres
 	// validé·es des types suivants"). L'user est considéré validé pour CE
-	// type s'il est validé pour AU MOINS UN tag d'un type "source".
+	// type s'il est validé pour AU MOINS UN tag d'un type "source", filtré
+	// éventuellement par les tags spécifiques configurés (cf. ciblage tag).
 	if ( function_exists( 'cordespace_event_gating_get_implied_from_types' ) ) {
 		$implied_from = cordespace_event_gating_get_implied_from_types( $type_id );
+		$tag_filters  = function_exists( 'cordespace_event_gating_get_implied_from_tag_filters' )
+			? cordespace_event_gating_get_implied_from_tag_filters( $type_id )
+			: [];
 		if ( ! empty( $implied_from ) ) {
 			$visited[] = $type_id;
 			foreach ( $implied_from as $source_type_id ) {
-				if ( cordespace_evgating_user_has_any_approved_in_type( $user_id, (int) $source_type_id ) ) {
+				$source_id = (int) $source_type_id;
+				$filter    = isset( $tag_filters[ $source_id ] ) ? (array) $tag_filters[ $source_id ] : [];
+				// Si filter vide → "tous les tags du source comptent" (= ancien comportement)
+				// Si filter non-vide → uniquement les tags listés comptent
+				if ( cordespace_evgating_user_has_any_approved_in_type( $user_id, $source_id, $filter ) ) {
 					return true;
 				}
-				// Récursion : un type source peut lui-même être implied_from d'autres.
-				// Mais ici on regarde si l'user a une validation directe ou via cascade
-				// dans le source — la fonction has_any_approved cherche en DB direct.
-				// Pour aller plus loin (validation transitive cross-type), on rappelle.
-				if ( cordespace_evgating_is_user_approved_for_type( $user_id, (int) $source_type_id, [], $visited ) ) {
+				// Récursion transitive : ne pas filtrer ici (la config du parent
+				// gère déjà ses propres restrictions).
+				if ( cordespace_evgating_is_user_approved_for_type( $user_id, $source_id, [], $visited ) ) {
 					return true;
 				}
 			}
@@ -148,20 +154,31 @@ function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_
 
 /**
  * Helper bas niveau : l'user a-t-il AU MOINS UNE row 'approved' dans la
- * matrice pour ce type ? Utilisé par le check cross-type pour determiner
- * si une personne est validée dans un type « source » sans avoir besoin
- * de connaître le tag spécifique.
+ * matrice pour ce type ? Optionnellement filtre par tags spécifiques.
+ *
+ * @param string[] $tag_filter Si non vide, ne compte que les rows dont le
+ *   tag est dans cette liste. Si vide, n'importe quel tag compte.
  */
-function cordespace_evgating_user_has_any_approved_in_type( int $user_id, int $type_id ): bool {
+function cordespace_evgating_user_has_any_approved_in_type( int $user_id, int $type_id, array $tag_filter = [] ): bool {
 	if ( $user_id <= 0 || $type_id <= 0 ) {
 		return false;
 	}
 	global $wpdb;
 	$table = cordespace_event_gating_table_name();
-	$count = (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT COUNT(*) FROM {$table} WHERE event_type_id = %d AND user_id = %d AND status = 'approved'",
-		$type_id, $user_id
-	) );
+
+	if ( empty( $tag_filter ) ) {
+		$count = (int) $wpdb->get_var( $wpdb->prepare(
+			"SELECT COUNT(*) FROM {$table} WHERE event_type_id = %d AND user_id = %d AND status = 'approved'",
+			$type_id, $user_id
+		) );
+		return $count > 0;
+	}
+
+	// Tag filter : construit un placeholder %s répété pour le IN(...)
+	$placeholders = implode( ',', array_fill( 0, count( $tag_filter ), '%s' ) );
+	$sql_params   = array_merge( [ $type_id, $user_id ], array_map( 'strval', $tag_filter ) );
+	$query        = "SELECT COUNT(*) FROM {$table} WHERE event_type_id = %d AND user_id = %d AND status = 'approved' AND tag IN ({$placeholders})";
+	$count        = (int) $wpdb->get_var( $wpdb->prepare( $query, $sql_params ) );
 	return $count > 0;
 }
 
