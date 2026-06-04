@@ -42,7 +42,10 @@ function cordespace_evgating_status_label( string $status ): string {
 	switch ( $status ) {
 		case CORDESPACE_EVTYPE_STATUS_APPROVED: return __( 'Validé·e', 'cordespace-snippets' );
 		case CORDESPACE_EVTYPE_STATUS_REJECTED: return __( 'Refusé·e', 'cordespace-snippets' );
-		default:                                return __( 'En attente', 'cordespace-snippets' );
+		// Le statut technique reste 'pending' en DB, mais l'UI parle de
+		// 'Non demandé·e' car en pratique c'est juste l'absence de demande
+		// (vs « en attente d'une décision admin »).
+		default:                                return __( 'Non demandé·e', 'cordespace-snippets' );
 	}
 }
 
@@ -486,7 +489,7 @@ function cordespace_evgating_render_members_metabox_binary( WP_Post $post ): voi
 		<!-- Compteurs en haut -->
 		<p class="cordespace-evgating-counts" style="margin:0 0 1rem; font-size:0.95em; color:#444;">
 			<span style="margin-right:0.8rem;">✅ <strong><?php echo (int) $counts['approved']; ?></strong> validé·es</span>
-			<span style="margin-right:0.8rem;">⏳ <strong><?php echo (int) $counts['pending']; ?></strong> en attente</span>
+			<span style="margin-right:0.8rem;">⏳ <strong><?php echo (int) $counts['pending']; ?></strong> non demandé·es</span>
 			<span>❌ <strong><?php echo (int) $counts['rejected']; ?></strong> refusé·es</span>
 		</p>
 
@@ -696,7 +699,7 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
 		<!-- Compteurs en haut -->
 		<p class="cordespace-evgating-counts" style="margin:0 0 0.6rem; font-size:0.95em; color:#444;">
 			<span style="margin-right:0.8rem;">✅ <strong><?php echo (int) $counts['approved']; ?></strong> validé·es</span>
-			<span style="margin-right:0.8rem;">⏳ <strong><?php echo (int) $counts['pending']; ?></strong> en attente</span>
+			<span style="margin-right:0.8rem;">⏳ <strong><?php echo (int) $counts['pending']; ?></strong> non demandé·es</span>
 			<span>❌ <strong><?php echo (int) $counts['rejected']; ?></strong> refusé·es</span>
 		</p>
 
@@ -976,7 +979,7 @@ function cordespace_evgating_print_inline_js(): void {
 			if (!counts) return;
 			$root.find('.cordespace-evgating-counts').html(
 				'<span style="margin-right:0.8rem;">✅ <strong>' + counts.approved + '</strong> validé·es</span>' +
-				'<span style="margin-right:0.8rem;">⏳ <strong>' + counts.pending  + '</strong> en attente</span>' +
+				'<span style="margin-right:0.8rem;">⏳ <strong>' + counts.pending  + '</strong> non demandé·es</span>' +
 				'<span>❌ <strong>' + counts.rejected + '</strong> refusé·es</span>'
 			);
 		}
