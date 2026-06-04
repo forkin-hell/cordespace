@@ -26,7 +26,6 @@ defined( 'ABSPATH' ) || exit;
 const CORDESPACE_EVENT_TYPE_POST_TYPE              = 'cordespace_evtype';
 const CORDESPACE_EVENT_TYPE_META_TAGS              = '_cordespace_event_type_amelia_tags';
 const CORDESPACE_EVENT_TYPE_META_INFO_URL          = '_cordespace_event_type_info_url';
-const CORDESPACE_EVENT_TYPE_META_INCLUDES          = '_cordespace_event_type_includes';
 const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT      = '_cordespace_event_type_applies_to_appointments';
 
 // ============================================================================
@@ -195,15 +194,6 @@ function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void 
 	<?php
 }
 
-// Note : la metabox « 🔗 Inclut aussi les types » a été retirée. La logique
-// de gating utilise maintenant un OR sur les types applicables : si l'user
-// est validé·e dans AU MOINS UN type applicable à un event, l'event passe.
-// Du coup l'inclusion explicite est inutile : il suffit de cocher les bons
-// tags dans chaque type pour couvrir les bons events. Helper
-// cordespace_event_gating_types_that_include() reste exporté au cas où, et
-// la constante META_INCLUDES reste définie pour ne pas casser d'éventuelles
-// données stockées en DB par les essais précédents.
-
 // ============================================================================
 // 4c) Metabox : Réservations de salle (toggle global)
 // ============================================================================
@@ -268,11 +258,6 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		? esc_url_raw( wp_unslash( $_POST['cordespace_event_type_info_url'] ) )
 		: '';
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_INFO_URL, $url );
-
-	// (Le champ « Inclut aussi les types » a été retiré : la logique OR
-	// rend l'inclusion explicite inutile. La meta key reste définie pour
-	// que les données déjà enregistrées en DB ne soient pas perdues, mais
-	// on n'écrit plus dessus.)
 
 	// Applies to appointments : '0' ou '1'
 	$applies_appt = isset( $_POST['cordespace_evtype_applies_to_appointments'] ) ? '1' : '0';
@@ -384,38 +369,3 @@ function cordespace_event_gating_applicable_types_for_amelia_appointment(): arra
 	return array_map( 'intval', (array) $type_ids );
 }
 
-/**
- * Renvoie les IDs des types qui incluent (parent dans la hiérarchie) le
- * type cible. Si Type A a CORDESPACE_EVENT_TYPE_META_INCLUDES = [Type B],
- * alors A est un « parent » de B → les membres de A peuvent réserver
- * les events de B.
- *
- * Utilisé par le check récursif d'approbation au checkout.
- *
- * @return int[]
- */
-function cordespace_event_gating_types_that_include( int $event_type_id ): array {
-	if ( $event_type_id <= 0 ) {
-		return [];
-	}
-	$all_type_ids = get_posts( [
-		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
-		'post_status'    => 'publish',
-		'posts_per_page' => -1,
-		'fields'         => 'ids',
-		'exclude'        => [ $event_type_id ],
-	] );
-
-	$including = [];
-	foreach ( $all_type_ids as $tid ) {
-		$includes = get_post_meta( (int) $tid, CORDESPACE_EVENT_TYPE_META_INCLUDES, true );
-		if ( ! is_array( $includes ) ) {
-			continue;
-		}
-		$includes = array_map( 'intval', $includes );
-		if ( in_array( $event_type_id, $includes, true ) ) {
-			$including[] = (int) $tid;
-		}
-	}
-	return $including;
-}
