@@ -28,6 +28,14 @@
  * validée pour le type, elle sera aussi bloquée. C'est volontaire — pas
  * de mécanisme caché qui pourrait être abusé.
  *
+ * Indépendance des waivers :
+ *   Ce module ne se coordonne PAS avec le module waivers-checkout-warning.
+ *   Si une personne est validée pour le type semi-privé MAIS n'a pas signé
+ *   son waiver, le bandeau waiver continuera de s'afficher en plus. Les 2
+ *   bandeaux peuvent cohabiter dans le cart/checkout. C'est volontaire :
+ *   les 2 mécanismes adressent des préoccupations différentes (autorisation
+ *   sociale d'accès à un type d'event vs consentement légal au risque).
+ *
  * Dépend de :
  *   - event-gating-cpt (helpers applicable_types_for_amelia_event, get_info_url)
  *   - event-gating-schema (table approvals)
