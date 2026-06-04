@@ -27,7 +27,6 @@ const CORDESPACE_EVENT_TYPE_POST_TYPE                  = 'cordespace_evtype';
 const CORDESPACE_EVENT_TYPE_META_TAGS                  = '_cordespace_event_type_amelia_tags';
 const CORDESPACE_EVENT_TYPE_META_INFO_URL              = '_cordespace_event_type_info_url';
 const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT          = '_cordespace_event_type_applies_to_appointments';
-const CORDESPACE_EVENT_TYPE_META_APPT_TAGS             = '_cordespace_event_type_appt_tags';
 const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS      = '_cordespace_event_type_tag_implications';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES    = '_cordespace_event_type_implied_from_types';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_ROLE     = '_cordespace_event_type_implied_from_role';
@@ -159,105 +158,9 @@ function cordespace_event_gating_render_tags_metabox( WP_Post $post ): void {
 			) );
 			?>
 		</p>
+
+		<?php cordespace_event_gating_render_tag_implications_ui( $post, $selected ); ?>
 	<?php endif; ?>
-
-	<?php
-	// === Section : Tags personnalisés (synthétiques, n'existent pas dans Amelia) ===
-	$custom_tags = array_values( array_diff( $selected, (array) $all_tags ) );
-	?>
-	<h4 style="margin:1.2rem 0 0.4rem;">✏️ <?php esc_html_e( 'Tags personnalisés', 'cordespace-snippets' ); ?></h4>
-	<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
-		<?php esc_html_e( "Pour créer une « catégorie de validation » qui ne correspond pas à une étiquette Amelia existante (ex : « Réservation des salles »). Ces tags apparaîtront comme colonnes dans la matrice membres.", 'cordespace-snippets' ); ?>
-	</p>
-	<div id="cordespace-custom-tags-container" data-existing="<?php echo esc_attr( implode( '|', $custom_tags ) ); ?>">
-		<?php foreach ( $custom_tags as $tag ) : ?>
-			<div class="cordespace-custom-tag" style="display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;">
-				<span><?php echo esc_html( $tag ); ?></span>
-				<input type="hidden" name="cordespace_event_type_custom_tags[]" value="<?php echo esc_attr( $tag ); ?>">
-				<button type="button" class="cordespace-custom-tag-remove" style="background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;">✗</button>
-			</div>
-		<?php endforeach; ?>
-	</div>
-	<div style="margin-top:0.6rem; display:flex; gap:0.4rem;">
-		<input type="text" id="cordespace-custom-tag-input" placeholder="<?php esc_attr_e( 'Nouveau tag personnalisé', 'cordespace-snippets' ); ?>" style="flex:1; max-width:300px;">
-		<button type="button" id="cordespace-custom-tag-add" class="button"><?php esc_html_e( '+ Ajouter', 'cordespace-snippets' ); ?></button>
-	</div>
-
-	<?php
-	// === Section : Tags qui s'appliquent aux réservations de salle (appointments) ===
-	$appt_tags = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
-	$appt_tags = is_array( $appt_tags ) ? $appt_tags : [];
-	if ( ! empty( $selected ) ) :
-		?>
-		<h4 style="margin:1.4rem 0 0.4rem;">🏠 <?php esc_html_e( 'Tags qui s\'appliquent aux réservations de salle', 'cordespace-snippets' ); ?></h4>
-		<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
-			<?php esc_html_e( "Coche les tags qui, lorsqu'une personne est validée dessus, donnent aussi accès aux réservations de salle (= appointments Amelia). Les autres tags ne déclenchent le gating QUE sur les events Amelia.", 'cordespace-snippets' ); ?>
-		</p>
-		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.4rem 1rem; padding:0.3rem 0;">
-			<?php foreach ( $selected as $tag ) :
-				$is_appt = in_array( $tag, $appt_tags, true );
-				?>
-				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
-					<input type="checkbox" name="cordespace_event_type_appt_tags[]" value="<?php echo esc_attr( $tag ); ?>" <?php checked( $is_appt ); ?>>
-					<span><?php echo esc_html( $tag ); ?></span>
-				</label>
-			<?php endforeach; ?>
-		</div>
-		<p class="description" style="font-size:0.85em; color:#666; margin-top:0.4rem;">
-			<?php esc_html_e( "Note : sauvegarde d'abord pour voir les nouveaux tags apparaître ici.", 'cordespace-snippets' ); ?>
-		</p>
-	<?php endif; ?>
-
-	<?php cordespace_event_gating_render_tag_implications_ui( $post, $selected ); ?>
-
-	<?php // JS inline pour gérer l'ajout/retrait de tags personnalisés ?>
-	<script>
-	(function () {
-		var $container = document.getElementById('cordespace-custom-tags-container');
-		var $input     = document.getElementById('cordespace-custom-tag-input');
-		var $addBtn    = document.getElementById('cordespace-custom-tag-add');
-		if ( ! $container || ! $input || ! $addBtn ) return;
-
-		function tagAlreadyExists(tag) {
-			var inputs = $container.querySelectorAll('input[name="cordespace_event_type_custom_tags[]"]');
-			for (var i = 0; i < inputs.length; i++) {
-				if (inputs[i].value === tag) return true;
-			}
-			return false;
-		}
-
-		$addBtn.addEventListener('click', function () {
-			var tag = ($input.value || '').trim();
-			if (!tag) return;
-			if (tagAlreadyExists(tag)) { alert('Ce tag existe déjà.'); return; }
-			var div = document.createElement('div');
-			div.className = 'cordespace-custom-tag';
-			div.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;';
-			var span = document.createElement('span');
-			span.textContent = tag;
-			div.appendChild(span);
-			var hidden = document.createElement('input');
-			hidden.type = 'hidden';
-			hidden.name = 'cordespace_event_type_custom_tags[]';
-			hidden.value = tag;
-			div.appendChild(hidden);
-			var btn = document.createElement('button');
-			btn.type = 'button';
-			btn.className = 'cordespace-custom-tag-remove';
-			btn.style.cssText = 'background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;';
-			btn.textContent = '✗';
-			div.appendChild(btn);
-			$container.appendChild(div);
-			$input.value = '';
-		});
-
-		$container.addEventListener('click', function (e) {
-			if (e.target && e.target.classList && e.target.classList.contains('cordespace-custom-tag-remove')) {
-				e.target.parentNode.remove();
-			}
-		});
-	})();
-	</script>
 	<?php
 }
 
@@ -540,23 +443,11 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		return;
 	}
 
-	// Tags : merger Amelia checkboxes + tags personnalisés (synthétiques)
-	$amelia_tags = isset( $_POST['cordespace_event_type_tags'] ) && is_array( $_POST['cordespace_event_type_tags'] )
+	// Tags : array de strings, sanitize chaque entrée
+	$tags = isset( $_POST['cordespace_event_type_tags'] ) && is_array( $_POST['cordespace_event_type_tags'] )
 		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_tags'] ) ) ) )
 		: [];
-	$custom_tags = isset( $_POST['cordespace_event_type_custom_tags'] ) && is_array( $_POST['cordespace_event_type_custom_tags'] )
-		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_custom_tags'] ) ) ) )
-		: [];
-	$tags = array_values( array_unique( array_merge( $amelia_tags, $custom_tags ) ) );
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_TAGS, $tags );
-
-	// Appt tags : sous-ensemble des tags qui s'appliquent aux appointments
-	// (= déclenchent le gating sur les réservations de salle)
-	$appt_tags_raw = isset( $_POST['cordespace_event_type_appt_tags'] ) && is_array( $_POST['cordespace_event_type_appt_tags'] )
-		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_appt_tags'] ) ) ) )
-		: [];
-	$appt_tags = array_values( array_intersect( $appt_tags_raw, $tags ) ); // filtre : seulement tags réels
-	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, $appt_tags );
 
 	// URL : esc_url_raw
 	$url = isset( $_POST['cordespace_event_type_info_url'] )
@@ -694,54 +585,24 @@ function cordespace_event_gating_get_amelia_event_tags( int $amelia_event_id ): 
 
 /**
  * Renvoie les types d'events applicables à un appointment Amelia (= salles).
- *
- * Un type est applicable aux appointments si :
- *   - Il a AU MOINS UN tag dans META_APPT_TAGS (modèle moderne, granularité
- *     par tag), OU
- *   - Il a META_APPLIES_APPT = '1' (rétro-compat, toggle global au niveau type)
+ * Les appointments n'ont pas d'étiquettes Amelia, donc on prend tous les
+ * types qui ont coché « S'applique à TOUTES les réservations de salle ».
  *
  * @return int[] Liste des post IDs de cordespace_event_type applicables.
  */
 function cordespace_event_gating_applicable_types_for_amelia_appointment(): array {
-	$all = get_posts( [
+	$type_ids = get_posts( [
 		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
 		'post_status'    => 'publish',
 		'posts_per_page' => -1,
 		'fields'         => 'ids',
+		'meta_query'     => [
+			[
+				'key'   => CORDESPACE_EVENT_TYPE_META_APPLIES_APPT,
+				'value' => '1',
+			],
+		],
 	] );
-
-	$matching = [];
-	foreach ( (array) $all as $tid ) {
-		$tid = (int) $tid;
-		// Check modèle moderne : tags avec flag appt
-		$appt_tags = get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
-		if ( is_array( $appt_tags ) && ! empty( $appt_tags ) ) {
-			$matching[] = $tid;
-			continue;
-		}
-		// Check rétro-compat : ancien toggle global au niveau type
-		$applies = (string) get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, true );
-		if ( $applies === '1' ) {
-			$matching[] = $tid;
-		}
-	}
-	return $matching;
-}
-
-/**
- * Renvoie les tags configurés comme « s'appliquant aux réservations de salle »
- * pour un type donné.
- *
- * @return string[]
- */
-function cordespace_event_gating_get_appt_tags( int $type_id ): array {
-	if ( $type_id <= 0 ) {
-		return [];
-	}
-	$tags = get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
-	if ( ! is_array( $tags ) ) {
-		return [];
-	}
-	return array_values( array_filter( array_map( 'strval', $tags ) ) );
+	return array_map( 'intval', (array) $type_ids );
 }
 
