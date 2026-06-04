@@ -424,7 +424,31 @@ function cordespace_evgating_enqueue_assets( string $hook ): void {
 }
 add_action( 'admin_enqueue_scripts', 'cordespace_evgating_enqueue_assets' );
 
+/**
+ * Router : selon les tags configurés sur le type, on affiche soit l'UI
+ * matricielle (= tableau avec 1 colonne par tag), soit l'UI binaire
+ * historique (= liste simple avec dropdown global de statut).
+ *
+ *   - Type avec ≥ 1 tag : mode matrice (granularité fine par tag)
+ *   - Type sans tag (cas « Réservation des salles ») : mode binaire
+ */
 function cordespace_evgating_render_members_metabox( WP_Post $post ): void {
+	$tags = function_exists( 'cordespace_event_gating_get_tags' )
+		? cordespace_event_gating_get_tags( (int) $post->ID )
+		: [];
+
+	if ( empty( $tags ) ) {
+		cordespace_evgating_render_members_metabox_binary( $post );
+	} else {
+		cordespace_evgating_render_members_metabox_matrix( $post, $tags );
+	}
+}
+
+/**
+ * Mode binaire (UI historique inchangée).
+ * Utilisé pour les types sans tags configurés (cas « Réservation des salles »).
+ */
+function cordespace_evgating_render_members_metabox_binary( WP_Post $post ): void {
 	$event_type_id = (int) $post->ID;
 	$members       = cordespace_evgating_get_members( $event_type_id );
 	$counts        = cordespace_evgating_count_by_status( $event_type_id );
@@ -497,6 +521,130 @@ function cordespace_evgating_render_members_metabox( WP_Post $post ): void {
 	<?php cordespace_evgating_render_member_template(); ?>
 	<?php cordespace_evgating_print_inline_js(); ?>
 	<?php cordespace_evgating_print_inline_css(); ?>
+	<?php
+}
+
+/**
+ * Mode matrice : tableau avec une colonne par tag du type.
+ * Chaque cellule est un dropdown de statut (pending / approved / rejected)
+ * géré indépendamment via AJAX (endpoint set_tag_status).
+ *
+ * @param WP_Post $post Le type d'événement (CPT cordespace_evtype)
+ * @param array   $tags Les tags Amelia configurés sur ce type
+ */
+function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array $tags ): void {
+	$event_type_id = (int) $post->ID;
+	$members       = cordespace_evgating_get_members( $event_type_id );
+	$counts        = cordespace_evgating_count_by_status( $event_type_id );
+	$nonce         = wp_create_nonce( 'cordespace_evgating_ajax_' . $event_type_id );
+	$ajax_url      = admin_url( 'admin-ajax.php' );
+	?>
+	<div class="cordespace-evgating-members cordespace-evgating-matrix"
+	     data-event-type-id="<?php echo $event_type_id; ?>"
+	     data-nonce="<?php echo esc_attr( $nonce ); ?>"
+	     data-ajax-url="<?php echo esc_attr( $ajax_url ); ?>">
+
+		<!-- Compteurs en haut -->
+		<p class="cordespace-evgating-counts" style="margin:0 0 0.6rem; font-size:0.95em; color:#444;">
+			<span style="margin-right:0.8rem;">✅ <strong><?php echo (int) $counts['approved']; ?></strong> validé·es</span>
+			<span style="margin-right:0.8rem;">⏳ <strong><?php echo (int) $counts['pending']; ?></strong> en attente</span>
+			<span>❌ <strong><?php echo (int) $counts['rejected']; ?></strong> refusé·es</span>
+		</p>
+
+		<p class="cordespace-evgating-help" style="background:#fff8e1; border-left:3px solid #fbc02d; padding:0.5rem 0.8rem; margin:0.4rem 0 1rem; font-size:0.9em; color:#5c3d00;">
+			ℹ️ <?php esc_html_e( "Logique OR par tag : une personne peut réserver un event si elle est validée sur AU MOINS UN tag commun entre l'event et ce type.", 'cordespace-snippets' ); ?>
+		</p>
+
+		<!-- Formulaire d'ajout -->
+		<div class="cordespace-evgating-add" style="padding:0.9rem 1.1rem; background:#f7f7f9; border-radius:6px; margin-bottom:1rem;">
+			<p style="margin-top:0; font-weight:600;">➕ <?php esc_html_e( 'Ajouter une personne', 'cordespace-snippets' ); ?></p>
+			<div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:flex-end;">
+				<div style="flex:1; min-width:260px;">
+					<label for="cordespace-evgating-user-select" style="display:block; font-size:0.9em; color:#555; margin-bottom:0.3rem;">
+						<?php esc_html_e( 'Rechercher (nom, courriel ou login)', 'cordespace-snippets' ); ?>
+					</label>
+					<select class="cordespace-evgating-user-select" id="cordespace-evgating-user-select" style="width:100%;">
+						<option value=""></option>
+					</select>
+				</div>
+				<div>
+					<button type="button" class="button button-primary cordespace-evgating-add-btn">
+						<?php esc_html_e( 'Ajouter (pending sur tous les tags)', 'cordespace-snippets' ); ?>
+					</button>
+				</div>
+			</div>
+			<p class="cordespace-evgating-add-status-msg" style="margin:0.6rem 0 0; font-size:0.92em;"></p>
+		</div>
+
+		<!-- Tableau matriciel -->
+		<?php if ( empty( $members ) ) : ?>
+			<p style="padding:1rem 1.2rem; background:#f7f7f9; border-radius:5px; color:#666; font-style:italic; margin:0;">
+				<?php esc_html_e( 'Aucune personne associée à ce type pour le moment.', 'cordespace-snippets' ); ?>
+			</p>
+		<?php else : ?>
+			<table class="widefat cordespace-evgating-matrix-table" style="width:100%; border-collapse:collapse;">
+				<thead>
+					<tr>
+						<th style="text-align:left; padding:0.5rem;"><?php esc_html_e( 'Personne', 'cordespace-snippets' ); ?></th>
+						<?php foreach ( $tags as $tag ) : ?>
+							<th style="text-align:left; padding:0.5rem;">
+								<small><?php esc_html_e( 'Tag', 'cordespace-snippets' ); ?></small><br>
+								<?php echo esc_html( $tag ); ?>
+							</th>
+						<?php endforeach; ?>
+						<th style="text-align:left; padding:0.5rem;"><?php esc_html_e( 'Note', 'cordespace-snippets' ); ?></th>
+						<th style="text-align:left; padding:0.5rem;"><?php esc_html_e( 'Actions', 'cordespace-snippets' ); ?></th>
+					</tr>
+				</thead>
+				<tbody id="cordespace-evgating-matrix-body">
+					<?php foreach ( $members as $m ) : ?>
+						<?php cordespace_evgating_render_matrix_row( $m, $tags ); ?>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+	</div>
+
+	<?php cordespace_evgating_print_inline_js(); ?>
+	<?php cordespace_evgating_print_inline_css(); ?>
+	<?php
+}
+
+/**
+ * Rendu d'une ligne matrice (1 row = 1 membre avec dropdowns pour chaque tag).
+ */
+function cordespace_evgating_render_matrix_row( array $m, array $tags ): void {
+	$uid     = (int) $m['user_id'];
+	$display = $m['display_name'] !== '' ? $m['display_name'] : $m['email'];
+	$stats   = (array) $m['statuses'];
+	?>
+	<tr class="cordespace-evgating-matrix-row" data-user-id="<?php echo $uid; ?>">
+		<td style="padding:0.5rem; vertical-align:top; border-bottom:1px solid #e0e0e0;">
+			<strong><?php echo esc_html( $display ); ?></strong>
+			<br><small style="color:#777;"><?php echo esc_html( $m['email'] ); ?></small>
+		</td>
+		<?php foreach ( $tags as $tag ) :
+			$current = (string) ( $stats[ $tag ] ?? CORDESPACE_EVTYPE_STATUS_PENDING );
+			?>
+			<td style="padding:0.5rem; vertical-align:top; border-bottom:1px solid #e0e0e0;">
+				<select class="cordespace-evgating-tag-status" data-tag="<?php echo esc_attr( $tag ); ?>" style="width:100%;">
+					<?php foreach ( cordespace_evgating_valid_statuses() as $s ) : ?>
+						<option value="<?php echo esc_attr( $s ); ?>" <?php selected( $current, $s ); ?>>
+							<?php echo esc_html( cordespace_evgating_status_icon( $s ) . ' ' . cordespace_evgating_status_label( $s ) ); ?>
+						</option>
+					<?php endforeach; ?>
+				</select>
+			</td>
+		<?php endforeach; ?>
+		<td style="padding:0.5rem; vertical-align:top; border-bottom:1px solid #e0e0e0;">
+			<textarea class="cordespace-evgating-note" rows="2" style="width:100%; min-width:160px; font-size:0.9em;"
+				placeholder="<?php esc_attr_e( 'Note interne…', 'cordespace-snippets' ); ?>"><?php echo esc_textarea( (string) ( $m['notes'] ?? '' ) ); ?></textarea>
+			<span class="cordespace-evgating-note-status" style="display:block; font-size:0.85em; color:#777; margin-top:0.2rem;"></span>
+		</td>
+		<td style="padding:0.5rem; vertical-align:top; border-bottom:1px solid #e0e0e0;">
+			<button type="button" class="button button-small cordespace-evgating-remove-matrix" title="<?php esc_attr_e( 'Retirer', 'cordespace-snippets' ); ?>" style="color:#a00;">❌</button>
+		</td>
+	</tr>
 	<?php
 }
 
@@ -592,6 +740,7 @@ function cordespace_evgating_print_inline_js(): void {
 		var typeId    = parseInt($root.data('event-type-id'), 10);
 		var nonce     = $root.data('nonce');
 		var ajaxUrl   = $root.data('ajax-url');
+		var isMatrix  = $root.hasClass('cordespace-evgating-matrix');
 		var statusOpts = <?php
 			$opts = [];
 			foreach ( cordespace_evgating_valid_statuses() as $s ) {
@@ -621,7 +770,16 @@ function cordespace_evgating_print_inline_js(): void {
 			}).fail(function () { onError && onError('Erreur réseau'); });
 		}
 
-		// --- Select2 pour la recherche user --------------------------------
+		function updateCounts(counts) {
+			if (!counts) return;
+			$root.find('.cordespace-evgating-counts').html(
+				'<span style="margin-right:0.8rem;">✅ <strong>' + counts.approved + '</strong> validé·es</span>' +
+				'<span style="margin-right:0.8rem;">⏳ <strong>' + counts.pending  + '</strong> en attente</span>' +
+				'<span>❌ <strong>' + counts.rejected + '</strong> refusé·es</span>'
+			);
+		}
+
+		// --- Select2 pour la recherche user (commun matrice + binaire) -----
 		var $sel = $('#cordespace-evgating-user-select');
 		if ($.fn.select2) {
 			$sel.select2({
@@ -643,6 +801,78 @@ function cordespace_evgating_print_inline_js(): void {
 				},
 			});
 		}
+
+		// ============================================================
+		// MODE MATRICE
+		// ============================================================
+		if (isMatrix) {
+			// --- Bouton AJOUTER (matrice) : insert N rows en DB, reload page
+			$root.on('click', '.cordespace-evgating-add-btn', function () {
+				var userId = parseInt($sel.val(), 10);
+				if (!userId) {
+					$('.cordespace-evgating-add-status-msg').text("Choisis d'abord une personne dans la recherche.").css('color', '#a00');
+					return;
+				}
+				var $btn = $(this).prop('disabled', true);
+				$('.cordespace-evgating-add-status-msg').text('Ajout en cours…').css('color', '#555');
+				ajax('add_member', { user_id: userId, status: 'pending', notes: '' }, function () {
+					// Recharge la page pour afficher la nouvelle row avec ses N dropdowns
+					location.reload();
+				}, function (msg) {
+					$('.cordespace-evgating-add-status-msg').text('✗ ' + msg).css('color', '#a00');
+					$btn.prop('disabled', false);
+				});
+			});
+
+			// --- Dropdown status d'une CELLULE (membre × tag) ---------------
+			$root.on('change', '.cordespace-evgating-tag-status', function () {
+				var $sel2 = $(this);
+				var $row  = $sel2.closest('tr');
+				var userId = parseInt($row.data('user-id'), 10);
+				var tag    = $sel2.data('tag');
+				var status = $sel2.val();
+				ajax('set_tag_status', { user_id: userId, tag: tag, status: status }, function (data) {
+					if (data && data.counts) updateCounts(data.counts);
+				}, function (msg) {
+					alert('Erreur : ' + msg);
+				});
+			});
+
+			// --- Note partagée par membre (textarea blur) -------------------
+			$root.on('blur', '.cordespace-evgating-note', function () {
+				var $ta  = $(this);
+				var $row = $ta.closest('tr');
+				var userId = parseInt($row.data('user-id'), 10);
+				var notes  = $ta.val();
+				var $status = $row.find('.cordespace-evgating-note-status').text('Enregistrement…');
+				ajax('set_member_note', { user_id: userId, notes: notes }, function () {
+					$status.text('✓ Enregistrée');
+					setTimeout(function () { $status.text(''); }, 2000);
+				}, function (msg) {
+					$status.text('✗ ' + msg);
+				});
+			});
+
+			// --- Bouton retirer un membre (matrice) -------------------------
+			$root.on('click', '.cordespace-evgating-remove-matrix', function () {
+				var $row    = $(this).closest('tr');
+				var userId  = parseInt($row.data('user-id'), 10);
+				var name    = $row.find('strong').text();
+				if (!confirm('Retirer ' + name + ' du type ?')) return;
+				ajax('remove_member', { user_id: userId }, function (data) {
+					$row.fadeOut(200, function () { $(this).remove(); });
+					if (data && data.counts) updateCounts(data.counts);
+				}, function (msg) {
+					alert('Erreur : ' + msg);
+				});
+			});
+
+			return; // skip binary handlers
+		}
+
+		// ============================================================
+		// MODE BINAIRE (UI historique, types sans tags)
+		// ============================================================
 
 		// --- Bouton AJOUTER ------------------------------------------------
 		$root.on('click', '.cordespace-evgating-add-btn', function () {
@@ -733,15 +963,8 @@ function cordespace_evgating_print_inline_js(): void {
 			});
 		});
 
-		// --- Helpers -------------------------------------------------------
-		function updateCounts(counts) {
-			if (!counts) return;
-			$root.find('.cordespace-evgating-counts').html(
-				'<span style="margin-right:0.8rem;">✅ <strong>' + counts.approved + '</strong> validé·es</span>' +
-				'<span style="margin-right:0.8rem;">⏳ <strong>' + counts.pending  + '</strong> en attente</span>' +
-				'<span>❌ <strong>' + counts.rejected + '</strong> refusé·es</span>'
-			);
-		}
+		// Note : updateCounts() est defini en haut (avant le routing isMatrix)
+		// pour etre partage entre les modes matrice et binaire.
 	})(jQuery);
 	</script>
 	<?php
@@ -861,4 +1084,47 @@ function cordespace_evgating_ajax_remove_member(): void {
 	}
 	$counts = cordespace_evgating_count_by_status( $event_type_id );
 	wp_send_json_success( [ 'counts' => $counts ] );
+}
+
+// Set tag status (mode matrice) : modifie le statut d'UNE cellule (membre × tag)
+add_action( 'wp_ajax_cordespace_evgating_set_tag_status', 'cordespace_evgating_ajax_set_tag_status' );
+function cordespace_evgating_ajax_set_tag_status(): void {
+	$event_type_id = cordespace_evgating_ajax_authorize();
+	$user_id       = isset( $_POST['user_id'] ) ? (int) $_POST['user_id'] : 0;
+	$tag           = isset( $_POST['tag'] )     ? sanitize_text_field( wp_unslash( $_POST['tag'] ) )    : '';
+	$status        = isset( $_POST['status'] )  ? sanitize_text_field( wp_unslash( $_POST['status'] ) ) : '';
+
+	if ( $user_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'Utilisateur·trice invalide.' ], 400 );
+	}
+	if ( ! in_array( $status, cordespace_evgating_valid_statuses(), true ) ) {
+		wp_send_json_error( [ 'message' => 'Statut invalide.' ], 400 );
+	}
+
+	$ok = cordespace_evgating_set_tag_status( $event_type_id, $user_id, $tag, $status, get_current_user_id() );
+	if ( ! $ok ) {
+		wp_send_json_error( [ 'message' => 'Erreur lors de la sauvegarde.' ], 500 );
+	}
+
+	$counts = cordespace_evgating_count_by_status( $event_type_id );
+	wp_send_json_success( [ 'counts' => $counts ] );
+}
+
+// Set member note (mode matrice) : note partagée par membre (toutes ses rows)
+add_action( 'wp_ajax_cordespace_evgating_set_member_note', 'cordespace_evgating_ajax_set_member_note' );
+function cordespace_evgating_ajax_set_member_note(): void {
+	$event_type_id = cordespace_evgating_ajax_authorize();
+	$user_id       = isset( $_POST['user_id'] ) ? (int) $_POST['user_id'] : 0;
+	$notes         = isset( $_POST['notes'] )   ? sanitize_textarea_field( wp_unslash( $_POST['notes'] ) ) : '';
+
+	if ( $user_id <= 0 ) {
+		wp_send_json_error( [ 'message' => 'Utilisateur·trice invalide.' ], 400 );
+	}
+
+	$ok = cordespace_evgating_set_member_note( $event_type_id, $user_id, $notes );
+	if ( ! $ok ) {
+		wp_send_json_error( [ 'message' => 'Erreur lors de la sauvegarde de la note.' ], 500 );
+	}
+
+	wp_send_json_success( [ 'message' => 'OK' ] );
 }
