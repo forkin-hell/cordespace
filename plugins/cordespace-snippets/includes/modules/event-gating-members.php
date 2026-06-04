@@ -750,14 +750,45 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
 				<?php esc_html_e( 'Aucune personne associée à ce type pour le moment.', 'cordespace-snippets' ); ?>
 			</p>
 		<?php else : ?>
+			<!-- Barre de filtres + recherche -->
+			<div class="cordespace-evgating-matrix-filters" style="display:flex; flex-wrap:wrap; gap:0.6rem 1.2rem; align-items:flex-end; padding:0.8rem 1rem; background:#f0f6fc; border:1px solid #c5d9eb; border-radius:6px; margin-bottom:0.6rem;">
+				<div style="flex:1; min-width:220px;">
+					<label style="display:block; font-size:0.85em; color:#555; margin-bottom:0.2rem;">🔍 <?php esc_html_e( 'Recherche (nom ou email)', 'cordespace-snippets' ); ?></label>
+					<input type="search" class="cordespace-evgating-search-input" placeholder="<?php esc_attr_e( 'Tape pour filtrer…', 'cordespace-snippets' ); ?>" style="width:100%; padding:0.4rem 0.6rem;">
+				</div>
+				<?php foreach ( $tags as $tag ) : ?>
+					<div>
+						<label style="display:block; font-size:0.85em; color:#555; margin-bottom:0.2rem;"><?php echo esc_html( $tag ); ?></label>
+						<select class="cordespace-evgating-status-filter" data-tag="<?php echo esc_attr( $tag ); ?>">
+							<option value=""><?php esc_html_e( 'Tous', 'cordespace-snippets' ); ?></option>
+							<?php foreach ( cordespace_evgating_valid_statuses() as $s ) : ?>
+								<option value="<?php echo esc_attr( $s ); ?>">
+									<?php echo esc_html( cordespace_evgating_status_icon( $s ) . ' ' . cordespace_evgating_status_label( $s ) ); ?>
+								</option>
+							<?php endforeach; ?>
+						</select>
+					</div>
+				<?php endforeach; ?>
+				<div>
+					<button type="button" class="button cordespace-evgating-filters-reset" title="<?php esc_attr_e( 'Réinitialiser les filtres', 'cordespace-snippets' ); ?>">
+						✗ <?php esc_html_e( 'Réinit.', 'cordespace-snippets' ); ?>
+					</button>
+				</div>
+				<div style="font-size:0.9em; color:#555;">
+					<span class="cordespace-evgating-filter-count"><?php printf( esc_html__( '%d affiché·es', 'cordespace-snippets' ), count( $members ) ); ?></span>
+				</div>
+			</div>
+
 			<table class="widefat cordespace-evgating-matrix-table" style="width:100%; border-collapse:collapse;">
 				<thead>
 					<tr>
-						<th style="text-align:left; padding:0.5rem;"><?php esc_html_e( 'Personne', 'cordespace-snippets' ); ?></th>
+						<th class="cordespace-evgating-sortable" data-sort="name" style="text-align:left; padding:0.5rem; cursor:pointer; user-select:none;">
+							<?php esc_html_e( 'Personne', 'cordespace-snippets' ); ?> <span class="cordespace-evgating-sort-arrow"></span>
+						</th>
 						<?php foreach ( $tags as $tag ) : ?>
-							<th style="text-align:left; padding:0.5rem;">
+							<th class="cordespace-evgating-sortable" data-sort="tag:<?php echo esc_attr( $tag ); ?>" style="text-align:left; padding:0.5rem; cursor:pointer; user-select:none;">
 								<small><?php esc_html_e( 'Tag', 'cordespace-snippets' ); ?></small><br>
-								<?php echo esc_html( $tag ); ?>
+								<?php echo esc_html( $tag ); ?> <span class="cordespace-evgating-sort-arrow"></span>
 							</th>
 						<?php endforeach; ?>
 						<th style="text-align:left; padding:0.5rem;"><?php esc_html_e( 'Note', 'cordespace-snippets' ); ?></th>
@@ -784,11 +815,12 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
  * Rendu d'une ligne matrice (1 row = 1 membre avec dropdowns pour chaque tag).
  */
 function cordespace_evgating_render_matrix_row( array $m, array $tags ): void {
-	$uid     = (int) $m['user_id'];
-	$display = $m['display_name'] !== '' ? $m['display_name'] : $m['email'];
-	$stats   = (array) $m['statuses'];
+	$uid       = (int) $m['user_id'];
+	$display   = $m['display_name'] !== '' ? $m['display_name'] : $m['email'];
+	$stats     = (array) $m['statuses'];
+	$search_str = strtolower( $display . ' ' . $m['email'] );
 	?>
-	<tr class="cordespace-evgating-matrix-row" data-user-id="<?php echo $uid; ?>">
+	<tr class="cordespace-evgating-matrix-row" data-user-id="<?php echo $uid; ?>" data-search="<?php echo esc_attr( $search_str ); ?>" data-sort-name="<?php echo esc_attr( strtolower( $display ) ); ?>">
 		<td style="padding:0.5rem; vertical-align:top; border-bottom:1px solid #e0e0e0;">
 			<strong><?php echo esc_html( $display ); ?></strong>
 			<br><small style="color:#777;"><?php echo esc_html( $m['email'] ); ?></small>
@@ -1126,6 +1158,93 @@ function cordespace_evgating_print_inline_js(): void {
 				}, function (msg) {
 					alert('Erreur : ' + msg);
 				});
+			});
+
+			// --- Filtrage et tri du tableau matrice -------------------------
+			var $matrixBody = $('#cordespace-evgating-matrix-body');
+
+			function applyFilters() {
+				var search = ($root.find('.cordespace-evgating-search-input').val() || '').toLowerCase().trim();
+				var statusFilters = {};
+				$root.find('.cordespace-evgating-status-filter').each(function () {
+					var tag = $(this).data('tag');
+					var val = $(this).val();
+					if (val) statusFilters[tag] = val;
+				});
+
+				var visible = 0;
+				$matrixBody.find('tr.cordespace-evgating-matrix-row').each(function () {
+					var $row = $(this);
+					var match = true;
+					// Recherche texte
+					if (search && ($row.data('search') || '').indexOf(search) === -1) {
+						match = false;
+					}
+					// Filtres statut par tag
+					if (match) {
+						$row.find('select.cordespace-evgating-tag-status').each(function () {
+							var t = $(this).data('tag');
+							var expected = statusFilters[t];
+							if (expected && $(this).val() !== expected) {
+								match = false;
+								return false; // break .each
+							}
+						});
+					}
+					if (match) {
+						$row.show();
+						visible++;
+					} else {
+						$row.hide();
+					}
+				});
+				$root.find('.cordespace-evgating-filter-count').text(visible + ' affiché·es');
+			}
+
+			$root.on('input', '.cordespace-evgating-search-input', applyFilters);
+			$root.on('change', '.cordespace-evgating-status-filter', applyFilters);
+			$root.on('click', '.cordespace-evgating-filters-reset', function () {
+				$root.find('.cordespace-evgating-search-input').val('');
+				$root.find('.cordespace-evgating-status-filter').val('');
+				applyFilters();
+			});
+
+			// Re-applique le filtre quand le statut d'une cellule change
+			// (= la row pourrait ne plus matcher le filtre actif)
+			$root.on('change', '.cordespace-evgating-tag-status', function () {
+				// Petit délai pour laisser l'AJAX se finir
+				setTimeout(applyFilters, 100);
+			});
+
+			// --- Tri par colonne -------------------------------------------
+			var sortState = { key: null, asc: true };
+			$root.on('click', 'th.cordespace-evgating-sortable', function () {
+				var key = $(this).data('sort');
+				if (sortState.key === key) {
+					sortState.asc = !sortState.asc;
+				} else {
+					sortState.key = key;
+					sortState.asc = true;
+				}
+				// Update arrow indicators
+				$root.find('.cordespace-evgating-sort-arrow').text('');
+				$(this).find('.cordespace-evgating-sort-arrow').text(sortState.asc ? ' ▲' : ' ▼');
+
+				var $rows = $matrixBody.find('tr.cordespace-evgating-matrix-row').get();
+				$rows.sort(function (a, b) {
+					var aVal, bVal;
+					if (key === 'name') {
+						aVal = $(a).data('sort-name') || '';
+						bVal = $(b).data('sort-name') || '';
+					} else if (key.indexOf('tag:') === 0) {
+						var tag = key.substring(4);
+						aVal = $(a).find('select.cordespace-evgating-tag-status[data-tag="' + tag + '"]').val() || '';
+						bVal = $(b).find('select.cordespace-evgating-tag-status[data-tag="' + tag + '"]').val() || '';
+					}
+					if (aVal === bVal) return 0;
+					return (aVal > bVal ? 1 : -1) * (sortState.asc ? 1 : -1);
+				});
+				$matrixBody.empty().append($rows);
 			});
 
 			return; // skip binary handlers
