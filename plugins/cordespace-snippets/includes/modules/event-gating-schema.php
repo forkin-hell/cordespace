@@ -72,6 +72,25 @@ function cordespace_event_gating_install_table(): void {
 	) {$charset};";
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+	// IMPORTANT : dbDelta ne SUPPRIME pas les anciens index, il en ajoute
+	// seulement. Pour passer de UNIQUE KEY uniq_type_user (event_type_id,
+	// user_id) à uniq_type_user_tag (event_type_id, user_id, tag), on doit
+	// dropper l'ancien index MANUELLEMENT avant dbDelta. Sinon l'ancien
+	// index bloque silencieusement les INSERT multi-tags pour un même
+	// couple (type, user), et la migration des données échoue.
+	$old_index = $wpdb->get_var( $wpdb->prepare(
+		"SELECT INDEX_NAME FROM INFORMATION_SCHEMA.STATISTICS
+		  WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND INDEX_NAME = %s
+		  LIMIT 1",
+		DB_NAME,
+		$table,
+		'uniq_type_user'
+	) );
+	if ( $old_index ) {
+		$wpdb->query( "ALTER TABLE {$table} DROP INDEX uniq_type_user" );
+	}
+
 	dbDelta( $sql );
 
 	// Migration des données v1 → v2 (idempotente)
