@@ -269,8 +269,17 @@ function cordespace_evgating_render_block_banner(): void {
 		</h3>
 
 		<?php if ( ! $is_logged_in ) : ?>
-			<p style="margin:0 0 1rem;">
+			<p style="margin:0 0 0.6rem;">
 				<?php esc_html_e( 'Ton panier contient une ou plusieurs réservations qui nécessitent une validation préalable par l\'équipe Cordespace. Tu dois te connecter avec un compte validé pour pouvoir les réserver.', 'cordespace-snippets' ); ?>
+			</p>
+			<p style="margin:0 0 1rem; font-size:0.93em; color:#5c1c1c;">
+				<?php
+				printf(
+					/* translators: %s = lien mailto contact */
+					esc_html__( 'Si tu n\'as encore jamais commandé chez Cordespace, c\'est normal que tu n\'aies pas de compte. Écris-nous à %s pour qu\'on regarde ensemble si tu peux accéder à ce type de réservation.', 'cordespace-snippets' ),
+					'<a href="mailto:gestion@cordespace.com" style="color:#5c1c1c; text-decoration:underline;">gestion@cordespace.com</a>'
+				);
+				?>
 			</p>
 		<?php endif; ?>
 
@@ -290,7 +299,7 @@ function cordespace_evgating_render_block_banner(): void {
 						esc_html_e( 'Pour pouvoir réserver, tu dois être validé·e dans :', 'cordespace-snippets' );
 					endif; ?>
 				</p>
-				<ul style="margin:0; padding:0; list-style:none;">
+				<div class="cordespace-evgating-applicable-types">
 					<?php foreach ( $applicable_ids as $type_id ) :
 						$type = get_post( (int) $type_id );
 						if ( ! $type ) {
@@ -302,7 +311,7 @@ function cordespace_evgating_render_block_banner(): void {
 						// the_content (via inject_banner_via_content). Récursion infinie.
 						$type_html = wpautop( wp_kses_post( (string) $type->post_content ) );
 						?>
-						<li style="margin:0.4rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.45); border-radius:4px;">
+						<div style="margin:0.4rem 0; padding:0.6rem 0.8rem; background:rgba(255,255,255,0.45); border-radius:4px;">
 							<p style="margin:0 0 0.3rem; font-weight:600;">
 								🔒 <?php echo esc_html( get_the_title( $type ) ); ?>
 							</p>
@@ -316,9 +325,9 @@ function cordespace_evgating_render_block_banner(): void {
 									ℹ️ <?php esc_html_e( 'En savoir plus', 'cordespace-snippets' ); ?>
 								</a>
 							<?php endif; ?>
-						</li>
+						</div>
 					<?php endforeach; ?>
-				</ul>
+				</div>
 			</div>
 		<?php endforeach; ?>
 

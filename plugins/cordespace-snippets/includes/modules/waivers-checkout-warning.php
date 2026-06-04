@@ -131,7 +131,11 @@ function cordespace_waivers_gating_render_block(): void {
 	// la finalisation de la commande. On informe juste qu'il faudra signer
 	// après-coup dans l'espace personnel.
 	if ( ! is_user_logged_in() ) {
-		if ( ! cordespace_waivers_gating_cart_has_amelia_event() ) {
+		// Bug fix 2026-06-04 : on filtre les events qui ont vraiment un waiver
+		// applicable (via tag Amelia). Avant on affichait le bandeau pour TOUT
+		// event Amelia → faux positif sur les events « semi-privé » qui ne
+		// sont pas taggés comme nécessitant un waiver.
+		if ( ! cordespace_waivers_gating_cart_has_events_requiring_waivers() ) {
 			return;
 		}
 		?>
@@ -225,6 +229,44 @@ function cordespace_waivers_gating_cart_has_amelia_event(): bool {
 			continue;
 		}
 		if ( ( $cart_item['ameliabooking']['type'] ?? '' ) === 'event' ) {
+			return true;
+		}
+	}
+	return false;
+}
+
+/**
+ * Vérifie si le panier contient AU MOINS UN event Amelia qui nécessite la
+ * signature d'un waiver (= au moins 1 waiver-default applicable par tag).
+ *
+ * Utilisé pour le cas non connecté·e : on ne sait pas si l'user a déjà signé,
+ * mais on peut au moins ne PAS afficher le bandeau pour les events qui n'ont
+ * aucun waiver applicable (ex : events « semi-privé » qui ne sont pas taggés
+ * comme nécessitant un waiver « Initiation »).
+ */
+function cordespace_waivers_gating_cart_has_events_requiring_waivers(): bool {
+	if ( ! function_exists( 'WC' ) || ! WC()->cart || WC()->cart->is_empty() ) {
+		return false;
+	}
+	if ( ! function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' ) ) {
+		// Fallback safe : si le module defaults n'est pas chargé, mieux vaut
+		// afficher le bandeau (faux positif) que de le rater (faux négatif).
+		return cordespace_waivers_gating_cart_has_amelia_event();
+	}
+	foreach ( WC()->cart->get_cart() as $cart_item ) {
+		if ( empty( $cart_item['ameliabooking'] ) || ! is_array( $cart_item['ameliabooking'] ) ) {
+			continue;
+		}
+		$booking = $cart_item['ameliabooking'];
+		if ( ( $booking['type'] ?? '' ) !== 'event' ) {
+			continue;
+		}
+		$event_id = isset( $booking['eventId'] ) ? (int) $booking['eventId'] : 0;
+		if ( $event_id <= 0 ) {
+			continue;
+		}
+		$applicable = cordespace_waivers_applicable_defaults_for_amelia_event( $event_id );
+		if ( ! empty( $applicable ) ) {
 			return true;
 		}
 	}
