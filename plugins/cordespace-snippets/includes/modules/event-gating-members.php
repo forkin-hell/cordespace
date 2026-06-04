@@ -77,65 +77,116 @@ function cordespace_evgating_valid_statuses(): array {
  * Récupère tous les membres d'un type donné, joint avec leurs infos WP user,
  * trié : approuvé·es d'abord, puis en attente, puis refusé·es, puis par nom.
  *
+ * Modèle v2 (matrice membre × tag) : une row par triple (type, user, tag).
+ *
  * @return array<int, array{
- *     id: int, user_id: int, status: string, notes: string,
- *     approved_at: ?string, display_name: string, email: string,
+ *     user_id: int, display_name: string, email: string,
+ *     notes: string, approved_at: ?string,
+ *     statuses: array<string, string>,    // tag => 'pending'|'approved'|'rejected'
+ *                                         // Pour types sans tags, statuses = ['' => '<status>']
  * }>
  */
 function cordespace_evgating_get_members( int $event_type_id ): array {
+	if ( $event_type_id <= 0 ) {
+		return [];
+	}
 	global $wpdb;
 	$table = cordespace_event_gating_table_name();
 	$rows  = $wpdb->get_results( $wpdb->prepare(
-		"SELECT a.id, a.user_id, a.status, a.notes, a.approved_at,
+		"SELECT a.user_id, a.tag, a.status, a.notes, a.approved_at,
 		        u.display_name, u.user_email AS email
 		   FROM {$table} a
 		   JOIN {$wpdb->users} u ON u.ID = a.user_id
 		  WHERE a.event_type_id = %d
-		  ORDER BY
-		    CASE a.status
-		      WHEN 'approved' THEN 1
-		      WHEN 'pending'  THEN 2
-		      WHEN 'rejected' THEN 3
-		      ELSE 4
-		    END ASC,
-		    u.display_name ASC",
+		  ORDER BY u.display_name ASC, a.tag ASC",
 		$event_type_id
 	), ARRAY_A );
-	return is_array( $rows ) ? array_map( function ( $r ) {
-		return [
-			'id'           => (int) $r['id'],
-			'user_id'      => (int) $r['user_id'],
-			'status'       => (string) $r['status'],
-			'notes'        => (string) ( $r['notes'] ?? '' ),
-			'approved_at'  => $r['approved_at'] ?? null,
-			'display_name' => (string) $r['display_name'],
-			'email'        => (string) $r['email'],
-		];
-	}, $rows ) : [];
+
+	$members = [];
+	foreach ( (array) $rows as $row ) {
+		$uid = (int) $row['user_id'];
+		if ( ! isset( $members[ $uid ] ) ) {
+			$members[ $uid ] = [
+				'user_id'      => $uid,
+				'display_name' => (string) $row['display_name'],
+				'email'        => (string) $row['email'],
+				'notes'        => (string) ( $row['notes'] ?? '' ),
+				'approved_at'  => $row['approved_at'] ?? null,
+				'statuses'     => [],
+			];
+		}
+		$members[ $uid ]['statuses'][ (string) $row['tag'] ] = (string) $row['status'];
+
+		// Garde la note la plus longue (toutes les rows du même user devraient
+		// être identiques, mais on est défensif au cas où une migration aurait
+		// laissé des incohérences).
+		$row_notes = (string) ( $row['notes'] ?? '' );
+		if ( $row_notes !== '' && strlen( $row_notes ) > strlen( (string) $members[ $uid ]['notes'] ) ) {
+			$members[ $uid ]['notes'] = $row_notes;
+		}
+	}
+
+	// Champs dérivés rétro-compat pour l'UI binaire actuelle (Task 4 refondra
+	// l'UI mais en attendant, render_member_row attend $m['status']) :
+	//   - status   : si le membre a la clé '' (= type sans tags), c'est cette
+	//                valeur. Sinon, agrégation : approved si au moins un tag
+	//                approved, sinon rejected si au moins un rejected, sinon
+	//                pending.
+	foreach ( $members as &$m ) {
+		if ( array_key_exists( '', $m['statuses'] ) ) {
+			$m['status'] = (string) $m['statuses'][''];
+		} else {
+			$vals = array_values( $m['statuses'] );
+			if ( in_array( CORDESPACE_EVTYPE_STATUS_APPROVED, $vals, true ) ) {
+				$m['status'] = CORDESPACE_EVTYPE_STATUS_APPROVED;
+			} elseif ( in_array( CORDESPACE_EVTYPE_STATUS_REJECTED, $vals, true ) ) {
+				$m['status'] = CORDESPACE_EVTYPE_STATUS_REJECTED;
+			} else {
+				$m['status'] = CORDESPACE_EVTYPE_STATUS_PENDING;
+			}
+		}
+	}
+	unset( $m );
+
+	return array_values( $members );
 }
 
 /**
- * Compte les membres par statut (utilisé pour le badge du header).
+ * Compte les membres par statut agrégé pour un type.
+ *
+ * Logique d'agrégation par membre :
+ *   - Au moins un tag 'approved' → comptabilisé comme 'approved'
+ *   - Sinon, au moins un tag 'rejected' → 'rejected'
+ *   - Sinon → 'pending'
+ *
  * @return array{approved:int, pending:int, rejected:int}
  */
 function cordespace_evgating_count_by_status( int $event_type_id ): array {
-	global $wpdb;
-	$table = cordespace_event_gating_table_name();
-	$rows  = $wpdb->get_results( $wpdb->prepare(
-		"SELECT status, COUNT(*) AS n FROM {$table} WHERE event_type_id = %d GROUP BY status",
-		$event_type_id
-	), ARRAY_A );
-	$out = [ 'approved' => 0, 'pending' => 0, 'rejected' => 0 ];
-	foreach ( (array) $rows as $r ) {
-		if ( isset( $out[ $r['status'] ] ) ) {
-			$out[ $r['status'] ] = (int) $r['n'];
+	$members = cordespace_evgating_get_members( $event_type_id );
+	$out     = [ 'approved' => 0, 'pending' => 0, 'rejected' => 0 ];
+	foreach ( $members as $m ) {
+		$statuses = array_values( (array) $m['statuses'] );
+		if ( in_array( CORDESPACE_EVTYPE_STATUS_APPROVED, $statuses, true ) ) {
+			$out['approved']++;
+		} elseif ( in_array( CORDESPACE_EVTYPE_STATUS_REJECTED, $statuses, true ) ) {
+			$out['rejected']++;
+		} else {
+			$out['pending']++;
 		}
 	}
 	return $out;
 }
 
 /**
- * Ajoute un membre. Retourne l'ID de la nouvelle ligne, ou 0 si déjà existant.
+ * Ajoute un membre à un type d'événement.
+ *
+ * Si le type a des tags configurés : insère une row par tag avec le status
+ * passé (typiquement 'pending'). Si le type n'a pas de tags : insère une
+ * unique row avec tag = ''.
+ *
+ * Skip silencieusement les rows déjà existantes pour le couple (type, user, tag).
+ *
+ * @return int Nombre de rows insérées (0 si déjà membre sur tous les tags).
  */
 function cordespace_evgating_add_member( int $event_type_id, int $user_id, string $status, string $notes, int $by_user_id ): int {
 	global $wpdb;
@@ -145,75 +196,188 @@ function cordespace_evgating_add_member( int $event_type_id, int $user_id, strin
 	if ( ! in_array( $status, cordespace_evgating_valid_statuses(), true ) ) {
 		$status = CORDESPACE_EVTYPE_STATUS_PENDING;
 	}
-	$table = cordespace_event_gating_table_name();
 
-	// Vérifie qu'il n'y en a pas déjà un — UNIQUE KEY l'empêcherait de toute
-	// façon, mais on évite l'erreur SQL.
-	$existing = $wpdb->get_var( $wpdb->prepare(
-		"SELECT id FROM {$table} WHERE event_type_id = %d AND user_id = %d",
-		$event_type_id, $user_id
-	) );
-	if ( $existing ) {
-		return 0;
+	// Récupère les tags configurés sur le type (via le helper exposé par
+	// le module CPT — si pas dispo, on tombe en mode binaire).
+	$tags = function_exists( 'cordespace_event_gating_get_tags_for_type' )
+		? cordespace_event_gating_get_tags_for_type( $event_type_id )
+		: [];
+	$tags_to_insert = empty( $tags ) ? [ '' ] : $tags;
+
+	$table = cordespace_event_gating_table_name();
+	$now   = current_time( 'mysql', true );
+
+	$inserted = 0;
+	foreach ( $tags_to_insert as $tag ) {
+		// Skip si la row existe déjà pour ce couple
+		$existing = $wpdb->get_var( $wpdb->prepare(
+			"SELECT id FROM {$table} WHERE event_type_id = %d AND user_id = %d AND tag = %s",
+			$event_type_id, $user_id, (string) $tag
+		) );
+		if ( $existing ) {
+			continue;
+		}
+
+		$result = $wpdb->insert(
+			$table,
+			[
+				'event_type_id' => $event_type_id,
+				'user_id'       => $user_id,
+				'tag'           => (string) $tag,
+				'status'        => $status,
+				'notes'         => $notes,
+				'approved_at'   => ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED ) ? $now : null,
+				'approved_by'   => ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED ) ? $by_user_id : null,
+				'created_at'    => $now,
+				'updated_at'    => $now,
+			],
+			[ '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s' ]
+		);
+		if ( $result ) {
+			$inserted++;
+		}
 	}
 
-	$now = current_time( 'mysql', true );
-	$inserted = $wpdb->insert(
+	return $inserted;
+}
+
+/**
+ * Met à jour le statut d'UNE cellule (membre × tag) précise.
+ * Utilisé par l'UI matricielle quand on change un dropdown.
+ *
+ * Pour un type sans tags, passer $tag = ''.
+ *
+ * Si la row (type, user, tag) n'existe pas encore, on l'insère.
+ *
+ * @return bool true si succès (insert ou update).
+ */
+function cordespace_evgating_set_tag_status( int $event_type_id, int $user_id, string $tag, string $status, int $by_user_id ): bool {
+	if ( $event_type_id <= 0 || $user_id <= 0 ) {
+		return false;
+	}
+	if ( ! in_array( $status, cordespace_evgating_valid_statuses(), true ) ) {
+		return false;
+	}
+
+	global $wpdb;
+	$table = cordespace_event_gating_table_name();
+	$now   = current_time( 'mysql', true );
+
+	$existing_id = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT id FROM {$table} WHERE event_type_id = %d AND user_id = %d AND tag = %s",
+		$event_type_id, $user_id, $tag
+	) );
+
+	$is_approved = ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED );
+
+	if ( $existing_id > 0 ) {
+		$result = $wpdb->update(
+			$table,
+			[
+				'status'      => $status,
+				'approved_at' => $is_approved ? $now : null,
+				'approved_by' => $is_approved ? $by_user_id : null,
+				'updated_at'  => $now,
+			],
+			[ 'id' => $existing_id ],
+			[ '%s', '%s', '%d', '%s' ],
+			[ '%d' ]
+		);
+		return $result !== false;
+	}
+
+	// Pas de row : on insère
+	$result = $wpdb->insert(
 		$table,
 		[
 			'event_type_id' => $event_type_id,
 			'user_id'       => $user_id,
+			'tag'           => $tag,
 			'status'        => $status,
-			'notes'         => $notes,
-			'approved_at'   => ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED ) ? $now : null,
-			'approved_by'   => ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED ) ? $by_user_id : null,
+			'notes'         => '',
+			'approved_at'   => $is_approved ? $now : null,
+			'approved_by'   => $is_approved ? $by_user_id : null,
 			'created_at'    => $now,
 			'updated_at'    => $now,
 		],
-		[ '%d', '%d', '%s', '%s', '%s', '%d', '%s', '%s' ]
+		[ '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%s', '%s' ]
 	);
-	return $inserted ? (int) $wpdb->insert_id : 0;
+	return $result !== false;
 }
 
 /**
- * Met à jour le statut et/ou les notes d'un membre existant. Si le statut
- * change vers 'approved', mémorise la date/by_user (sinon les laisse).
+ * Met à jour la note partagée d'un membre pour un type.
+ * Update toutes les rows (type, user, *) en une fois.
+ *
+ * @return bool true si succès (même si 0 rows touchées).
+ */
+function cordespace_evgating_set_member_note( int $event_type_id, int $user_id, string $notes ): bool {
+	if ( $event_type_id <= 0 || $user_id <= 0 ) {
+		return false;
+	}
+	global $wpdb;
+	$table  = cordespace_event_gating_table_name();
+	$result = $wpdb->update(
+		$table,
+		[
+			'notes'      => $notes,
+			'updated_at' => current_time( 'mysql', true ),
+		],
+		[ 'event_type_id' => $event_type_id, 'user_id' => $user_id ],
+		[ '%s', '%s' ],
+		[ '%d', '%d' ]
+	);
+	return $result !== false;
+}
+
+/**
+ * Met à jour le statut et/ou les notes d'un membre pour TOUS ses tags.
+ * Utile pour le mode binaire (type sans tags). En mode matrice, préférer
+ * cordespace_evgating_set_tag_status() pour cibler une cellule précise et
+ * cordespace_evgating_set_member_note() pour la note partagée.
+ *
+ * Si $status est null, ne touche pas au statut. Idem pour $notes.
  */
 function cordespace_evgating_update_member( int $event_type_id, int $user_id, ?string $status, ?string $notes, int $by_user_id ): bool {
-	global $wpdb;
-	$table = cordespace_event_gating_table_name();
-	$data  = [ 'updated_at' => current_time( 'mysql', true ) ];
-	$fmt   = [ '%s' ];
+	if ( $event_type_id <= 0 || $user_id <= 0 ) {
+		return false;
+	}
+
+	$ok = true;
 
 	if ( $status !== null ) {
 		if ( ! in_array( $status, cordespace_evgating_valid_statuses(), true ) ) {
 			return false;
 		}
-		$data['status'] = $status;
-		$fmt[]          = '%s';
-		if ( $status === CORDESPACE_EVTYPE_STATUS_APPROVED ) {
-			$data['approved_at'] = current_time( 'mysql', true );
-			$data['approved_by'] = $by_user_id;
-			$fmt[]               = '%s';
-			$fmt[]               = '%d';
+		global $wpdb;
+		$table = cordespace_event_gating_table_name();
+		$tags  = $wpdb->get_col( $wpdb->prepare(
+			"SELECT tag FROM {$table} WHERE event_type_id = %d AND user_id = %d",
+			$event_type_id, $user_id
+		) );
+		if ( empty( $tags ) ) {
+			// Pas encore membre : on l'ajoute (créera 1 row par tag du type, ou tag='')
+			cordespace_evgating_add_member( $event_type_id, $user_id, $status, $notes ?? '', $by_user_id );
+		} else {
+			foreach ( $tags as $tag ) {
+				if ( ! cordespace_evgating_set_tag_status( $event_type_id, $user_id, (string) $tag, $status, $by_user_id ) ) {
+					$ok = false;
+				}
+			}
 		}
 	}
+
 	if ( $notes !== null ) {
-		$data['notes'] = $notes;
-		$fmt[]         = '%s';
+		if ( ! cordespace_evgating_set_member_note( $event_type_id, $user_id, $notes ) ) {
+			$ok = false;
+		}
 	}
 
-	return false !== $wpdb->update(
-		$table,
-		$data,
-		[ 'event_type_id' => $event_type_id, 'user_id' => $user_id ],
-		$fmt,
-		[ '%d', '%d' ]
-	);
+	return $ok;
 }
 
 /**
- * Retire un membre de la liste.
+ * Retire un membre du type : DELETE toutes ses rows (un par tag).
  */
 function cordespace_evgating_remove_member( int $event_type_id, int $user_id ): bool {
 	global $wpdb;
