@@ -101,7 +101,26 @@ function cordespace_evgating_is_user_approved_for_type( int $user_id, int $type_
 		if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, '' ) ) {
 			return true;
 		}
+	} elseif ( empty( $event_tags ) ) {
+		// Cas appointment (event_tags vide, mais type a des tags). On cherche les
+		// étiquettes du type marquées « s'applique aux salles » et on check OR.
+		$appt_tags = function_exists( 'cordespace_event_gating_get_appt_tags' )
+			? cordespace_event_gating_get_appt_tags( $type_id )
+			: [];
+		if ( ! empty( $appt_tags ) ) {
+			foreach ( $appt_tags as $tag ) {
+				if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, (string) $tag ) ) {
+					return true;
+				}
+			}
+		} else {
+			// Rétro-compat : type avec tags + ancien toggle global → check binaire
+			if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, '' ) ) {
+				return true;
+			}
+		}
 	} else {
+		// Cas event : on cherche les tags communs (event ∩ type)
 		$common = array_values( array_intersect( $event_tags, $type_tags ) );
 		foreach ( $common as $tag ) {
 			if ( cordespace_evgating_is_user_approved_for_tag( $user_id, $type_id, (string) $tag ) ) {

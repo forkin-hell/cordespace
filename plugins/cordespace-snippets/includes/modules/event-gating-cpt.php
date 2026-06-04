@@ -27,6 +27,7 @@ const CORDESPACE_EVENT_TYPE_POST_TYPE                  = 'cordespace_evtype';
 const CORDESPACE_EVENT_TYPE_META_TAGS                  = '_cordespace_event_type_amelia_tags';
 const CORDESPACE_EVENT_TYPE_META_INFO_URL              = '_cordespace_event_type_info_url';
 const CORDESPACE_EVENT_TYPE_META_APPLIES_APPT          = '_cordespace_event_type_applies_to_appointments';
+const CORDESPACE_EVENT_TYPE_META_APPT_TAGS             = '_cordespace_event_type_appt_tags';
 const CORDESPACE_EVENT_TYPE_META_TAG_IMPLICATIONS      = '_cordespace_event_type_tag_implications';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES    = '_cordespace_event_type_implied_from_types';
 const CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TAG_MAP  = '_cordespace_event_type_implied_from_tag_filters';
@@ -159,9 +160,112 @@ function cordespace_event_gating_render_tags_metabox( WP_Post $post ): void {
 			) );
 			?>
 		</p>
-
-		<?php cordespace_event_gating_render_tag_implications_ui( $post, $selected ); ?>
 	<?php endif; ?>
+
+	<?php
+	// === Section : Étiquettes personnalisées (pour les appointments ou catégories sans event Amelia) ===
+	$custom_tags = array_values( array_diff( $selected, (array) $all_tags ) );
+	?>
+	<h4 style="margin:1.2rem 0 0.4rem;">✏️ <?php esc_html_e( 'Étiquettes personnalisées', 'cordespace-snippets' ); ?></h4>
+	<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
+		<?php esc_html_e( "Pour ajouter une « catégorie de validation » qui ne correspond pas à une étiquette Amelia existante. Cas typique : « Réservation des salles » (qui concerne les appointments, pas les events). Ces étiquettes apparaissent comme colonnes dans la matrice membres exactement comme les étiquettes Amelia.", 'cordespace-snippets' ); ?>
+	</p>
+	<div id="cordespace-custom-tags-container">
+		<?php foreach ( $custom_tags as $tag ) : ?>
+			<div class="cordespace-custom-tag" style="display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;">
+				<span><?php echo esc_html( $tag ); ?></span>
+				<input type="hidden" name="cordespace_event_type_custom_tags[]" value="<?php echo esc_attr( $tag ); ?>">
+				<button type="button" class="cordespace-custom-tag-remove" style="background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;">✗</button>
+			</div>
+		<?php endforeach; ?>
+	</div>
+	<div style="margin-top:0.6rem; display:flex; gap:0.4rem;">
+		<input type="text" id="cordespace-custom-tag-input" placeholder="<?php esc_attr_e( 'Ex : Réservation des salles', 'cordespace-snippets' ); ?>" style="flex:1; max-width:300px;">
+		<button type="button" id="cordespace-custom-tag-add" class="button"><?php esc_html_e( '+ Ajouter', 'cordespace-snippets' ); ?></button>
+	</div>
+
+	<?php
+	// === Section : Étiquettes qui s'appliquent aux réservations de salle ===
+	$appt_tags = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
+	$appt_tags = is_array( $appt_tags ) ? $appt_tags : [];
+	if ( ! empty( $selected ) ) :
+		?>
+		<h4 style="margin:1.4rem 0 0.4rem;">🏠 <?php esc_html_e( 'Étiquettes qui gatent aussi les réservations de salle', 'cordespace-snippets' ); ?></h4>
+		<p class="description" style="font-size:0.9em; margin:0 0 0.6rem;">
+			<?php esc_html_e( "Coche les étiquettes qui, lorsqu'une personne est validée dessus, donnent aussi accès aux réservations de salle (= appointments Amelia, peu importe le service). Les autres étiquettes ne déclenchent le gating QUE sur les events Amelia.", 'cordespace-snippets' ); ?>
+		</p>
+		<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); gap:0.4rem 1rem; padding:0.3rem 0;">
+			<?php foreach ( $selected as $tag ) :
+				$is_appt = in_array( $tag, $appt_tags, true );
+				?>
+				<label style="display:flex; align-items:center; gap:0.4rem; cursor:pointer;">
+					<input type="checkbox" name="cordespace_event_type_appt_tags[]" value="<?php echo esc_attr( $tag ); ?>" <?php checked( $is_appt ); ?>>
+					<span><?php echo esc_html( $tag ); ?></span>
+				</label>
+			<?php endforeach; ?>
+		</div>
+		<p class="description" style="font-size:0.85em; color:#666; margin-top:0.4rem;">
+			<?php esc_html_e( "Note : sauvegarde d'abord les nouvelles étiquettes pour les voir apparaître ici.", 'cordespace-snippets' ); ?>
+		</p>
+	<?php endif; ?>
+
+	<?php
+	// === Section : Hiérarchie d'implications (existante) ===
+	cordespace_event_gating_render_tag_implications_ui( $post, $selected );
+	?>
+
+	<?php // JS pour gérer l'ajout/retrait de tags personnalisés ?>
+	<script>
+	(function () {
+		var $container = document.getElementById('cordespace-custom-tags-container');
+		var $input     = document.getElementById('cordespace-custom-tag-input');
+		var $addBtn    = document.getElementById('cordespace-custom-tag-add');
+		if ( ! $container || ! $input || ! $addBtn ) return;
+
+		function tagAlreadyExists(tag) {
+			var inputs = $container.querySelectorAll('input[name="cordespace_event_type_custom_tags[]"]');
+			for (var i = 0; i < inputs.length; i++) {
+				if (inputs[i].value === tag) return true;
+			}
+			return false;
+		}
+
+		function addTag() {
+			var tag = ($input.value || '').trim();
+			if (!tag) return;
+			if (tagAlreadyExists(tag)) { alert('Cette étiquette existe déjà.'); return; }
+			var div = document.createElement('div');
+			div.className = 'cordespace-custom-tag';
+			div.style.cssText = 'display:inline-flex; align-items:center; gap:0.3rem; margin:0.2rem 0.4rem 0.2rem 0; padding:0.3rem 0.6rem; background:#e8f5e9; border:1px solid #a5d6a7; border-radius:4px;';
+			var span = document.createElement('span');
+			span.textContent = tag;
+			div.appendChild(span);
+			var hidden = document.createElement('input');
+			hidden.type = 'hidden';
+			hidden.name = 'cordespace_event_type_custom_tags[]';
+			hidden.value = tag;
+			div.appendChild(hidden);
+			var btn = document.createElement('button');
+			btn.type = 'button';
+			btn.className = 'cordespace-custom-tag-remove';
+			btn.style.cssText = 'background:none; border:none; color:#a00; cursor:pointer; font-weight:bold; padding:0;';
+			btn.textContent = '✗';
+			div.appendChild(btn);
+			$container.appendChild(div);
+			$input.value = '';
+		}
+
+		$addBtn.addEventListener('click', addTag);
+		$input.addEventListener('keypress', function (e) {
+			if (e.key === 'Enter') { e.preventDefault(); addTag(); }
+		});
+		$container.addEventListener('click', function (e) {
+			if (e.target && e.target.classList && e.target.classList.contains('cordespace-custom-tag-remove')) {
+				e.target.parentNode.remove();
+			}
+		});
+	})();
+	</script>
 	<?php
 }
 
@@ -304,17 +408,32 @@ add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_eve
 
 function cordespace_event_gating_render_appointments_metabox( WP_Post $post ): void {
 	$applies = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, true );
-	?>
-	<p style="margin-top:0;">
-		<label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
-			<input type="checkbox" name="cordespace_evtype_applies_to_appointments" value="1" <?php checked( $applies, '1' ); ?>>
-			<strong><?php esc_html_e( "S'applique à TOUTES les réservations de salle (appointments Amelia)", 'cordespace-snippets' ); ?></strong>
-		</label>
-	</p>
-	<p class="description" style="font-size:0.92em;">
-		<?php esc_html_e( "Si coché, ce type bloque la réservation de N'IMPORTE QUELLE salle Amelia tant que la personne n'est pas validée pour ce type (ou un type qui l'inclut). Les étiquettes Amelia ne s'appliquent pas aux appointments — c'est ce toggle qui détermine si le type s'applique aux salles.", 'cordespace-snippets' ); ?>
-	</p>
-	<?php
+
+	// Si le mode par-étiquette est utilisé (META_APPT_TAGS non vide), ce toggle
+	// global est legacy/obsolète. On l'affiche dépréciable.
+	$appt_tags = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
+	$using_per_tag = is_array( $appt_tags ) && ! empty( $appt_tags );
+
+	if ( $using_per_tag ) :
+		?>
+		<p style="padding:0.6rem 0.9rem; background:#eef5fd; border-left:3px solid #2c70b8; font-size:0.9em; color:#1d4d7e; margin:0;">
+			ℹ️ <?php esc_html_e( "Tu utilises déjà le mode par-étiquette (« Étiquettes qui gatent aussi les réservations de salle » dans la metabox des étiquettes). Ce toggle global est désactivé pour éviter les conflits.", 'cordespace-snippets' ); ?>
+		</p>
+		<input type="hidden" name="cordespace_evtype_applies_to_appointments" value="0">
+		<?php
+	else :
+		?>
+		<p style="margin-top:0;">
+			<label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+				<input type="checkbox" name="cordespace_evtype_applies_to_appointments" value="1" <?php checked( $applies, '1' ); ?>>
+				<strong><?php esc_html_e( "S'applique à TOUTES les réservations de salle (appointments Amelia)", 'cordespace-snippets' ); ?></strong>
+			</label>
+		</p>
+		<p class="description" style="font-size:0.92em;">
+			<?php esc_html_e( "Mode legacy (type binaire sans étiquettes). Si coché, ce type bloque la réservation de N'IMPORTE QUELLE salle. Préfère le mode par-étiquette dans la metabox « Étiquettes Amelia » plus haut si tu veux de la granularité.", 'cordespace-snippets' ); ?>
+		</p>
+		<?php
+	endif;
 }
 
 // ============================================================================
@@ -495,11 +614,22 @@ function cordespace_event_gating_save_meta( int $post_id ): void {
 		return;
 	}
 
-	// Tags : array de strings, sanitize chaque entrée
-	$tags = isset( $_POST['cordespace_event_type_tags'] ) && is_array( $_POST['cordespace_event_type_tags'] )
+	// Tags : merger les étiquettes Amelia cochées + les étiquettes personnalisées
+	$amelia_tags = isset( $_POST['cordespace_event_type_tags'] ) && is_array( $_POST['cordespace_event_type_tags'] )
 		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_tags'] ) ) ) )
 		: [];
+	$custom_tags = isset( $_POST['cordespace_event_type_custom_tags'] ) && is_array( $_POST['cordespace_event_type_custom_tags'] )
+		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_custom_tags'] ) ) ) )
+		: [];
+	$tags = array_values( array_unique( array_merge( $amelia_tags, $custom_tags ) ) );
 	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_TAGS, $tags );
+
+	// Étiquettes qui s'appliquent aux réservations de salle (sous-ensemble des tags)
+	$appt_tags_raw = isset( $_POST['cordespace_event_type_appt_tags'] ) && is_array( $_POST['cordespace_event_type_appt_tags'] )
+		? array_values( array_filter( array_map( 'sanitize_text_field', wp_unslash( $_POST['cordespace_event_type_appt_tags'] ) ) ) )
+		: [];
+	$appt_tags = array_values( array_intersect( $appt_tags_raw, $tags ) ); // filtre : seulement tags réels
+	update_post_meta( $post_id, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, $appt_tags );
 
 	// URL : esc_url_raw
 	$url = isset( $_POST['cordespace_event_type_info_url'] )
@@ -665,24 +795,51 @@ function cordespace_event_gating_get_amelia_event_tags( int $amelia_event_id ): 
 
 /**
  * Renvoie les types d'events applicables à un appointment Amelia (= salles).
- * Les appointments n'ont pas d'étiquettes Amelia, donc on prend tous les
- * types qui ont coché « S'applique à TOUTES les réservations de salle ».
+ *
+ * Un type est applicable aux appointments si :
+ *   - Il a AU MOINS UNE étiquette dans META_APPT_TAGS (modèle par-tag, granulaire)
+ *   - OU META_APPLIES_APPT = '1' (rétro-compat ancien toggle global)
  *
  * @return int[] Liste des post IDs de cordespace_event_type applicables.
  */
 function cordespace_event_gating_applicable_types_for_amelia_appointment(): array {
-	$type_ids = get_posts( [
+	$all = get_posts( [
 		'post_type'      => CORDESPACE_EVENT_TYPE_POST_TYPE,
 		'post_status'    => 'publish',
 		'posts_per_page' => -1,
 		'fields'         => 'ids',
-		'meta_query'     => [
-			[
-				'key'   => CORDESPACE_EVENT_TYPE_META_APPLIES_APPT,
-				'value' => '1',
-			],
-		],
 	] );
-	return array_map( 'intval', (array) $type_ids );
+
+	$matching = [];
+	foreach ( (array) $all as $tid ) {
+		$tid = (int) $tid;
+		$appt_tags = get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
+		if ( is_array( $appt_tags ) && ! empty( $appt_tags ) ) {
+			$matching[] = $tid;
+			continue;
+		}
+		$applies = (string) get_post_meta( $tid, CORDESPACE_EVENT_TYPE_META_APPLIES_APPT, true );
+		if ( $applies === '1' ) {
+			$matching[] = $tid;
+		}
+	}
+	return $matching;
+}
+
+/**
+ * Helper : renvoie les étiquettes du type marquées « s'applique aux
+ * réservations de salle ».
+ *
+ * @return string[]
+ */
+function cordespace_event_gating_get_appt_tags( int $type_id ): array {
+	if ( $type_id <= 0 ) {
+		return [];
+	}
+	$tags = get_post_meta( $type_id, CORDESPACE_EVENT_TYPE_META_APPT_TAGS, true );
+	if ( ! is_array( $tags ) ) {
+		return [];
+	}
+	return array_values( array_filter( array_map( 'strval', $tags ) ) );
 }
 
