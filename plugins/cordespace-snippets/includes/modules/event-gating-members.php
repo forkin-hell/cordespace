@@ -518,9 +518,135 @@ function cordespace_evgating_render_members_metabox_binary( WP_Post $post ): voi
 		</div>
 	</div>
 
+	<?php cordespace_evgating_render_import_and_pending_sections( $event_type_id, [] ); ?>
+
 	<?php cordespace_evgating_render_member_template(); ?>
 	<?php cordespace_evgating_print_inline_js(); ?>
 	<?php cordespace_evgating_print_inline_css(); ?>
+	<?php
+}
+
+/**
+ * Helper partagé : rendu des 2 sections « Importer un CSV » + « En attente
+ * d'inscription ». Utilisé par les 2 modes (matrice et binaire).
+ *
+ * En mode binaire, $tags est vide → pas de checkboxes de tags dans le form
+ * d'import, et la table pending n'a qu'une colonne statut.
+ */
+function cordespace_evgating_render_import_and_pending_sections( int $event_type_id, array $tags ): void {
+	?>
+	<details class="cordespace-evgating-import-csv" style="margin-top:1.5rem; padding:0.8rem 1rem; background:#f7f7f9; border-radius:6px;">
+		<summary style="cursor:pointer; font-weight:600; color:#333;">
+			📥 <?php esc_html_e( 'Importer un CSV (bootstrap initial)', 'cordespace-snippets' ); ?>
+		</summary>
+		<div style="padding-top:0.8rem;">
+			<p style="font-size:0.9em; color:#555; margin:0 0 0.8rem;">
+				<?php esc_html_e( 'Format accepté : 1 colonne « Email » (header obligatoire). Le format Momence est détecté automatiquement (col Email en position 3).', 'cordespace-snippets' ); ?>
+				<br>
+				<strong><?php esc_html_e( 'Comportement :', 'cordespace-snippets' ); ?></strong>
+				<?php esc_html_e( "si la personne a déjà un compte WP, elle est ajoutée directement à la liste. Sinon son email est mis « en attente » et la validation s'activera automatiquement à la création de son compte (1er achat ou inscription).", 'cordespace-snippets' ); ?>
+			</p>
+			<?php if ( ! empty( $tags ) ) : ?>
+				<p style="margin:0.6rem 0 0.3rem; font-weight:600;"><?php esc_html_e( 'Tag(s) à valider pour chaque ligne du CSV :', 'cordespace-snippets' ); ?></p>
+				<div style="display:flex; flex-wrap:wrap; gap:0.4rem 1rem; margin-bottom:0.6rem;">
+					<?php foreach ( $tags as $tag ) : ?>
+						<label style="display:flex; align-items:center; gap:0.3rem; font-size:0.95em;">
+							<input type="checkbox" class="cordespace-evgating-import-tag" value="<?php echo esc_attr( $tag ); ?>">
+							<?php echo esc_html( $tag ); ?>
+						</label>
+					<?php endforeach; ?>
+				</div>
+			<?php endif; ?>
+			<div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:flex-end; margin-bottom:0.4rem;">
+				<div>
+					<label style="display:block; font-size:0.9em; color:#555; margin-bottom:0.3rem;"><?php esc_html_e( 'Statut', 'cordespace-snippets' ); ?></label>
+					<select class="cordespace-evgating-import-status">
+						<?php foreach ( cordespace_evgating_valid_statuses() as $s ) : ?>
+							<option value="<?php echo esc_attr( $s ); ?>" <?php selected( $s, CORDESPACE_EVTYPE_STATUS_APPROVED ); ?>>
+								<?php echo esc_html( cordespace_evgating_status_icon( $s ) . ' ' . cordespace_evgating_status_label( $s ) ); ?>
+							</option>
+						<?php endforeach; ?>
+					</select>
+				</div>
+				<div style="flex:1; min-width:240px;">
+					<label style="display:block; font-size:0.9em; color:#555; margin-bottom:0.3rem;"><?php esc_html_e( 'Fichier CSV', 'cordespace-snippets' ); ?></label>
+					<input type="file" class="cordespace-evgating-import-file" accept=".csv,text/csv">
+				</div>
+				<div>
+					<button type="button" class="button button-primary cordespace-evgating-import-btn">
+						<?php esc_html_e( 'Importer', 'cordespace-snippets' ); ?>
+					</button>
+				</div>
+			</div>
+			<p class="cordespace-evgating-import-result" style="margin:0.6rem 0 0; font-size:0.9em;"></p>
+		</div>
+	</details>
+
+	<?php
+	$pending_list  = function_exists( 'cordespace_evgating_pending_get_for_type' )
+		? cordespace_evgating_pending_get_for_type( $event_type_id )
+		: [];
+	$pending_count = count( $pending_list );
+	?>
+	<details class="cordespace-evgating-pending-list" style="margin-top:1rem; padding:0.8rem 1rem; background:#fffcf0; border:1px solid #f0e0a0; border-radius:6px;">
+		<summary style="cursor:pointer; font-weight:600; color:#5c4a00;">
+			📋 <?php printf( esc_html__( 'En attente d\'inscription : %d email(s)', 'cordespace-snippets' ), (int) $pending_count ); ?>
+			<small style="font-weight:normal; color:#7c5a00;">
+				<?php esc_html_e( '(seront validé·es automatiquement à la création de leur compte)', 'cordespace-snippets' ); ?>
+			</small>
+		</summary>
+		<?php if ( $pending_count === 0 ) : ?>
+			<p style="padding:0.6rem 0 0; font-size:0.9em; color:#7c5a00; font-style:italic; margin:0;">
+				<?php esc_html_e( 'Aucun email en attente pour ce type.', 'cordespace-snippets' ); ?>
+			</p>
+		<?php else : ?>
+			<table class="widefat cordespace-evgating-pending-table" style="margin-top:0.6rem;">
+				<thead>
+					<tr>
+						<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Email', 'cordespace-snippets' ); ?></th>
+						<?php foreach ( $tags as $tag ) : ?>
+							<th style="text-align:left; padding:0.4rem;"><?php echo esc_html( $tag ); ?></th>
+						<?php endforeach; ?>
+						<?php if ( empty( $tags ) ) : ?>
+							<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Statut', 'cordespace-snippets' ); ?></th>
+						<?php endif; ?>
+						<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Ajout', 'cordespace-snippets' ); ?></th>
+						<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Actions', 'cordespace-snippets' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php foreach ( $pending_list as $p ) :
+						$stats = (array) $p['statuses'];
+						?>
+						<tr class="cordespace-evgating-pending-row" data-email="<?php echo esc_attr( $p['email'] ); ?>">
+							<td style="padding:0.4rem;"><?php echo esc_html( $p['email'] ); ?></td>
+							<?php if ( ! empty( $tags ) ) : ?>
+								<?php foreach ( $tags as $tag ) :
+									$st = (string) ( $stats[ $tag ] ?? '' );
+									?>
+									<td style="padding:0.4rem; font-size:0.9em;">
+										<?php echo $st === '' ? '—' : esc_html( cordespace_evgating_status_icon( $st ) ); ?>
+									</td>
+								<?php endforeach; ?>
+							<?php else :
+								$bin_status = (string) ( $stats[''] ?? CORDESPACE_EVTYPE_STATUS_APPROVED );
+								?>
+								<td style="padding:0.4rem; font-size:0.9em;">
+									<?php echo esc_html( cordespace_evgating_status_icon( $bin_status ) . ' ' . cordespace_evgating_status_label( $bin_status ) ); ?>
+								</td>
+							<?php endif; ?>
+							<td style="padding:0.4rem; font-size:0.85em; color:#666;">
+								<?php echo esc_html( mysql2date( 'Y-m-d', (string) $p['created_at'] ) ); ?>
+							</td>
+							<td style="padding:0.4rem;">
+								<button type="button" class="button button-small cordespace-evgating-pending-remove" title="<?php esc_attr_e( 'Retirer cet email de la liste d\'attente', 'cordespace-snippets' ); ?>" style="color:#a00;">✗</button>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+		<?php endif; ?>
+	</details>
 	<?php
 }
 
@@ -604,126 +730,7 @@ function cordespace_evgating_render_members_metabox_matrix( WP_Post $post, array
 			</table>
 		<?php endif; ?>
 
-		<!-- ========================================================== -->
-		<!-- Section : Importer CSV                                     -->
-		<!-- ========================================================== -->
-		<details class="cordespace-evgating-import-csv" style="margin-top:1.5rem; padding:0.8rem 1rem; background:#f7f7f9; border-radius:6px;">
-			<summary style="cursor:pointer; font-weight:600; color:#333;">
-				📥 <?php esc_html_e( 'Importer un CSV (bootstrap initial)', 'cordespace-snippets' ); ?>
-			</summary>
-			<div style="padding-top:0.8rem;">
-				<p style="font-size:0.9em; color:#555; margin:0 0 0.8rem;">
-					<?php esc_html_e( 'Format accepté : 1 colonne « Email » (header obligatoire). Le format Momence est détecté automatiquement (col Email en position 3).', 'cordespace-snippets' ); ?>
-					<br>
-					<strong><?php esc_html_e( 'Comportement :', 'cordespace-snippets' ); ?></strong>
-					<?php esc_html_e( "si la personne a déjà un compte WP, elle est ajoutée directement à la matrice. Sinon son email est mis « en attente » et la validation s'activera automatiquement à la création de son compte (1er achat ou inscription).", 'cordespace-snippets' ); ?>
-				</p>
-
-				<?php if ( ! empty( $tags ) ) : ?>
-					<p style="margin:0.6rem 0 0.3rem; font-weight:600;"><?php esc_html_e( 'Tag(s) à valider pour chaque ligne du CSV :', 'cordespace-snippets' ); ?></p>
-					<div style="display:flex; flex-wrap:wrap; gap:0.4rem 1rem; margin-bottom:0.6rem;">
-						<?php foreach ( $tags as $tag ) : ?>
-							<label style="display:flex; align-items:center; gap:0.3rem; font-size:0.95em;">
-								<input type="checkbox" class="cordespace-evgating-import-tag" value="<?php echo esc_attr( $tag ); ?>">
-								<?php echo esc_html( $tag ); ?>
-							</label>
-						<?php endforeach; ?>
-					</div>
-				<?php endif; ?>
-
-				<div style="display:flex; flex-wrap:wrap; gap:0.6rem; align-items:flex-end; margin-bottom:0.4rem;">
-					<div>
-						<label style="display:block; font-size:0.9em; color:#555; margin-bottom:0.3rem;"><?php esc_html_e( 'Statut', 'cordespace-snippets' ); ?></label>
-						<select class="cordespace-evgating-import-status">
-							<?php foreach ( cordespace_evgating_valid_statuses() as $s ) : ?>
-								<option value="<?php echo esc_attr( $s ); ?>" <?php selected( $s, CORDESPACE_EVTYPE_STATUS_APPROVED ); ?>>
-									<?php echo esc_html( cordespace_evgating_status_icon( $s ) . ' ' . cordespace_evgating_status_label( $s ) ); ?>
-								</option>
-							<?php endforeach; ?>
-						</select>
-					</div>
-					<div style="flex:1; min-width:240px;">
-						<label style="display:block; font-size:0.9em; color:#555; margin-bottom:0.3rem;"><?php esc_html_e( 'Fichier CSV', 'cordespace-snippets' ); ?></label>
-						<input type="file" class="cordespace-evgating-import-file" accept=".csv,text/csv">
-					</div>
-					<div>
-						<button type="button" class="button button-primary cordespace-evgating-import-btn">
-							<?php esc_html_e( 'Importer', 'cordespace-snippets' ); ?>
-						</button>
-					</div>
-				</div>
-				<p class="cordespace-evgating-import-result" style="margin:0.6rem 0 0; font-size:0.9em;"></p>
-			</div>
-		</details>
-
-		<!-- ========================================================== -->
-		<!-- Section : En attente d'inscription                         -->
-		<!-- ========================================================== -->
-		<?php
-		$pending_list  = function_exists( 'cordespace_evgating_pending_get_for_type' )
-			? cordespace_evgating_pending_get_for_type( $event_type_id )
-			: [];
-		$pending_count = count( $pending_list );
-		?>
-		<details class="cordespace-evgating-pending-list" style="margin-top:1rem; padding:0.8rem 1rem; background:#fffcf0; border:1px solid #f0e0a0; border-radius:6px;">
-			<summary style="cursor:pointer; font-weight:600; color:#5c4a00;">
-				📋 <?php printf( esc_html__( 'En attente d\'inscription : %d email(s)', 'cordespace-snippets' ), (int) $pending_count ); ?>
-				<small style="font-weight:normal; color:#7c5a00;">
-					<?php esc_html_e( '(seront validé·es automatiquement à la création de leur compte)', 'cordespace-snippets' ); ?>
-				</small>
-			</summary>
-			<?php if ( $pending_count === 0 ) : ?>
-				<p style="padding:0.6rem 0 0; font-size:0.9em; color:#7c5a00; font-style:italic; margin:0;">
-					<?php esc_html_e( 'Aucun email en attente pour ce type.', 'cordespace-snippets' ); ?>
-				</p>
-			<?php else : ?>
-				<table class="widefat cordespace-evgating-pending-table" style="margin-top:0.6rem;">
-					<thead>
-						<tr>
-							<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Email', 'cordespace-snippets' ); ?></th>
-							<?php foreach ( $tags as $tag ) : ?>
-								<th style="text-align:left; padding:0.4rem;"><?php echo esc_html( $tag ); ?></th>
-							<?php endforeach; ?>
-							<?php if ( empty( $tags ) ) : ?>
-								<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Statut', 'cordespace-snippets' ); ?></th>
-							<?php endif; ?>
-							<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Ajout', 'cordespace-snippets' ); ?></th>
-							<th style="text-align:left; padding:0.4rem;"><?php esc_html_e( 'Actions', 'cordespace-snippets' ); ?></th>
-						</tr>
-					</thead>
-					<tbody>
-						<?php foreach ( $pending_list as $p ) :
-							$stats = (array) $p['statuses'];
-							?>
-							<tr class="cordespace-evgating-pending-row" data-email="<?php echo esc_attr( $p['email'] ); ?>">
-								<td style="padding:0.4rem;"><?php echo esc_html( $p['email'] ); ?></td>
-								<?php if ( ! empty( $tags ) ) : ?>
-									<?php foreach ( $tags as $tag ) :
-										$st = (string) ( $stats[ $tag ] ?? '' );
-										?>
-										<td style="padding:0.4rem; font-size:0.9em;">
-											<?php echo $st === '' ? '—' : esc_html( cordespace_evgating_status_icon( $st ) ); ?>
-										</td>
-									<?php endforeach; ?>
-								<?php else :
-									$bin_status = (string) ( $stats[''] ?? CORDESPACE_EVTYPE_STATUS_APPROVED );
-									?>
-									<td style="padding:0.4rem; font-size:0.9em;">
-										<?php echo esc_html( cordespace_evgating_status_icon( $bin_status ) . ' ' . cordespace_evgating_status_label( $bin_status ) ); ?>
-									</td>
-								<?php endif; ?>
-								<td style="padding:0.4rem; font-size:0.85em; color:#666;">
-									<?php echo esc_html( mysql2date( 'Y-m-d', (string) $p['created_at'] ) ); ?>
-								</td>
-								<td style="padding:0.4rem;">
-									<button type="button" class="button button-small cordespace-evgating-pending-remove" title="<?php esc_attr_e( 'Retirer cet email de la liste d\'attente', 'cordespace-snippets' ); ?>" style="color:#a00;">✗</button>
-								</td>
-							</tr>
-						<?php endforeach; ?>
-					</tbody>
-				</table>
-			<?php endif; ?>
-		</details>
+		<?php cordespace_evgating_render_import_and_pending_sections( $event_type_id, $tags ); ?>
 	</div>
 
 	<?php cordespace_evgating_print_inline_js(); ?>
@@ -924,6 +931,77 @@ function cordespace_evgating_print_inline_js(): void {
 		}
 
 		// ============================================================
+		// HANDLERS PARTAGES (matrice + binaire)
+		// Import CSV et retrait des emails en attente sont identiques
+		// dans les 2 modes (le mode binaire n'a juste pas de checkboxes
+		// de tags dans le form d'import).
+		// ============================================================
+
+		// --- Import CSV ----------------------------------------------------
+		$root.on('click', '.cordespace-evgating-import-btn', function () {
+			var $btn    = $(this);
+			var $result = $root.find('.cordespace-evgating-import-result');
+			var $file   = $root.find('.cordespace-evgating-import-file');
+			var status  = $root.find('.cordespace-evgating-import-status').val();
+			var tags    = $root.find('.cordespace-evgating-import-tag:checked').map(function () { return $(this).val(); }).get();
+
+			var file = ($file[0] && $file[0].files && $file[0].files[0]) ? $file[0].files[0] : null;
+			if (!file) {
+				$result.text('✗ Choisis un fichier CSV.').css('color', '#a00');
+				return;
+			}
+
+			var fd = new FormData();
+			fd.append('action',        'cordespace_evgating_import_csv');
+			fd.append('event_type_id', typeId);
+			fd.append('nonce',         nonce);
+			fd.append('status',        status);
+			fd.append('tags',          JSON.stringify(tags));
+			fd.append('csv_file',      file);
+
+			$btn.prop('disabled', true);
+			$result.text('Import en cours…').css('color', '#555');
+
+			$.ajax({
+				url:         ajaxUrl,
+				type:        'POST',
+				data:        fd,
+				processData: false,
+				contentType: false,
+			}).done(function (resp) {
+				$btn.prop('disabled', false);
+				if (!resp || !resp.success) {
+					var msg = (resp && resp.data && resp.data.message) || 'Erreur inconnue.';
+					$result.text('✗ ' + msg).css('color', '#a00');
+					return;
+				}
+				var d = resp.data;
+				$result.html(
+					'✓ Import terminé : <strong>' + d.direct + '</strong> validé·es direct, ' +
+					'<strong>' + d.pending + '</strong> en attente d\'inscription, ' +
+					'<strong>' + d.skipped + '</strong> lignes ignorées' +
+					(d.invalid > 0 ? ', <strong>' + d.invalid + '</strong> emails invalides' : '') + '. ' +
+					'<a href="" style="color:#1a1a2e;">Rafraîchir la page</a> pour voir le nouvel état.'
+				).css('color', '#1a5c1a');
+			}).fail(function () {
+				$btn.prop('disabled', false);
+				$result.text('✗ Erreur réseau.').css('color', '#a00');
+			});
+		});
+
+		// --- Retirer un email en attente -----------------------------------
+		$root.on('click', '.cordespace-evgating-pending-remove', function () {
+			var $row  = $(this).closest('tr');
+			var email = $row.data('email');
+			if (!confirm('Retirer ' + email + ' de la liste d\'attente ?')) return;
+			ajax('pending_remove', { email: email }, function () {
+				$row.fadeOut(200, function () { $(this).remove(); });
+			}, function (msg) {
+				alert('Erreur : ' + msg);
+			});
+		});
+
+		// ============================================================
 		// MODE MATRICE
 		// ============================================================
 		if (isMatrix) {
@@ -983,70 +1061,6 @@ function cordespace_evgating_print_inline_js(): void {
 				ajax('remove_member', { user_id: userId }, function (data) {
 					$row.fadeOut(200, function () { $(this).remove(); });
 					if (data && data.counts) updateCounts(data.counts);
-				}, function (msg) {
-					alert('Erreur : ' + msg);
-				});
-			});
-
-			// --- Import CSV ----------------------------------------------------
-			$root.on('click', '.cordespace-evgating-import-btn', function () {
-				var $btn    = $(this);
-				var $result = $root.find('.cordespace-evgating-import-result');
-				var $file   = $root.find('.cordespace-evgating-import-file');
-				var status  = $root.find('.cordespace-evgating-import-status').val();
-				var tags    = $root.find('.cordespace-evgating-import-tag:checked').map(function () { return $(this).val(); }).get();
-
-				var file = ($file[0] && $file[0].files && $file[0].files[0]) ? $file[0].files[0] : null;
-				if (!file) {
-					$result.text('✗ Choisis un fichier CSV.').css('color', '#a00');
-					return;
-				}
-
-				var fd = new FormData();
-				fd.append('action',        'cordespace_evgating_import_csv');
-				fd.append('event_type_id', typeId);
-				fd.append('nonce',         nonce);
-				fd.append('status',        status);
-				fd.append('tags',          JSON.stringify(tags));
-				fd.append('csv_file',      file);
-
-				$btn.prop('disabled', true);
-				$result.text('Import en cours…').css('color', '#555');
-
-				$.ajax({
-					url:         ajaxUrl,
-					type:        'POST',
-					data:        fd,
-					processData: false,
-					contentType: false,
-				}).done(function (resp) {
-					$btn.prop('disabled', false);
-					if (!resp || !resp.success) {
-						var msg = (resp && resp.data && resp.data.message) || 'Erreur inconnue.';
-						$result.text('✗ ' + msg).css('color', '#a00');
-						return;
-					}
-					var d = resp.data;
-					$result.html(
-						'✓ Import terminé : <strong>' + d.direct + '</strong> validé·es direct, ' +
-						'<strong>' + d.pending + '</strong> en attente d\'inscription, ' +
-						'<strong>' + d.skipped + '</strong> lignes ignorées' +
-						(d.invalid > 0 ? ', <strong>' + d.invalid + '</strong> emails invalides' : '') + '. ' +
-						'<a href="" style="color:#1a1a2e;">Rafraîchir la page</a> pour voir le nouvel état.'
-					).css('color', '#1a5c1a');
-				}).fail(function () {
-					$btn.prop('disabled', false);
-					$result.text('✗ Erreur réseau.').css('color', '#a00');
-				});
-			});
-
-			// --- Retirer un email en attente -----------------------------------
-			$root.on('click', '.cordespace-evgating-pending-remove', function () {
-				var $row  = $(this).closest('tr');
-				var email = $row.data('email');
-				if (!confirm('Retirer ' + email + ' de la liste d\'attente ?')) return;
-				ajax('pending_remove', { email: email }, function () {
-					$row.fadeOut(200, function () { $(this).remove(); });
 				}, function (msg) {
 					alert('Erreur : ' + msg);
 				});
