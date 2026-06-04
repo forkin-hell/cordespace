@@ -370,7 +370,14 @@ function cordespace_event_gating_add_implied_from_metabox(): void {
 		'default'
 	);
 }
-add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_implied_from_metabox' );
+// Metabox '🔗 Implications externes' DÉSACTIVÉE par décision de Tess (06/2026) :
+// les profs sont ajouté·es manuellement à chaque type via la matrice plutôt
+// que via une auto-validation par rôle. Les helpers get_implied_from_*()
+// + le check côté is_user_approved_for_type continuent de fonctionner en
+// rétro-compat pour ceux qui ont des metas configurées en DB, mais l'UI
+// n'est plus exposée.
+//
+// add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_implied_from_metabox' );
 
 function cordespace_event_gating_render_implied_from_metabox( WP_Post $post ): void {
 	$implied_types = get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_IMPLIED_FROM_TYPES, true );
