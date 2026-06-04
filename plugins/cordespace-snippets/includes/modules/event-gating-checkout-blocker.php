@@ -257,9 +257,16 @@ function cordespace_evgating_render_block_banner(): void {
 	}
 
 	$is_logged_in = is_user_logged_in();
-	$myaccount    = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'myaccount' ) : home_url();
-	$cart_url     = function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url();
-	$login_url    = add_query_arg( 'redirect_to', urlencode( $cart_url ), $myaccount );
+	// Cible : la page "Mon compte" custom (= page qui contient le shortcode
+	// [cordespace_mon_espace], résolue dynamiquement par le helper du core).
+	// Fallback sur la page WC myaccount si le helper n'est pas dispo ou ne
+	// trouve rien.
+	$cart_url   = function_exists( 'wc_get_cart_url' ) ? wc_get_cart_url() : home_url();
+	$mon_compte = function_exists( 'cordespace_get_mon_espace_url' ) ? cordespace_get_mon_espace_url() : '';
+	if ( $mon_compte === '' ) {
+		$mon_compte = function_exists( 'wc_get_page_permalink' ) ? wc_get_page_permalink( 'myaccount' ) : home_url();
+	}
+	$login_url = add_query_arg( 'redirect_to', urlencode( $cart_url ), $mon_compte );
 	?>
 	<div class="cordespace-evgating-block" role="alert" style="margin:0 0 1.5rem; padding:1.4rem 1.6rem; background:#fdecea; border:2px solid #d63638; border-left:6px solid #d63638; border-radius:6px; color:#3c1c1c;">
 		<h3 style="margin:0 0 0.6rem; color:#3c1c1c; font-size:1.15em; font-weight:700;">
@@ -268,20 +275,13 @@ function cordespace_evgating_render_block_banner(): void {
 				: esc_html__( 'Validation requise pour cette réservation', 'cordespace-snippets' ); ?>
 		</h3>
 
-		<?php if ( ! $is_logged_in ) : ?>
-			<p style="margin:0 0 0.6rem;">
-				<?php esc_html_e( 'Ton panier contient une ou plusieurs réservations qui nécessitent une validation préalable par l\'équipe Cordespace. Tu dois te connecter avec un compte validé pour pouvoir les réserver.', 'cordespace-snippets' ); ?>
-			</p>
-			<p style="margin:0 0 1rem; font-size:0.93em; color:#5c1c1c;">
-				<?php
-				printf(
-					/* translators: %s = lien mailto contact */
-					esc_html__( 'Si tu n\'as encore jamais commandé chez Cordespace, c\'est normal que tu n\'aies pas de compte. Écris-nous à %s pour qu\'on regarde ensemble si tu peux accéder à ce type de réservation.', 'cordespace-snippets' ),
-					'<a href="mailto:gestion@cordespace.com" style="color:#5c1c1c; text-decoration:underline;">gestion@cordespace.com</a>'
-				);
-				?>
-			</p>
-		<?php endif; ?>
+		<?php
+		// Pas de texte d'intro hardcode ici : le contenu editable du type
+		// (post_content du CPT cordespace_evtype) est affiche plus bas dans
+		// chaque section, ce qui permet a Tess de rediger son propre message
+		// (incluant le contact gestion@cordespace.com pour les nouvelles
+		// personnes sans compte). Retirer le hardcoded evite la redondance.
+		?>
 
 		<?php foreach ( $items as $item ) :
 			$icon            = $item['kind'] === 'appointment' ? '🏠' : '📅';
@@ -334,7 +334,7 @@ function cordespace_evgating_render_block_banner(): void {
 		<?php if ( ! $is_logged_in ) : ?>
 			<p style="margin:1rem 0 0;">
 				<a href="<?php echo esc_url( $login_url ); ?>" class="button" style="background:#fff; color:#1a1a2e; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block; border:1px solid #1a1a2e;">
-					<?php esc_html_e( 'Me connecter', 'cordespace-snippets' ); ?>
+					<?php esc_html_e( 'Aller à Mon compte', 'cordespace-snippets' ); ?>
 				</a>
 			</p>
 		<?php endif; ?>
