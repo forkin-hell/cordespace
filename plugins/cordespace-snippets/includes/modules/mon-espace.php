@@ -355,7 +355,8 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	<section id="section-cours" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
 		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📅 Mes prochains cours</h2>
 		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Tes inscriptions aux ateliers et événements Cordespace.</p>
-		<?php echo do_shortcode( '[ameliacustomerpanel events=1]' ); ?>
+		<?php // Force le panneau à n'afficher QUE les events (pas d'onglet appointments/packages) ?>
+		<?php echo do_shortcode( '[ameliacustomerpanel events=1 appointments=0 packages=0]' ); ?>
 	</section>
 
 	<?php
@@ -368,7 +369,8 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<section id="section-salles" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
 			<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🏠 Mes réservations de salles</h2>
 			<p style="color:#666;margin:0 0 1.2rem;font-size:0.92em;">Tes créneaux de location de salle à venir.</p>
-			<?php echo do_shortcode( '[ameliacustomerpanel appointments=1 events=0]' ); ?>
+			<?php // Force le panneau à n'afficher QUE les appointments ?>
+			<?php echo do_shortcode( '[ameliacustomerpanel events=0 appointments=1 packages=0]' ); ?>
 		</section>
 	<?php endif; ?>
 
