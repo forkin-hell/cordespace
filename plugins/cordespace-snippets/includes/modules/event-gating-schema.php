@@ -27,10 +27,11 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const CORDESPACE_EVENT_GATING_TABLE_SUFFIX           = 'cordespace_event_type_approvals';
-const CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX   = 'cordespace_pending_email_approvals';
-const CORDESPACE_EVENT_GATING_MAGIC_TABLE_SUFFIX     = 'cordespace_magic_links';
-const CORDESPACE_EVENT_GATING_SCHEMA_VERSION         = 4;
+const CORDESPACE_EVENT_GATING_TABLE_SUFFIX             = 'cordespace_event_type_approvals';
+const CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX     = 'cordespace_pending_email_approvals';
+const CORDESPACE_EVENT_GATING_MAGIC_TABLE_SUFFIX       = 'cordespace_magic_links';
+const CORDESPACE_EVENT_GATING_MAGIC_USAGES_TABLE_SUFFIX = 'cordespace_magic_link_usages';
+const CORDESPACE_EVENT_GATING_SCHEMA_VERSION           = 5;
 
 /**
  * Renvoie le nom complet (avec préfixe) de la table principale (approbations
@@ -60,6 +61,15 @@ function cordespace_event_gating_pending_table_name(): string {
 function cordespace_event_gating_magic_table_name(): string {
 	global $wpdb;
 	return $wpdb->prefix . CORDESPACE_EVENT_GATING_MAGIC_TABLE_SUFFIX;
+}
+
+/**
+ * Renvoie le nom complet de la table des utilisations de magic links
+ * (= journal de qui a réservé avec quel lien, pour audit).
+ */
+function cordespace_event_gating_magic_usages_table_name(): string {
+	global $wpdb;
+	return $wpdb->prefix . CORDESPACE_EVENT_GATING_MAGIC_USAGES_TABLE_SUFFIX;
 }
 
 /**
@@ -157,6 +167,25 @@ function cordespace_event_gating_install_table(): void {
 		KEY idx_expires_at (expires_at)
 	) {$charset};";
 	dbDelta( $magic_sql );
+
+	// Table v5 : journal des utilisations de magic links (= qui a réservé
+	// avec quel lien). Audit + UI admin.
+	$usages_table = cordespace_event_gating_magic_usages_table_name();
+	$usages_sql   = "CREATE TABLE {$usages_table} (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		magic_link_id BIGINT UNSIGNED NOT NULL,
+		amelia_booking_id BIGINT UNSIGNED NOT NULL,
+		amelia_customer_id BIGINT UNSIGNED NULL,
+		customer_email VARCHAR(191) NULL,
+		customer_first_name VARCHAR(100) NULL,
+		customer_last_name VARCHAR(100) NULL,
+		consumed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY  (id),
+		UNIQUE KEY uniq_link_booking (magic_link_id, amelia_booking_id),
+		KEY idx_magic_link_id (magic_link_id),
+		KEY idx_customer_email (customer_email)
+	) {$charset};";
+	dbDelta( $usages_sql );
 
 	update_option( 'cordespace_event_gating_schema_version', CORDESPACE_EVENT_GATING_SCHEMA_VERSION );
 }

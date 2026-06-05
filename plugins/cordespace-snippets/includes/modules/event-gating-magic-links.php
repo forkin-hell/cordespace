@@ -173,6 +173,68 @@ function cordespace_magic_link_list_all(): array {
 	return is_array( $rows ) ? $rows : [];
 }
 
+/**
+ * Enregistre dans la table des usages : qui a réservé avec ce magic link.
+ * UNIQUE (magic_link_id, amelia_booking_id) → idempotent si fire 2x.
+ *
+ * @param string $token       Token du magic link
+ * @param int    $booking_id  ID du booking Amelia
+ * @param array  $booking     Array du booking (a customerId, persons, etc.)
+ */
+function cordespace_magic_link_log_usage( string $token, int $booking_id, array $booking ): void {
+	global $wpdb;
+	$magic_table  = cordespace_event_gating_magic_table_name();
+	$usages_table = cordespace_event_gating_magic_usages_table_name();
+
+	$magic_id = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT id FROM {$magic_table} WHERE token = %s LIMIT 1",
+		$token
+	) );
+	if ( $magic_id <= 0 ) {
+		return;
+	}
+
+	// Récupère les infos client depuis Amelia (table amelia_users)
+	$customer_id = (int) ( $booking['customerId'] ?? 0 );
+	$customer    = $customer_id > 0
+		? $wpdb->get_row( $wpdb->prepare(
+			"SELECT email, firstName, lastName FROM {$wpdb->prefix}amelia_users WHERE id = %d LIMIT 1",
+			$customer_id
+		), ARRAY_A )
+		: null;
+
+	$wpdb->insert(
+		$usages_table,
+		[
+			'magic_link_id'        => $magic_id,
+			'amelia_booking_id'    => $booking_id,
+			'amelia_customer_id'   => $customer_id ?: null,
+			'customer_email'       => $customer ? (string) ( $customer['email'] ?? '' ) : '',
+			'customer_first_name'  => $customer ? (string) ( $customer['firstName'] ?? '' ) : '',
+			'customer_last_name'   => $customer ? (string) ( $customer['lastName'] ?? '' ) : '',
+		],
+		[ '%d', '%d', '%d', '%s', '%s', '%s' ]
+	);
+}
+
+/**
+ * Renvoie la liste des utilisations (qui a réservé) pour un magic link donné.
+ *
+ * @return array<int, array> Rows triées par consumed_at DESC
+ */
+function cordespace_magic_link_get_usages( int $magic_link_id ): array {
+	if ( $magic_link_id <= 0 ) {
+		return [];
+	}
+	global $wpdb;
+	$table = cordespace_event_gating_magic_usages_table_name();
+	$rows  = $wpdb->get_results( $wpdb->prepare(
+		"SELECT * FROM {$table} WHERE magic_link_id = %d ORDER BY consumed_at DESC",
+		$magic_link_id
+	), ARRAY_A );
+	return is_array( $rows ) ? $rows : [];
+}
+
 // ============================================================================
 // 2) Middleware : intercepte ?cordespace_magic=TOKEN dans l'URL
 // ============================================================================
@@ -373,6 +435,9 @@ function cordespace_magic_link_consume_on_amelia_booking( $booking, $event ): vo
 	cordespace_magic_link_consume( $token );
 	set_transient( $idempotence_key, $token, 7 * DAY_IN_SECONDS );
 
+	// Log de l'utilisation : qui a réservé avec ce lien (audit + UI admin)
+	cordespace_magic_link_log_usage( $token, $booking_id, $booking );
+
 	// Retire ce token de la WC session si présent (= ne peut plus etre
 	// reutilise pour un autre booking dans la meme session). Sauf si le
 	// magic link a max_uses > 1 et used_count < max_uses : dans ce cas
@@ -473,7 +538,7 @@ function cordespace_magic_link_render_admin_page(): void {
 		if ( $action === 'create' ) {
 			$event_id    = (int) ( $_POST['event_id'] ?? 0 );
 			$max_uses    = (int) ( $_POST['max_uses'] ?? 0 );
-			$expires_in  = sanitize_text_field( $_POST['expires_in'] ?? '' ); // '', '24h', '7d', '30d', 'never'
+			$expires_in  = sanitize_text_field( $_POST['expires_in'] ?? '' );
 			$notes       = sanitize_textarea_field( wp_unslash( $_POST['notes'] ?? '' ) );
 			$expires_at  = null;
 			if ( $expires_in === '24h' ) {
@@ -482,6 +547,16 @@ function cordespace_magic_link_render_admin_page(): void {
 				$expires_at = gmdate( 'Y-m-d H:i:s', time() + 7 * DAY_IN_SECONDS );
 			} elseif ( $expires_in === '30d' ) {
 				$expires_at = gmdate( 'Y-m-d H:i:s', time() + 30 * DAY_IN_SECONDS );
+			} elseif ( $expires_in === 'event_start' ) {
+				// Cherche la date de début de l'event Amelia : la 1ère periodStart
+				global $wpdb;
+				$start = $wpdb->get_var( $wpdb->prepare(
+					"SELECT MIN(periodStart) FROM {$wpdb->prefix}amelia_events_periods WHERE eventId = %d",
+					$event_id
+				) );
+				if ( $start ) {
+					$expires_at = (string) $start;
+				}
 			}
 			$result = cordespace_magic_link_create( $event_id, $max_uses, $expires_at, $notes, get_current_user_id() );
 			if ( $result ) {
@@ -601,12 +676,16 @@ function cordespace_magic_link_render_admin_page(): void {
 				<tr>
 					<th><label for="expires_in"><?php esc_html_e( 'Expiration', 'cordespace-snippets' ); ?></label></th>
 					<td>
-						<select name="expires_in" id="expires_in">
-							<option value="never"><?php esc_html_e( 'Jamais', 'cordespace-snippets' ); ?></option>
-							<option value="24h" selected><?php esc_html_e( 'Dans 24 heures', 'cordespace-snippets' ); ?></option>
-							<option value="7d"><?php esc_html_e( 'Dans 7 jours', 'cordespace-snippets' ); ?></option>
-							<option value="30d"><?php esc_html_e( 'Dans 30 jours', 'cordespace-snippets' ); ?></option>
+						<select name="expires_in" id="expires_in" style="min-width:300px;">
+							<option value="event_start" selected>📅 <?php esc_html_e( "Au début de l'événement (recommandé)", 'cordespace-snippets' ); ?></option>
+							<option value="24h">⏱️ <?php esc_html_e( 'Dans 24 heures', 'cordespace-snippets' ); ?></option>
+							<option value="7d">⏱️ <?php esc_html_e( 'Dans 7 jours', 'cordespace-snippets' ); ?></option>
+							<option value="30d">⏱️ <?php esc_html_e( 'Dans 30 jours', 'cordespace-snippets' ); ?></option>
+							<option value="never">♾️ <?php esc_html_e( 'Jamais', 'cordespace-snippets' ); ?></option>
 						</select>
+						<p class="description" id="cordespace-magic-expires-preview" style="margin-top:0.4rem; color:#555;">
+							<?php esc_html_e( "Sélectionne d'abord un event pour voir la date.", 'cordespace-snippets' ); ?>
+						</p>
 					</td>
 				</tr>
 				<tr>
@@ -631,7 +710,7 @@ function cordespace_magic_link_render_admin_page(): void {
 			<table class="widefat fixed">
 				<thead>
 					<tr>
-						<th style="width:30%;"><?php esc_html_e( 'Event', 'cordespace-snippets' ); ?></th>
+						<th style="width:25%;"><?php esc_html_e( 'Event', 'cordespace-snippets' ); ?></th>
 						<th><?php esc_html_e( 'Lien', 'cordespace-snippets' ); ?></th>
 						<th><?php esc_html_e( 'Utilisations', 'cordespace-snippets' ); ?></th>
 						<th><?php esc_html_e( 'Expiration', 'cordespace-snippets' ); ?></th>
@@ -652,6 +731,7 @@ function cordespace_magic_link_render_admin_page(): void {
 						$is_used_up  = (int) $link['max_uses'] > 0 && (int) $link['used_count'] >= (int) $link['max_uses'];
 						$state       = $is_revoked ? '🚫 Révoqué' : ( $is_expired ? '⏱️ Expiré' : ( $is_used_up ? '✅ Utilisé' : '🟢 Actif' ) );
 						$state_color = ( $is_revoked || $is_expired || $is_used_up ) ? '#999' : '#1a5c1a';
+						$usages      = cordespace_magic_link_get_usages( (int) $link['id'] );
 						?>
 						<tr>
 							<td><?php echo esc_html( $event_name ?: 'Event #' . $link['event_id'] ); ?></td>
@@ -659,7 +739,34 @@ function cordespace_magic_link_render_admin_page(): void {
 								<code class="cordespace-magic-url" style="display:block; word-break:break-all; font-size:0.85em; background:#f4f4f4; padding:0.3rem; border-radius:3px;"><?php echo esc_html( $magic_url ); ?></code>
 								<button type="button" class="button button-small cordespace-magic-copy-btn" data-url="<?php echo esc_attr( $magic_url ); ?>" style="margin-top:0.3rem;">📋 <?php esc_html_e( 'Copier', 'cordespace-snippets' ); ?></button>
 							</td>
-							<td><?php echo (int) $link['used_count']; ?> / <?php echo (int) $link['max_uses'] > 0 ? (int) $link['max_uses'] : '∞'; ?></td>
+							<td>
+								<?php echo (int) $link['used_count']; ?> / <?php echo (int) $link['max_uses'] > 0 ? (int) $link['max_uses'] : '∞'; ?>
+								<?php if ( ! empty( $usages ) ) : ?>
+									<details style="margin-top:0.4rem; font-size:0.85em;">
+										<summary style="cursor:pointer; color:#2c70b8;">
+											👤 <?php printf( esc_html__( '%d personne(s)', 'cordespace-snippets' ), count( $usages ) ); ?>
+										</summary>
+										<ul style="margin:0.4rem 0 0 0.5rem; padding-left:0.8rem; color:#555;">
+											<?php foreach ( $usages as $u ) :
+												$name  = trim( (string) ( $u['customer_first_name'] ?? '' ) . ' ' . (string) ( $u['customer_last_name'] ?? '' ) );
+												$email = (string) ( $u['customer_email'] ?? '' );
+												?>
+												<li style="margin-bottom:0.2rem;">
+													<?php if ( $name !== '' ) : ?>
+														<strong><?php echo esc_html( $name ); ?></strong><br>
+													<?php endif; ?>
+													<?php if ( $email !== '' ) : ?>
+														<a href="mailto:<?php echo esc_attr( $email ); ?>" style="color:#666;"><?php echo esc_html( $email ); ?></a><br>
+													<?php endif; ?>
+													<small style="color:#999;">
+														<?php echo esc_html( mysql2date( 'd M Y H:i', (string) $u['consumed_at'] ) ); ?>
+													</small>
+												</li>
+											<?php endforeach; ?>
+										</ul>
+									</details>
+								<?php endif; ?>
+							</td>
 							<td><?php echo $link['expires_at'] ? esc_html( mysql2date( 'd M Y H:i', $link['expires_at'] ) ) : '—'; ?></td>
 							<td style="color:<?php echo esc_attr( $state_color ); ?>;"><?php echo esc_html( $state ); ?></td>
 							<td style="font-size:0.85em; color:#555;"><?php echo esc_html( (string) ( $link['notes'] ?? '' ) ); ?></td>
@@ -747,6 +854,50 @@ function cordespace_magic_link_render_admin_page(): void {
 		}
 
 		$tagFilter.add($dateFilter).on('change', rebuild);
+
+		// === Aperçu de la date d'expiration ===
+		// Quand le user choisit un event + un mode d'expiration, on affiche
+		// la date résultante dans cordespace-magic-expires-preview.
+		function formatLocalDate(iso) {
+			if (!iso) return '';
+			var d = new Date(iso.replace(' ', 'T') + 'Z');
+			if (isNaN(d.getTime())) return iso;
+			var months = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+			var day = d.getDate(), month = months[d.getMonth()], year = d.getFullYear();
+			var h = String(d.getHours()).padStart(2, '0'), m = String(d.getMinutes()).padStart(2, '0');
+			return day + ' ' + month + ' ' + year + ' à ' + h + 'h' + m;
+		}
+		function updateExpiresPreview() {
+			var $preview = $('#cordespace-magic-expires-preview');
+			var mode = $('#expires_in').val();
+			var eventId = $sel.val();
+			if (!eventId) {
+				$preview.text("Sélectionne d'abord un event pour voir la date.");
+				return;
+			}
+			var opt = allOptions.find(function (o) { return String(o.value) === String(eventId); });
+			if (!opt) { $preview.text(''); return; }
+
+			var now = new Date();
+			var dateStr = '';
+			if (mode === 'never') {
+				dateStr = "Le lien n'expirera jamais.";
+			} else if (mode === 'event_start') {
+				if (opt.dateTs > 0) {
+					var iso = new Date(opt.dateTs * 1000).toISOString().slice(0, 19).replace('T', ' ');
+					dateStr = "Le lien expirera au début de l'event : " + formatLocalDate(iso);
+				} else {
+					dateStr = "⚠️ Cet event n'a pas de date — l'expiration sera désactivée (= jamais).";
+				}
+			} else {
+				var hours = mode === '24h' ? 24 : (mode === '7d' ? 24*7 : 24*30);
+				var futureDate = new Date(now.getTime() + hours * 3600 * 1000);
+				dateStr = "Le lien expirera le " + formatLocalDate(futureDate.toISOString().slice(0, 19).replace('T', ' '));
+			}
+			$preview.text(dateStr);
+		}
+		$('#expires_in, #event_id').on('change', updateExpiresPreview);
+		setTimeout(updateExpiresPreview, 100); // après rebuild initial
 
 		// === Bouton "Copier" sur les magic links existants ===
 		// Fallback robuste : navigator.clipboard ne marche QU'EN HTTPS ou
