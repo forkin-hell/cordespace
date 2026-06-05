@@ -37,31 +37,44 @@ defined( 'ABSPATH' ) || exit;
 // ============================================================================
 
 /**
- * Query Amelia : l'utilisateur·trice a-t-il/elle au moins UN appointment futur
- * (status 'approved' ou 'pending', bookingStart >= now) ?
+ * Query Amelia : renvoie la liste DÉTAILLÉE des appointments futurs de l'user
+ * (status approved/pending, bookingStart >= now).
  *
- * Fait 1 JOIN entre amelia_users (matché par externalId = ID WP user) →
- * amelia_customer_bookings → amelia_appointments. Aucun match → false.
- *
- * Note : NON CACHÉE. Utilise le wrapper _cached() ci-dessous pour les appels
- * répétés (page Mon compte se charge à chaque visite).
+ * @return array<int, array{
+ *   booking_id: int, appointment_id: int, service_name: string,
+ *   booking_start: string, booking_end: string, status: string, persons: int
+ * }>
  */
-function cordespace_user_has_upcoming_appointments_uncached( $user ): bool {
+function cordespace_user_get_upcoming_appointments_uncached( $user ): array {
 	if ( ! $user || empty( $user->ID ) ) {
-		return false;
+		return [];
 	}
 	global $wpdb;
-	$count = (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT COUNT(*)
+	$rows = $wpdb->get_results( $wpdb->prepare(
+		"SELECT b.id AS booking_id, a.id AS appointment_id,
+		        s.name AS service_name,
+		        a.bookingStart AS booking_start,
+		        a.bookingEnd AS booking_end,
+		        b.status, b.persons
 		   FROM {$wpdb->prefix}amelia_customer_bookings b
 		   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
 		   JOIN {$wpdb->prefix}amelia_appointments a ON a.id = b.appointmentId
+		   JOIN {$wpdb->prefix}amelia_services s ON s.id = a.serviceId
 		  WHERE u.externalId = %d
 		    AND a.bookingStart >= UTC_TIMESTAMP()
-		    AND b.status IN ('approved','pending')",
+		    AND b.status IN ('approved','pending')
+		  ORDER BY a.bookingStart ASC",
 		(int) $user->ID
-	) );
-	return $count > 0;
+	), ARRAY_A );
+	return is_array( $rows ) ? $rows : [];
+}
+
+/**
+ * Query Amelia (booleen) : l'utilisateur·trice a-t-il/elle au moins UN
+ * appointment futur ? Wrapper rapide qui réutilise le query détaillé.
+ */
+function cordespace_user_has_upcoming_appointments_uncached( $user ): bool {
+	return ! empty( cordespace_user_get_upcoming_appointments_uncached( $user ) );
 }
 
 /**
@@ -355,22 +368,56 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	<section id="section-cours" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
 		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📅 Mes prochains cours</h2>
 		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Tes inscriptions aux ateliers et événements Cordespace.</p>
-		<?php // Force le panneau à n'afficher QUE les events (pas d'onglet appointments/packages) ?>
-		<?php echo do_shortcode( '[ameliacustomerpanel events=1 appointments=0 packages=0]' ); ?>
+		<?php // Le panneau Amelia montre 3 onglets (Appointments / Events / Packages).
+		// Vu qu'on ne peut pas mettre 2 panneaux Amelia sur la même page (Vue.js
+		// SPA singleton + counter limité à 1001 dans Amelia), on garde une
+		// seule instance ici pour les events. Les réservations de salles sont
+		// rendues en HTML custom plus bas pour les avoir vraiment séparées. ?>
+		<?php echo do_shortcode( '[ameliacustomerpanel events=1]' ); ?>
 	</section>
 
 	<?php
 	// Section conditionnelle : réservations de salles (appointments Amelia).
-	// Affichée UNIQUEMENT si l'utilisateur·trice a au moins 1 résa future.
-	// Container visuel distinct (background gris doux pour distinguer des
-	// cours qui sont prioritaires).
+	// Render HTML CUSTOM (pas un panneau Amelia) parce qu'Amelia n'autorise
+	// pas 2 instances de [ameliacustomerpanel] sur la même page. Du coup on
+	// fait notre propre rendu simple en cards : date + heure + service +
+	// statut. Affiché UNIQUEMENT si has_upcoming_appts.
 	if ( $has_upcoming_appts ) :
+		$appts = cordespace_user_get_upcoming_appointments_uncached( $user );
 		?>
 		<section id="section-salles" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
 			<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🏠 Mes réservations de salles</h2>
 			<p style="color:#666;margin:0 0 1.2rem;font-size:0.92em;">Tes créneaux de location de salle à venir.</p>
-			<?php // Force le panneau à n'afficher QUE les appointments ?>
-			<?php echo do_shortcode( '[ameliacustomerpanel events=0 appointments=1 packages=0]' ); ?>
+
+			<div style="display:flex; flex-direction:column; gap:0.6rem;">
+			<?php foreach ( $appts as $a ) :
+				$start_ts    = strtotime( (string) $a['booking_start'] . ' UTC' );
+				$end_ts      = strtotime( (string) $a['booking_end'] . ' UTC' );
+				$date_label  = $start_ts ? date_i18n( 'l d F Y', $start_ts ) : '—';
+				$start_label = $start_ts ? date_i18n( 'H\hi', $start_ts ) : '';
+				$end_label   = $end_ts   ? date_i18n( 'H\hi', $end_ts )   : '';
+				$status_raw  = (string) ( $a['status'] ?? '' );
+				$status_label = $status_raw === 'approved'
+					? '✅ Confirmée'
+					: ( $status_raw === 'pending' ? '⏳ En attente' : '· ' . $status_raw );
+				$status_color = $status_raw === 'approved' ? '#1a5c1a' : '#7a5d00';
+				?>
+				<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem; align-items:center; padding:0.8rem 1rem; background:#fff; border:1px solid #e5e5e5; border-radius:6px;">
+					<div style="flex:1; min-width:200px;">
+						<div style="font-weight:600; color:#333; text-transform:capitalize;">
+							<?php echo esc_html( $date_label ); ?>
+						</div>
+						<div style="font-size:0.92em; color:#555; margin-top:0.15rem;">
+							🕘 <?php echo esc_html( $start_label ); ?><?php if ( $end_label !== '' ) : ?> – <?php echo esc_html( $end_label ); ?><?php endif; ?>
+							&nbsp;·&nbsp; <?php echo esc_html( (string) $a['service_name'] ); ?>
+						</div>
+					</div>
+					<div style="font-size:0.9em; color:<?php echo esc_attr( $status_color ); ?>;">
+						<?php echo esc_html( $status_label ); ?>
+					</div>
+				</div>
+			<?php endforeach; ?>
+			</div>
 		</section>
 	<?php endif; ?>
 
