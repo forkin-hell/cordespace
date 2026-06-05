@@ -459,19 +459,34 @@ function cordespace_magic_link_render_admin_page(): void {
 
 	$links = cordespace_magic_link_list_all();
 
-	// Liste des events Amelia futurs (pour le sélecteur)
+	// Liste des events Amelia avec leurs tags (pour le sélecteur + filtre)
 	global $wpdb;
 	$events = $wpdb->get_results(
-		"SELECT e.id, e.name, MIN(ep.periodStart) AS first_date
-		 FROM {$wpdb->prefix}amelia_events e
-		 LEFT JOIN {$wpdb->prefix}amelia_events_periods ep ON ep.eventId = e.id
-		 WHERE e.status = 'approved'
-		 GROUP BY e.id
-		 HAVING first_date IS NULL OR first_date >= UTC_TIMESTAMP() - INTERVAL 30 DAY
-		 ORDER BY first_date ASC, e.name ASC
-		 LIMIT 200",
+		"SELECT e.id, e.name,
+		        MIN(ep.periodStart) AS first_date,
+		        (SELECT GROUP_CONCAT(et.name SEPARATOR '|')
+		         FROM {$wpdb->prefix}amelia_events_tags et
+		         WHERE et.eventId = e.id) AS tags
+		   FROM {$wpdb->prefix}amelia_events e
+		   LEFT JOIN {$wpdb->prefix}amelia_events_periods ep ON ep.eventId = e.id
+		  WHERE e.status = 'approved'
+		  GROUP BY e.id
+		  ORDER BY first_date ASC, e.name ASC
+		  LIMIT 500",
 		ARRAY_A
 	);
+	$all_tags_for_filter = (array) $wpdb->get_col(
+		"SELECT DISTINCT name FROM {$wpdb->prefix}amelia_events_tags ORDER BY name ASC"
+	);
+
+	// Enqueue selectWoo (bundlé par WC) pour la recherche autocomplete
+	if ( wp_script_is( 'selectWoo', 'registered' ) ) {
+		wp_enqueue_script( 'selectWoo' );
+		wp_enqueue_style( 'select2' );
+	} elseif ( wp_script_is( 'select2', 'registered' ) ) {
+		wp_enqueue_script( 'select2' );
+		wp_enqueue_style( 'select2' );
+	}
 
 	?>
 	<div class="wrap">
@@ -490,14 +505,44 @@ function cordespace_magic_link_render_admin_page(): void {
 
 			<table class="form-table">
 				<tr>
+					<th><label><?php esc_html_e( 'Filtres', 'cordespace-snippets' ); ?></label></th>
+					<td>
+						<div style="display:flex; flex-wrap:wrap; gap:0.6rem 1rem; align-items:center;">
+							<select id="cordespace-magic-tag-filter" style="min-width:220px;">
+								<option value=""><?php esc_html_e( '🏷️ Tous les tags', 'cordespace-snippets' ); ?></option>
+								<?php foreach ( $all_tags_for_filter as $tag ) : ?>
+									<option value="<?php echo esc_attr( $tag ); ?>"><?php echo esc_html( $tag ); ?></option>
+								<?php endforeach; ?>
+							</select>
+							<select id="cordespace-magic-date-filter" style="min-width:220px;">
+								<option value="future"><?php esc_html_e( "📅 À venir uniquement", 'cordespace-snippets' ); ?></option>
+								<option value="month"><?php esc_html_e( '📅 30 prochains jours', 'cordespace-snippets' ); ?></option>
+								<option value="week"><?php esc_html_e( '📅 7 prochains jours', 'cordespace-snippets' ); ?></option>
+								<option value="all"><?php esc_html_e( '📅 Tous (incluant passés)', 'cordespace-snippets' ); ?></option>
+							</select>
+							<span class="description" style="font-size:0.85em; color:#666;">
+								<span id="cordespace-magic-count"><?php echo (int) count( $events ); ?></span> <?php esc_html_e( 'events affichés', 'cordespace-snippets' ); ?>
+							</span>
+						</div>
+					</td>
+				</tr>
+				<tr>
 					<th><label for="event_id"><?php esc_html_e( 'Event Amelia', 'cordespace-snippets' ); ?></label></th>
 					<td>
-						<select name="event_id" id="event_id" required>
-							<option value=""><?php esc_html_e( '— Choisir un event —', 'cordespace-snippets' ); ?></option>
-							<?php foreach ( $events as $e ) :
-								$date_str = $e['first_date'] ? ' (' . mysql2date( 'd M Y', $e['first_date'] ) . ')' : '';
+						<select name="event_id" id="event_id" required style="min-width:400px;">
+							<option value=""><?php esc_html_e( '— Tape pour chercher ou parcours… —', 'cordespace-snippets' ); ?></option>
+							<?php
+							$now_ts = time();
+							foreach ( $events as $e ) :
+								$date_str  = $e['first_date'] ? ' (' . mysql2date( 'd M Y', $e['first_date'] ) . ')' : '';
+								$date_iso  = (string) ( $e['first_date'] ?? '' );
+								$is_future = $date_iso === '' || strtotime( $date_iso ) >= $now_ts;
+								$tags_str  = (string) ( $e['tags'] ?? '' );
 								?>
-								<option value="<?php echo (int) $e['id']; ?>">
+								<option value="<?php echo (int) $e['id']; ?>"
+								        data-tags="<?php echo esc_attr( $tags_str ); ?>"
+								        data-date="<?php echo esc_attr( $date_iso ); ?>"
+								        data-future="<?php echo $is_future ? '1' : '0'; ?>">
 									<?php echo esc_html( $e['name'] . $date_str ); ?>
 								</option>
 							<?php endforeach; ?>
@@ -592,5 +637,84 @@ function cordespace_magic_link_render_admin_page(): void {
 			</table>
 		<?php endif; ?>
 	</div>
+
+	<script>
+	(function ($) {
+		'use strict';
+		var $sel       = $('#event_id');
+		var $tagFilter = $('#cordespace-magic-tag-filter');
+		var $dateFilter = $('#cordespace-magic-date-filter');
+		var $count     = $('#cordespace-magic-count');
+		if (!$sel.length) return;
+
+		// Snapshot des options originales (avant filtrage)
+		var allOptions = $sel.find('option').map(function () {
+			var $o = $(this);
+			var dateIso = $o.attr('data-date') || '';
+			var dateTs  = dateIso ? Date.parse(dateIso) / 1000 : 0;
+			return {
+				value:   $o.val(),
+				text:    $o.text(),
+				tags:    ($o.attr('data-tags') || '').split('|').filter(Boolean),
+				future:  $o.attr('data-future') === '1',
+				dateTs:  dateTs,
+			};
+		}).get();
+
+		function rebuild() {
+			var tag        = $tagFilter.val() || '';
+			var dateMode   = $dateFilter.val() || 'future';
+			var nowTs      = Date.now() / 1000;
+			var horizonTs  = nowTs;
+			if (dateMode === 'week')  horizonTs = nowTs + 7 * 86400;
+			if (dateMode === 'month') horizonTs = nowTs + 30 * 86400;
+
+			$sel.empty();
+			$sel.append('<option value=""><?php echo esc_js( __( '— Tape pour chercher ou parcours… —', 'cordespace-snippets' ) ); ?></option>');
+
+			var shown = 0;
+			allOptions.forEach(function (opt) {
+				if (!opt.value) return;
+				var matchTag = !tag || opt.tags.indexOf(tag) >= 0;
+				var matchDate = true;
+				if (dateMode === 'future') {
+					matchDate = opt.future;
+				} else if (dateMode === 'week' || dateMode === 'month') {
+					matchDate = opt.dateTs >= nowTs && opt.dateTs <= horizonTs;
+				} // 'all' = pas de filtre date
+				if (matchTag && matchDate) {
+					var $o = $('<option>').val(opt.value).text(opt.text);
+					$sel.append($o);
+					shown++;
+				}
+			});
+			$count.text(shown);
+
+			// Re-init selectWoo si dispo
+			if ($.fn.selectWoo) {
+				try { $sel.selectWoo('destroy'); } catch (e) {}
+				$sel.selectWoo({
+					placeholder: '<?php echo esc_js( __( '— Tape pour chercher ou parcours… —', 'cordespace-snippets' ) ); ?>',
+					allowClear: true,
+					width: '400px',
+				});
+			} else if ($.fn.select2) {
+				try { $sel.select2('destroy'); } catch (e) {}
+				$sel.select2({ placeholder: '— Choisir un event —', allowClear: true, width: '400px' });
+			}
+		}
+
+		$tagFilter.add($dateFilter).on('change', rebuild);
+
+		// selectWoo aussi sur le filtre tag (plus joli)
+		if ($.fn.selectWoo) {
+			$tagFilter.selectWoo({ width: '220px' });
+			$dateFilter.selectWoo({ minimumResultsForSearch: Infinity, width: '220px' });
+		}
+
+		// Init au load
+		rebuild();
+	})(jQuery);
+	</script>
 	<?php
 }
