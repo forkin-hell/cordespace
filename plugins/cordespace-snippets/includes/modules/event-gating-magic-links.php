@@ -381,9 +381,9 @@ add_action( 'admin_menu', 'cordespace_magic_link_register_admin_page', 50 );
 
 /**
  * Helper partagé : rend la barre d'onglets nav-tab native WP (comme Rapports)
- * permettant de switcher entre la liste des types et la page Magic Links.
+ * permettant de switcher entre la liste des bassins et la page liens de validation.
  *
- * @param string $current 'types' ou 'magic'
+ * @param string $current 'types' (= bassins) ou 'magic' (= liens individuels)
  */
 function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 	$types_url = admin_url( 'edit.php?post_type=cordespace_evtype' );
@@ -392,13 +392,21 @@ function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 	<nav class="nav-tab-wrapper" style="margin-top:1rem;">
 		<a href="<?php echo esc_url( $types_url ); ?>"
 		   class="nav-tab <?php echo $current === 'types' ? 'nav-tab-active' : ''; ?>">
-			🔒 <?php esc_html_e( "Types et bassins", 'cordespace-snippets' ); ?>
+			🏷️ <?php esc_html_e( "Par tag", 'cordespace-snippets' ); ?>
 		</a>
 		<a href="<?php echo esc_url( $magic_url ); ?>"
 		   class="nav-tab <?php echo $current === 'magic' ? 'nav-tab-active' : ''; ?>">
-			🔗 <?php esc_html_e( 'Magic Links', 'cordespace-snippets' ); ?>
+			🔗 <?php esc_html_e( 'Lien de validation', 'cordespace-snippets' ); ?>
 		</a>
 	</nav>
+
+	<p style="margin:1rem 0 1.5rem; padding:0.8rem 1rem; background:#f0f6fc; border-left:3px solid #2c70b8; font-size:0.95em; color:#1d4d7e;">
+		<strong>📋 <?php esc_html_e( "Deux façons de valider l'accès :", 'cordespace-snippets' ); ?></strong>
+		<br>
+		🏷️ <strong><?php esc_html_e( 'Par tag', 'cordespace-snippets' ); ?></strong> — <?php esc_html_e( "définis des bassins de membres regroupés par étiquette Amelia (ex : toutes les personnes validées « Semi-privé »).", 'cordespace-snippets' ); ?>
+		<br>
+		🔗 <strong><?php esc_html_e( 'Lien de validation', 'cordespace-snippets' ); ?></strong> — <?php esc_html_e( "génère un lien unique à envoyer à quelqu'un pour bypasser le gating sur 1 event Amelia spécifique (utile pour invité·es ponctuel·les).", 'cordespace-snippets' ); ?>
+	</p>
 	<?php
 }
 
@@ -490,7 +498,7 @@ function cordespace_magic_link_render_admin_page(): void {
 
 	?>
 	<div class="wrap">
-		<h1>🔗 <?php esc_html_e( 'Magic Links', 'cordespace-snippets' ); ?></h1>
+		<h1>🔗 <?php esc_html_e( 'Liens de validation', 'cordespace-snippets' ); ?></h1>
 		<?php cordespace_event_gating_render_main_nav_tabs( 'magic' ); ?>
 		<?php echo $message; // déjà sanitizé ?>
 

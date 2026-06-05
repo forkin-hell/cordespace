@@ -46,15 +46,15 @@ function cordespace_event_gating_register_cpt(): void {
 	register_post_type(
 		CORDESPACE_EVENT_TYPE_POST_TYPE,
 		[
-			'label'           => __( "Types d'événements à validation", 'cordespace-snippets' ),
+			'label'           => __( "Bassins de validation par tag", 'cordespace-snippets' ),
 			'labels'          => [
-				'name'          => __( "Types d'événements à validation", 'cordespace-snippets' ),
-				'singular_name' => __( "Type d'événement à validation", 'cordespace-snippets' ),
-				'add_new'       => __( 'Ajouter', 'cordespace-snippets' ),
-				'add_new_item'  => __( "Nouveau type", 'cordespace-snippets' ),
-				'edit_item'     => __( 'Éditer le type', 'cordespace-snippets' ),
-				'search_items'  => __( 'Rechercher un type', 'cordespace-snippets' ),
-				'not_found'     => __( 'Aucun type configuré.', 'cordespace-snippets' ),
+				'name'          => __( "Bassins de validation par tag", 'cordespace-snippets' ),
+				'singular_name' => __( "Bassin de validation", 'cordespace-snippets' ),
+				'add_new'       => __( 'Ajouter un bassin', 'cordespace-snippets' ),
+				'add_new_item'  => __( "Nouveau bassin", 'cordespace-snippets' ),
+				'edit_item'     => __( 'Éditer le bassin', 'cordespace-snippets' ),
+				'search_items'  => __( 'Rechercher un bassin', 'cordespace-snippets' ),
+				'not_found'     => __( 'Aucun bassin configuré.', 'cordespace-snippets' ),
 			],
 			'public'          => false,
 			'show_ui'         => true,
@@ -77,8 +77,8 @@ add_action( 'init', 'cordespace_event_gating_register_cpt' );
 function cordespace_event_gating_register_admin_submenu(): void {
 	add_submenu_page(
 		'cordespace-modules',
-		__( "Types d'événements à validation", 'cordespace-snippets' ),
-		__( 'Événements à validation', 'cordespace-snippets' ),
+		__( "Validation d'accès aux événements", 'cordespace-snippets' ),
+		__( "Validation d'accès", 'cordespace-snippets' ),
 		'edit_posts',
 		'edit.php?post_type=' . CORDESPACE_EVENT_TYPE_POST_TYPE
 	);
