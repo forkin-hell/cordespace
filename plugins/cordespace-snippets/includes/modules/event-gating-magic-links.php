@@ -380,40 +380,41 @@ function cordespace_magic_link_register_admin_page(): void {
 add_action( 'admin_menu', 'cordespace_magic_link_register_admin_page', 50 );
 
 /**
- * Ajoute un onglet "Magic Links" en haut de la liste des types
- * (à côté de "Tous" / "Publié" / etc., via filter views_edit-{cpt}).
+ * Helper partagé : rend la barre d'onglets nav-tab native WP (comme Rapports)
+ * permettant de switcher entre la liste des types et la page Magic Links.
+ *
+ * @param string $current 'types' ou 'magic'
  */
-function cordespace_magic_link_add_tab_to_type_list( $views ) {
-	$url   = admin_url( 'admin.php?page=' . CORDESPACE_MAGIC_LINKS_PAGE_SLUG );
-	$label = __( 'Magic Links', 'cordespace-snippets' );
-	$views['cordespace_magic_links'] = '<a href="' . esc_url( $url ) . '">🔗 ' . esc_html( $label ) . '</a>';
-	return $views;
-}
-add_filter( 'views_edit-cordespace_evtype', 'cordespace_magic_link_add_tab_to_type_list' );
-
-/**
- * Et inversement : un lien retour vers la liste des types depuis la page
- * Magic Links (via un sub-nav rendu en haut de la page).
- */
-function cordespace_magic_link_render_subnav( string $current ): void {
+function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 	$types_url = admin_url( 'edit.php?post_type=cordespace_evtype' );
 	$magic_url = admin_url( 'admin.php?page=' . CORDESPACE_MAGIC_LINKS_PAGE_SLUG );
 	?>
-	<ul class="subsubsub" style="float:none; margin-bottom:1rem;">
-		<li>
-			<a href="<?php echo esc_url( $types_url ); ?>" class="<?php echo $current === 'types' ? 'current' : ''; ?>">
-				🔒 <?php esc_html_e( "Types d'événements à validation", 'cordespace-snippets' ); ?>
-			</a> |
-		</li>
-		<li>
-			<a href="<?php echo esc_url( $magic_url ); ?>" class="<?php echo $current === 'magic' ? 'current' : ''; ?>">
-				🔗 <?php esc_html_e( 'Magic Links', 'cordespace-snippets' ); ?>
-			</a>
-		</li>
-	</ul>
-	<div style="clear:both;"></div>
+	<nav class="nav-tab-wrapper" style="margin-top:1rem;">
+		<a href="<?php echo esc_url( $types_url ); ?>"
+		   class="nav-tab <?php echo $current === 'types' ? 'nav-tab-active' : ''; ?>">
+			🔒 <?php esc_html_e( "Types et bassins", 'cordespace-snippets' ); ?>
+		</a>
+		<a href="<?php echo esc_url( $magic_url ); ?>"
+		   class="nav-tab <?php echo $current === 'magic' ? 'nav-tab-active' : ''; ?>">
+			🔗 <?php esc_html_e( 'Magic Links', 'cordespace-snippets' ); ?>
+		</a>
+	</nav>
 	<?php
 }
+
+/**
+ * Affiche les onglets en haut de la liste des types CPT (post_type =
+ * cordespace_evtype). Hook admin_notices : rend après le H1 mais avant
+ * la list table.
+ */
+function cordespace_event_gating_render_nav_on_cpt_list(): void {
+	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+	if ( ! $screen || $screen->id !== 'edit-cordespace_evtype' ) {
+		return;
+	}
+	cordespace_event_gating_render_main_nav_tabs( 'types' );
+}
+add_action( 'admin_notices', 'cordespace_event_gating_render_nav_on_cpt_list' );
 
 /**
  * Render de la page admin Magic Links.
@@ -475,7 +476,7 @@ function cordespace_magic_link_render_admin_page(): void {
 	?>
 	<div class="wrap">
 		<h1>🔗 <?php esc_html_e( 'Magic Links', 'cordespace-snippets' ); ?></h1>
-		<?php cordespace_magic_link_render_subnav( 'magic' ); ?>
+		<?php cordespace_event_gating_render_main_nav_tabs( 'magic' ); ?>
 		<?php echo $message; // déjà sanitizé ?>
 
 		<p style="background:#fff8e1; border-left:3px solid #fbc02d; padding:0.6rem 0.9rem; font-size:0.95em;">
