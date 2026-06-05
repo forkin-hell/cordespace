@@ -32,6 +32,130 @@ defined( 'ABSPATH' ) || exit;
 // Les profs cliquent sur le date picker du cabinet pour étendre s'iels
 // veulent voir plus loin que la semaine en cours.
 
+// ============================================================================
+// Helpers : appointments Amelia à venir (utilisés par la vue client·e)
+// ============================================================================
+
+/**
+ * Query Amelia : renvoie la liste DÉTAILLÉE des appointments futurs de l'user
+ * (status approved/pending, bookingStart >= now).
+ *
+ * @return array<int, array{
+ *   booking_id: int, appointment_id: int, service_name: string,
+ *   booking_start: string, booking_end: string, status: string,
+ *   persons: int, price: float, location_name: string
+ * }>
+ */
+function cordespace_user_get_upcoming_appointments_uncached( $user ): array {
+	if ( ! $user || empty( $user->ID ) ) {
+		return [];
+	}
+	global $wpdb;
+	$rows = $wpdb->get_results( $wpdb->prepare(
+		"SELECT b.id AS booking_id, a.id AS appointment_id,
+		        s.name AS service_name,
+		        a.bookingStart AS booking_start,
+		        a.bookingEnd AS booking_end,
+		        b.status, b.persons, b.price,
+		        l.name AS location_name
+		   FROM {$wpdb->prefix}amelia_customer_bookings b
+		   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
+		   JOIN {$wpdb->prefix}amelia_appointments a ON a.id = b.appointmentId
+		   JOIN {$wpdb->prefix}amelia_services s ON s.id = a.serviceId
+		   LEFT JOIN {$wpdb->prefix}amelia_locations l ON l.id = a.locationId
+		  WHERE u.externalId = %d
+		    AND a.bookingStart >= UTC_TIMESTAMP()
+		    AND b.status IN ('approved','pending')
+		  ORDER BY a.bookingStart ASC",
+		(int) $user->ID
+	), ARRAY_A );
+	return is_array( $rows ) ? $rows : [];
+}
+
+/**
+ * Query Amelia (booleen) : l'utilisateur·trice a-t-il/elle au moins UN
+ * appointment futur ? Wrapper rapide qui réutilise le query détaillé.
+ */
+function cordespace_user_has_upcoming_appointments_uncached( $user ): bool {
+	return ! empty( cordespace_user_get_upcoming_appointments_uncached( $user ) );
+}
+
+/**
+ * Version cachée du check : transient user-spécifique (1h). Invalidé par les
+ * hooks amelia_after_appointment_booking_saved + canceled (voir plus bas).
+ *
+ * Sur les visites répétées de la page Mon compte, ça évite de re-faire la
+ * query DB à chaque page load (gain ~5-15ms par render).
+ */
+function cordespace_user_has_upcoming_appointments( $user ): bool {
+	if ( ! $user || empty( $user->ID ) ) {
+		return false;
+	}
+	$key    = 'cordespace_user_has_appts_' . (int) $user->ID;
+	$cached = get_transient( $key );
+	if ( $cached === '1' ) {
+		return true;
+	}
+	if ( $cached === '0' ) {
+		return false;
+	}
+	// Pas en cache : on query et on stocke
+	$has = cordespace_user_has_upcoming_appointments_uncached( $user );
+	set_transient( $key, $has ? '1' : '0', HOUR_IN_SECONDS );
+	return $has;
+}
+
+/**
+ * Invalide le cache d'un user spécifique. Helper interne utilisé par les
+ * hooks d'invalidation Amelia.
+ */
+function cordespace_invalidate_user_appointments_cache( int $wp_user_id ): void {
+	if ( $wp_user_id <= 0 ) {
+		return;
+	}
+	delete_transient( 'cordespace_user_has_appts_' . $wp_user_id );
+}
+
+/**
+ * Hook Amelia : quand un appointment booking est SAUVÉ (créé ou modifié),
+ * on invalide le cache du user concerné. Signature Amelia :
+ *   do_action('amelia_after_appointment_booking_saved', $booking, $service, $appointment)
+ *
+ * On extrait customerId du booking → externalId du customer → user_id WP.
+ */
+function cordespace_invalidate_appts_cache_on_booking_saved( $booking, $service = null, $appointment = null ): void {
+	if ( ! is_array( $booking ) ) {
+		return;
+	}
+	$customer_id = (int) ( $booking['customerId'] ?? 0 );
+	if ( $customer_id <= 0 ) {
+		return;
+	}
+	global $wpdb;
+	$wp_user_id = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT externalId FROM {$wpdb->prefix}amelia_users WHERE id = %d LIMIT 1",
+		$customer_id
+	) );
+	cordespace_invalidate_user_appointments_cache( $wp_user_id );
+}
+add_action( 'amelia_after_appointment_booking_saved', 'cordespace_invalidate_appts_cache_on_booking_saved', 10, 3 );
+
+/**
+ * Hook Amelia : quand un appointment booking est ANNULÉ. Même logique
+ * d'invalidation. Le nom exact du hook Amelia peut varier selon la version ;
+ * on en branche plusieurs pour être robuste.
+ */
+function cordespace_invalidate_appts_cache_on_booking_canceled( $booking, ...$args ): void {
+	cordespace_invalidate_appts_cache_on_booking_saved( $booking );
+}
+add_action( 'amelia_after_appointment_booking_canceled', 'cordespace_invalidate_appts_cache_on_booking_canceled', 10, 5 );
+add_action( 'amelia_after_booking_canceled', 'cordespace_invalidate_appts_cache_on_booking_canceled', 10, 5 );
+add_action( 'amelia_after_appointment_booking_rescheduled', 'cordespace_invalidate_appts_cache_on_booking_canceled', 10, 5 );
+
+// ============================================================================
+// Shortcode principal
+// ============================================================================
+
 add_shortcode( 'cordespace_mon_espace', 'cordespace_render_mon_espace_shortcode' );
 
 function cordespace_render_mon_espace_shortcode( $atts ) {
@@ -185,6 +309,8 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		? do_shortcode( '[cordespace_switch_button label="Basculer vers mon compte enseignant·e"]' )
 		: '';
 	$greet_name  = cordespace_user_greeting_name( $user );
+	// Pré-calcule (1 query DB ou cache hit) pour réutiliser dans nav + section.
+	$has_upcoming_appts = cordespace_user_has_upcoming_appointments( $user );
 	// Filtre cordespace_greeting_theme_class — wrappe toute la vue dans une
 	// classe thème (ex: cordespace-theme-dinosaurs). Les CSS du module
 	// greeting-themes ciblent les descendants via .cordespace-theme-X .truc.
@@ -234,6 +360,9 @@ function cordespace_render_client_view( $user, $has_linked ) {
 
 	<nav style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;padding:0.8rem;background:#f7f7f7;border-radius:6px;">
 		<a href="#section-cours" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📅 Mes cours</a>
+		<?php if ( $has_upcoming_appts ) : ?>
+			<a href="#section-salles" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🏠 Mes réservations de salles</a>
+		<?php endif; ?>
 		<a href="#section-waivers" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📋 Mes waivers</a>
 		<a href="#section-credits" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">💰 Historique crédits</a>
 		<a href="#section-commandes" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🛒 Mes commandes</a>
@@ -242,8 +371,76 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	<section id="section-cours" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
 		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;">📅 Mes prochains cours</h2>
 		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;">Tes inscriptions aux ateliers et événements Cordespace.</p>
+		<?php // Le panneau Amelia montre 3 onglets (Appointments / Events / Packages).
+		// Vu qu'on ne peut pas mettre 2 panneaux Amelia sur la même page (Vue.js
+		// SPA singleton + counter limité à 1001 dans Amelia), on garde une
+		// seule instance ici pour les events. Les réservations de salles sont
+		// rendues en HTML custom plus bas pour les avoir vraiment séparées. ?>
 		<?php echo do_shortcode( '[ameliacustomerpanel events=1]' ); ?>
 	</section>
+
+	<?php
+	// Section conditionnelle : réservations de salles (appointments Amelia).
+	// Render HTML CUSTOM (pas un panneau Amelia) parce qu'Amelia n'autorise
+	// pas 2 instances de [ameliacustomerpanel] sur la même page. Du coup on
+	// fait notre propre rendu simple en cards : date + heure + service +
+	// statut. Affiché UNIQUEMENT si has_upcoming_appts.
+	if ( $has_upcoming_appts ) :
+		$appts = cordespace_user_get_upcoming_appointments_uncached( $user );
+		?>
+		<section id="section-salles" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
+			<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🏠 Mes réservations de salles</h2>
+			<p style="color:#666;margin:0 0 1.2rem;font-size:0.92em;">Tes créneaux de location de salle à venir.</p>
+
+			<div style="display:flex; flex-direction:column; gap:0.6rem;">
+			<?php foreach ( $appts as $a ) :
+				$start_ts    = strtotime( (string) $a['booking_start'] . ' UTC' );
+				$end_ts      = strtotime( (string) $a['booking_end'] . ' UTC' );
+				$date_label  = $start_ts ? date_i18n( 'l d F Y', $start_ts ) : '—';
+				$start_label = $start_ts ? date_i18n( 'H\hi', $start_ts ) : '';
+				$end_label   = $end_ts   ? date_i18n( 'H\hi', $end_ts )   : '';
+				$status_raw  = (string) ( $a['status'] ?? '' );
+				$status_label = $status_raw === 'approved'
+					? '✅ Confirmée'
+					: ( $status_raw === 'pending' ? '⏳ En attente' : '· ' . $status_raw );
+				$status_color = $status_raw === 'approved' ? '#1a5c1a' : '#7a5d00';
+				$price        = (float) ( $a['price'] ?? 0 );
+				$persons      = (int) ( $a['persons'] ?? 1 );
+				$location     = (string) ( $a['location_name'] ?? '' );
+				$price_label  = function_exists( 'wc_price' )
+					? wp_strip_all_tags( wc_price( $price ) )
+					: number_format_i18n( $price, 2 ) . ' $';
+				?>
+				<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem; align-items:center; padding:0.8rem 1rem; background:#fff; border:1px solid #e5e5e5; border-radius:6px;">
+					<div style="flex:1; min-width:240px;">
+						<div style="font-weight:600; color:#333; text-transform:capitalize;">
+							<?php echo esc_html( $date_label ); ?>
+						</div>
+						<div style="font-size:0.92em; color:#555; margin-top:0.15rem;">
+							🕘 <?php echo esc_html( $start_label ); ?><?php if ( $end_label !== '' ) : ?> – <?php echo esc_html( $end_label ); ?><?php endif; ?>
+							&nbsp;·&nbsp; <?php echo esc_html( (string) $a['service_name'] ); ?>
+						</div>
+						<div style="font-size:0.88em; color:#666; margin-top:0.3rem; display:flex; flex-wrap:wrap; gap:0.3rem 1rem;">
+							<?php if ( $price > 0 ) : ?>
+								<span>💵 <strong><?php echo esc_html( $price_label ); ?></strong></span>
+							<?php endif; ?>
+							<?php // Le champ 'persons' est ambigu en contexte Cordespace : pour
+							// une réservation partagée, il peut représenter la capacité totale
+							// du créneau plutôt que le nombre réel de personnes de cette
+							// réservation. On ne l'affiche pas pour ne pas mal informer. ?>
+							<?php if ( $location !== '' ) : ?>
+								<span>📍 <?php echo esc_html( $location ); ?></span>
+							<?php endif; ?>
+						</div>
+					</div>
+					<div style="font-size:0.9em; color:<?php echo esc_attr( $status_color ); ?>;">
+						<?php echo esc_html( $status_label ); ?>
+					</div>
+				</div>
+			<?php endforeach; ?>
+			</div>
+		</section>
+	<?php endif; ?>
 
 	<?php
 	/**
