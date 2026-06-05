@@ -335,78 +335,58 @@ function cordespace_magic_link_user_has_valid_pass_for_event( int $event_id ): b
 // ============================================================================
 
 /**
- * Logique partagée de consume pour un order : inspecte chaque item event,
- * cherche un token magic actif, incrémente used_count, log dans l'order meta.
- * Retire aussi le token de la WC session pour qu'il ne soit pas re-utilisé.
+ * Hook PRINCIPAL : amelia_after_event_booking_saved.
  *
- * Appelée depuis 2 hooks différents (classic + Store API).
+ * Ce hook fire QUEL QUE SOIT le canal de booking :
+ *   - WooCommerce checkout classique
+ *   - WooCommerce Blocks checkout (Store API)
+ *   - Paiement sur place / cash on delivery
+ *   - Amelia direct (sans WC, ex: events gratuits)
+ *
+ * → C'est LE bon point d'ancrage pour consume le magic link.
+ *
+ * @param array $booking Array du booking Amelia (id, customerId, persons, etc.)
+ * @param array $event   Array de l'event Amelia (id, name, etc.)
  */
-function cordespace_magic_link_consume_for_order( $order ): void {
-	if ( ! $order || ! method_exists( $order, 'get_items' ) ) {
+function cordespace_magic_link_consume_on_amelia_booking( $booking, $event ): void {
+	if ( ! is_array( $booking ) || ! is_array( $event ) ) {
 		return;
 	}
-	$consumed_tokens = [];
-	$consumed_events = [];
-	foreach ( $order->get_items() as $item ) {
-		$amelia = $item->get_meta( 'ameliabooking', true );
-		if ( ! is_array( $amelia ) ) {
-			continue;
-		}
-		if ( ( $amelia['type'] ?? '' ) !== 'event' ) {
-			continue;
-		}
-		$event_id = (int) ( $amelia['eventId'] ?? 0 );
-		if ( $event_id <= 0 ) {
-			continue;
-		}
-		// Vérifie si on a déjà consume pour cet order (idempotence si hook
-		// fire 2 fois) via order meta.
-		if ( $order->get_meta( '_cordespace_magic_consumed_' . $event_id, true ) ) {
-			continue;
-		}
-		$token = cordespace_magic_link_get_token_for_event( $event_id );
-		if ( $token === null || in_array( $token, $consumed_tokens, true ) ) {
-			continue;
-		}
-		cordespace_magic_link_consume( $token );
-		$consumed_tokens[] = $token;
-		$consumed_events[] = $event_id;
-		$order->update_meta_data( '_cordespace_magic_consumed_' . $event_id, $token );
+	$booking_id = (int) ( $booking['id'] ?? 0 );
+	$event_id   = (int) ( $event['id'] ?? 0 );
+	if ( $booking_id <= 0 || $event_id <= 0 ) {
+		return;
 	}
 
-	if ( ! empty( $consumed_tokens ) ) {
-		$order->save();
+	// Idempotence : si on a déjà consume pour ce booking_id précis, on skip
+	// (utile si le hook fire plusieurs fois pour le même booking, ex : update).
+	$idempotence_key = 'cordespace_magic_consumed_booking_' . $booking_id;
+	if ( get_transient( $idempotence_key ) ) {
+		return;
 	}
 
-	// Nettoie la WC session des tokens utilisés
-	if ( ! empty( $consumed_events ) && function_exists( 'WC' ) && WC() && WC()->session ) {
+	$token = cordespace_magic_link_get_token_for_event( $event_id );
+	if ( $token === null ) {
+		return;
+	}
+
+	cordespace_magic_link_consume( $token );
+	set_transient( $idempotence_key, $token, 7 * DAY_IN_SECONDS );
+
+	// Retire ce token de la WC session si présent (= ne peut plus etre
+	// reutilise pour un autre booking dans la meme session). Sauf si le
+	// magic link a max_uses > 1 et used_count < max_uses : dans ce cas
+	// on garde le token actif pour que la personne puisse refaire un
+	// achat dans la meme session.
+	$row = cordespace_magic_link_get_if_valid( $token, $event_id );
+	if ( $row === null && function_exists( 'WC' ) && WC() && WC()->session ) {
+		// Le link est maintenant épuisé/expiré : on nettoie la session
 		$tokens = (array) WC()->session->get( 'cordespace_magic_tokens', [] );
-		foreach ( $consumed_events as $eid ) {
-			unset( $tokens[ $eid ] );
-		}
+		unset( $tokens[ $event_id ] );
 		WC()->session->set( 'cordespace_magic_tokens', $tokens );
 	}
 }
-
-/**
- * Hook 1 : checkout classique (non-Blocks).
- */
-function cordespace_magic_link_consume_on_classic_checkout( int $order_id, array $posted_data, $order = null ): void {
-	if ( ! $order ) {
-		$order = wc_get_order( $order_id );
-	}
-	cordespace_magic_link_consume_for_order( $order );
-}
-add_action( 'woocommerce_checkout_order_processed', 'cordespace_magic_link_consume_on_classic_checkout', 10, 3 );
-
-/**
- * Hook 2 : checkout WC Blocks via Store API. Le signal d'order finalisé arrive
- * via woocommerce_store_api_checkout_order_processed avec en argument l'order.
- */
-function cordespace_magic_link_consume_on_store_api_checkout( $order ): void {
-	cordespace_magic_link_consume_for_order( $order );
-}
-add_action( 'woocommerce_store_api_checkout_order_processed', 'cordespace_magic_link_consume_on_store_api_checkout', 10, 1 );
+add_action( 'amelia_after_event_booking_saved', 'cordespace_magic_link_consume_on_amelia_booking', 10, 2 );
 
 // ============================================================================
 // 5) UI admin : onglet "Magic Links" sous "Événements à validation"
