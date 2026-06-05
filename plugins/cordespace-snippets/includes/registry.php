@@ -296,6 +296,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-checkout-blocker.php',
 			'default_active'  => true,
 		],
+		'event-gating.frontend-block' => [
+			'label'           => 'Masquage bouton « Réserver » côté frontend (events gratuits)',
+			'description'     => "Masque le bouton « Réservez votre place » sur le calendrier et la page event Amelia pour les events gated dont l'user n'est pas validé. Remplace par un encadré rouge « Validation requise » avec le titre du bassin et un bouton « En savoir plus » vers son URL d'info. Indispensable pour les events GRATUITS : Amelia bypass WC pour eux, donc le checkout-blocker (qui agit au cart/checkout) ne fire jamais. Architecture : PHP collecte les events gated + leurs bassins → injecté en JSON → JS vanilla (MutationObserver pour le SPA Vue d'Amelia) cache les boutons et insère l'encadré. DOM construit via createElement + textContent uniquement (XSS-safe).",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-frontend-block.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-frontend-block.php',
+			'default_active'  => true,
+		],
 		'styles.wc-checkout-layout' => [
 			'label'           => 'Marges WC panier / checkout',
 			'description'     => 'Ajoute des marges latérales et un max-width sur les pages panier et checkout WooCommerce. Évite que le contenu colle aux bords du viewport sur grands écrans.',
