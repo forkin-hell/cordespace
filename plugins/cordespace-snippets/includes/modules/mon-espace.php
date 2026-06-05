@@ -42,7 +42,8 @@ defined( 'ABSPATH' ) || exit;
  *
  * @return array<int, array{
  *   booking_id: int, appointment_id: int, service_name: string,
- *   booking_start: string, booking_end: string, status: string, persons: int
+ *   booking_start: string, booking_end: string, status: string,
+ *   persons: int, price: float, location_name: string
  * }>
  */
 function cordespace_user_get_upcoming_appointments_uncached( $user ): array {
@@ -55,11 +56,13 @@ function cordespace_user_get_upcoming_appointments_uncached( $user ): array {
 		        s.name AS service_name,
 		        a.bookingStart AS booking_start,
 		        a.bookingEnd AS booking_end,
-		        b.status, b.persons
+		        b.status, b.persons, b.price,
+		        l.name AS location_name
 		   FROM {$wpdb->prefix}amelia_customer_bookings b
 		   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
 		   JOIN {$wpdb->prefix}amelia_appointments a ON a.id = b.appointmentId
 		   JOIN {$wpdb->prefix}amelia_services s ON s.id = a.serviceId
+		   LEFT JOIN {$wpdb->prefix}amelia_locations l ON l.id = a.locationId
 		  WHERE u.externalId = %d
 		    AND a.bookingStart >= UTC_TIMESTAMP()
 		    AND b.status IN ('approved','pending')
@@ -401,15 +404,32 @@ function cordespace_render_client_view( $user, $has_linked ) {
 					? '✅ Confirmée'
 					: ( $status_raw === 'pending' ? '⏳ En attente' : '· ' . $status_raw );
 				$status_color = $status_raw === 'approved' ? '#1a5c1a' : '#7a5d00';
+				$price        = (float) ( $a['price'] ?? 0 );
+				$persons      = (int) ( $a['persons'] ?? 1 );
+				$location     = (string) ( $a['location_name'] ?? '' );
+				$price_label  = function_exists( 'wc_price' )
+					? wp_strip_all_tags( wc_price( $price ) )
+					: number_format_i18n( $price, 2 ) . ' $';
 				?>
 				<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem; align-items:center; padding:0.8rem 1rem; background:#fff; border:1px solid #e5e5e5; border-radius:6px;">
-					<div style="flex:1; min-width:200px;">
+					<div style="flex:1; min-width:240px;">
 						<div style="font-weight:600; color:#333; text-transform:capitalize;">
 							<?php echo esc_html( $date_label ); ?>
 						</div>
 						<div style="font-size:0.92em; color:#555; margin-top:0.15rem;">
 							🕘 <?php echo esc_html( $start_label ); ?><?php if ( $end_label !== '' ) : ?> – <?php echo esc_html( $end_label ); ?><?php endif; ?>
 							&nbsp;·&nbsp; <?php echo esc_html( (string) $a['service_name'] ); ?>
+						</div>
+						<div style="font-size:0.88em; color:#666; margin-top:0.3rem; display:flex; flex-wrap:wrap; gap:0.3rem 1rem;">
+							<?php if ( $price > 0 ) : ?>
+								<span>💵 <strong><?php echo esc_html( $price_label ); ?></strong></span>
+							<?php endif; ?>
+							<?php if ( $persons > 1 ) : ?>
+								<span>👥 <?php printf( esc_html__( '%d personnes', 'cordespace-snippets' ), $persons ); ?></span>
+							<?php endif; ?>
+							<?php if ( $location !== '' ) : ?>
+								<span>📍 <?php echo esc_html( $location ); ?></span>
+							<?php endif; ?>
 						</div>
 					</div>
 					<div style="font-size:0.9em; color:<?php echo esc_attr( $status_color ); ?>;">
