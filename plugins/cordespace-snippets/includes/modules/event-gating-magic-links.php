@@ -622,8 +622,8 @@ function cordespace_magic_link_render_admin_page(): void {
 						<tr>
 							<td><?php echo esc_html( $event_name ?: 'Event #' . $link['event_id'] ); ?></td>
 							<td>
-								<code style="display:block; word-break:break-all; font-size:0.85em; background:#f4f4f4; padding:0.3rem; border-radius:3px;"><?php echo esc_html( $magic_url ); ?></code>
-								<button type="button" class="button button-small" onclick="navigator.clipboard.writeText('<?php echo esc_attr( $magic_url ); ?>'); this.textContent = '✓ Copié';" style="margin-top:0.3rem;">📋 <?php esc_html_e( 'Copier', 'cordespace-snippets' ); ?></button>
+								<code class="cordespace-magic-url" style="display:block; word-break:break-all; font-size:0.85em; background:#f4f4f4; padding:0.3rem; border-radius:3px;"><?php echo esc_html( $magic_url ); ?></code>
+								<button type="button" class="button button-small cordespace-magic-copy-btn" data-url="<?php echo esc_attr( $magic_url ); ?>" style="margin-top:0.3rem;">📋 <?php esc_html_e( 'Copier', 'cordespace-snippets' ); ?></button>
 							</td>
 							<td><?php echo (int) $link['used_count']; ?> / <?php echo (int) $link['max_uses'] > 0 ? (int) $link['max_uses'] : '∞'; ?></td>
 							<td><?php echo $link['expires_at'] ? esc_html( mysql2date( 'd M Y H:i', $link['expires_at'] ) ) : '—'; ?></td>
@@ -713,6 +713,55 @@ function cordespace_magic_link_render_admin_page(): void {
 		}
 
 		$tagFilter.add($dateFilter).on('change', rebuild);
+
+		// === Bouton "Copier" sur les magic links existants ===
+		// Fallback robuste : navigator.clipboard ne marche QU'EN HTTPS ou
+		// localhost. En HTTP (genre prod-fresh.local), on tombe sur l'API
+		// legacy execCommand('copy') via un textarea temporaire.
+		function copyToClipboard(text) {
+			// Tentative moderne (HTTPS / localhost)
+			if (navigator.clipboard && window.isSecureContext) {
+				return navigator.clipboard.writeText(text);
+			}
+			// Fallback legacy
+			return new Promise(function (resolve, reject) {
+				var ta = document.createElement('textarea');
+				ta.value = text;
+				ta.style.position = 'fixed';
+				ta.style.opacity = '0';
+				document.body.appendChild(ta);
+				ta.focus();
+				ta.select();
+				try {
+					if (document.execCommand('copy')) {
+						resolve();
+					} else {
+						reject(new Error('execCommand returned false'));
+					}
+				} catch (e) {
+					reject(e);
+				} finally {
+					document.body.removeChild(ta);
+				}
+			});
+		}
+
+		$(document).on('click', '.cordespace-magic-copy-btn', function () {
+			var $btn = $(this);
+			var url  = $btn.data('url') || '';
+			if (!url) return;
+			var originalLabel = $btn.html();
+			copyToClipboard(url).then(function () {
+				$btn.html('✅ Copié').css('background', '#e8f5e9');
+				setTimeout(function () {
+					$btn.html(originalLabel).css('background', '');
+				}, 1500);
+			}).catch(function () {
+				// Echec total des 2 méthodes : on prompt pour permettre une
+				// copie manuelle (au moins, le texte est sélectionné).
+				window.prompt('Copie manuelle (Ctrl+C / Cmd+C) :', url);
+			});
+		});
 
 		// selectWoo aussi sur le filtre tag (plus joli)
 		if ($.fn.selectWoo) {
