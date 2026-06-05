@@ -297,14 +297,14 @@ return [
 			'default_active'  => true,
 		],
 		'event-gating.frontend-block' => [
-			'label'           => 'Masquage bouton « Réserver » côté frontend (events gratuits)',
-			'description'     => "Masque le bouton « Réservez votre place » sur le calendrier et la page event Amelia pour les events gated dont l'user n'est pas validé. Remplace par un encadré rouge « Validation requise » avec le titre du bassin et un bouton « En savoir plus » vers son URL d'info. Indispensable pour les events GRATUITS : Amelia bypass WC pour eux, donc le checkout-blocker (qui agit au cart/checkout) ne fire jamais. Architecture : PHP collecte les events gated + leurs bassins → injecté en JSON → JS vanilla (MutationObserver pour le SPA Vue d'Amelia) cache les boutons et insère l'encadré. DOM construit via createElement + textContent uniquement (XSS-safe).",
+			'label'           => 'Masquage bouton « Réserver » côté frontend (DEPRECATED)',
+			'description'     => "⚠️ DÉSACTIVÉ par défaut, gardé pour rétro-compat. Préférer la solution propre : aller dans Amelia → Settings → Payments, activer WooCommerce, et décocher « Use on-site if free » (ou équivalent). Avec ce setting OFF, même les events gratuits passent par WC, donc event-gating.checkout-blocker fait tout le boulot avec sa belle banderole rouge cohérente. Le présent module masquait le bouton « Réserver » directement dans le DOM Amelia via MutationObserver, mais le CSS était écrasé par les styles scoped de la modale Vue d'Amelia, rendant l'encadré moche/illisible. Activer ce module uniquement si on ne peut PAS modifier le setting Amelia (rare).",
 			'category'        => 'event-gating',
 			'type'            => 'php',
 			'file'            => 'includes/modules/event-gating-frontend-block.php',
 			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-frontend-block.php',
-			'default_active'  => true,
+			'default_active'  => false,
 		],
 		'styles.wc-checkout-layout' => [
 			'label'           => 'Marges WC panier / checkout',
