@@ -162,12 +162,20 @@ function cordespace_evgating_collect_gated_events_for_frontend(): array {
 			if ( ! $type_post || $type_post->post_status !== 'publish' ) {
 				continue;
 			}
+			// Contenu WYSIWYG du bassin (= le texte d'explication que Tess a
+			// rédigé). Sanitisé via wp_kses_post + wpautop côté PHP. Côté JS,
+			// il sera réinjecté via DOMParser (PAS d'innerHTML littéral, donc
+			// XSS-safe par le double filtre kses + parser sandboxé).
+			$content_raw  = (string) $type_post->post_content;
+			$content_html = $content_raw !== '' ? wpautop( wp_kses_post( $content_raw ) ) : '';
+
 			$types_info[] = [
-				'id'       => (int) $type_id,
-				'title'    => (string) get_the_title( $type_post ),
-				'info_url' => function_exists( 'cordespace_event_gating_get_info_url' )
+				'id'           => (int) $type_id,
+				'title'        => (string) get_the_title( $type_post ),
+				'info_url'     => function_exists( 'cordespace_event_gating_get_info_url' )
 					? (string) cordespace_event_gating_get_info_url( (int) $type_id )
 					: '',
+				'content_html' => $content_html,
 			];
 		}
 
@@ -279,17 +287,32 @@ function cordespace_evgating_frontend_block_js(): string {
 		return null;
 	}
 
-	// Remonte les ancêtres jusqu'à trouver un container qui contient
-	// un titre matchant un gated event. Retourne {card, match} ou null.
+	// Remonte les ancêtres jusqu'à trouver UN SEUL titre. Pourquoi pas plus :
+	// si on remonte trop loin (jusqu'au container global de la liste), on
+	// risque de tomber sur le titre d'un AUTRE event de la liste qui matche
+	// un gated, et appliquer à tort l'encadré sur des events non-gated.
+	//
+	// Algo :
+	//   - Premier ancêtre qui contient AU MOINS UN h1-h6 → on s'arrête là.
+	//   - Si exactement 1 titre : on le teste vs liste gated. Match → gated,
+	//     pas match → non gated (mais on n'essaie PAS de remonter plus haut).
+	//   - Si > 1 titre : on est au-dessus de la card individuelle, on
+	//     considère « non gated par nous » et on n'agit pas.
+	//
+	// On utilise uniquement les balises sémantiques h1-h6 (pas les classes
+	// fourre-tout *=title qui généraient des faux positifs sur les sous-
+	// éléments style "Disponible", "À partir de…").
 	function findCardForButton(btn) {
-		var titleSelectors = 'h1, h2, h3, h4, h5, [class*="title" i], [class*="name" i], [class*="event-name" i]';
 		var node = btn.parentElement;
 		var depth = 0;
-		while (node && node !== document.body && depth < 12) {
-			var titleEls = node.querySelectorAll(titleSelectors);
-			for (var i = 0; i < titleEls.length; i++) {
-				var m = matchGated(titleEls[i].textContent || '');
-				if (m) return { card: node, match: m };
+		while (node && node !== document.body && depth < 10) {
+			var titles = node.querySelectorAll('h1, h2, h3, h4, h5, h6');
+			if (titles.length > 0) {
+				if (titles.length === 1) {
+					var m = matchGated(titles[0].textContent || '');
+					if (m) return { card: node, match: m };
+				}
+				return null; // 1 titre non matché OU plusieurs titres → stop
 			}
 			node = node.parentElement;
 			depth++;
@@ -297,8 +320,27 @@ function cordespace_evgating_frontend_block_js(): string {
 		return null;
 	}
 
+	// Parse une string HTML en nodes via DOMParser (sandbox du navigateur).
+	// Le content_html est déjà passé par wp_kses_post() côté PHP, donc le
+	// risque XSS est éliminé en amont. DOMParser + appendChild remplace
+	// innerHTML pour respecter notre policy « pas d'innerHTML littéral ».
+	function htmlToFragment(html) {
+		var frag = document.createDocumentFragment();
+		if (!html) return frag;
+		try {
+			var doc = new DOMParser().parseFromString('<div>' + html + '</div>', 'text/html');
+			var src = doc.body && doc.body.firstChild;
+			if (!src) return frag;
+			while (src.firstChild) {
+				frag.appendChild(src.firstChild);
+			}
+		} catch (e) { /* fallback : fragment vide */ }
+		return frag;
+	}
+
 	// Construit l'encadré « Validation requise » via DOM methods uniquement.
-	// AUCUN innerHTML : XSS-safe par construction.
+	// Pas d'innerHTML : XSS-safe par construction (DOMParser est sandboxé,
+	// kses côté PHP filtre déjà les balises dangereuses).
 	function buildBox(matchData) {
 		var box = document.createElement('div');
 		box.className = 'cordespace-evgating-frontend-block';
@@ -320,6 +362,15 @@ function cordespace_evgating_frontend_block_js(): string {
 			typeTitle.className = 'ceb-type-title';
 			typeTitle.textContent = i18n.lockIcon + ' ' + (type.title || '');
 			typeBox.appendChild(typeTitle);
+
+			// Contenu WYSIWYG du bassin (le texte que Tess a rédigé).
+			// Injecté via DOMParser (sandbox) → pas d'innerHTML.
+			if (type.content_html) {
+				var contentWrap = document.createElement('div');
+				contentWrap.className = 'ceb-type-content';
+				contentWrap.appendChild(htmlToFragment(type.content_html));
+				typeBox.appendChild(contentWrap);
+			}
 
 			if (type.info_url) {
 				var btn = document.createElement('a');
@@ -435,6 +486,24 @@ function cordespace_evgating_frontend_block_css(): string {
 .cordespace-evgating-frontend-block .ceb-type-title {
 	font-weight: 600;
 	margin: 0 0 0.4rem;
+}
+.cordespace-evgating-frontend-block .ceb-type-content {
+	margin: 0.3rem 0 0.5rem;
+	font-size: 0.92em;
+	line-height: 1.45;
+}
+.cordespace-evgating-frontend-block .ceb-type-content p {
+	margin: 0 0 0.4rem;
+}
+.cordespace-evgating-frontend-block .ceb-type-content p:last-child {
+	margin-bottom: 0;
+}
+.cordespace-evgating-frontend-block .ceb-type-content em {
+	font-style: italic;
+}
+.cordespace-evgating-frontend-block .ceb-type-content a {
+	color: #5c1c1c;
+	text-decoration: underline;
 }
 .cordespace-evgating-frontend-block .ceb-info-btn {
 	display: inline-block;
