@@ -222,7 +222,7 @@ function cordespace_evgating_is_user_approved( int $user_id, int $event_type_id 
  * besoin d'être aussi listé·e dans le type « Semi-privé (performances) » :
  * l'event a 2 types applicables, et il suffit que l'user soit dans 1 des 2.
  *
- * @return array<string, array{name: string, kind: 'event'|'appointment', applicable_types: int[]}>
+ * @return array<string, array{name: string, kind: 'event'|'appointment'|'package', applicable_types: int[]}>
  *               Indexé par une clé unique de l'item (event_<id> ou appt_<svcid>).
  *               Vide si rien ne bloque.
  */
@@ -259,15 +259,25 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 			$item_name  = (string) ( $booking['name'] ?? '' );
 			$item_key   = 'event_' . $event_id;
 			$kind       = 'event';
-		} elseif ( $btype === 'appointment' ) {
+		} elseif ( $btype === 'appointment' || $btype === 'package' ) {
+			// Appointments ET packages tombent dans la même catégorie de gating :
+			// les types qui ont l'étiquette « Réservation des salles » activée
+			// les bloquent. Un package (= abonnement Amelia donnant accès à des
+			// services/salles) doit être gated comme un appointment classique.
 			$applicable = cordespace_event_gating_applicable_types_for_amelia_appointment();
-			$item_name  = (string) ( $booking['name'] ?? $booking['serviceName'] ?? __( 'Réservation de salle', 'cordespace-snippets' ) );
-			$svc_id     = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : 0;
-			$item_key   = 'appt_' . ( $svc_id > 0 ? $svc_id : md5( $item_name ) );
-			$kind       = 'appointment';
-			// $item_tags reste [] : les appointments matchent par toggle global,
-			// le check is_user_approved_for_type tombera dans la branche
-			// "type sans tags" (= check binaire sur tag = '').
+			$item_tags  = []; // pas de tag spécifique sur appt/package
+			$default_name = $btype === 'package'
+				? __( 'Abonnement / package', 'cordespace-snippets' )
+				: __( 'Réservation de salle', 'cordespace-snippets' );
+			$item_name  = (string) ( $booking['name'] ?? $booking['serviceName'] ?? $default_name );
+			// Identifiant : serviceId pour appointment, packageId pour package
+			$ref_id     = isset( $booking['serviceId'] ) ? (int) $booking['serviceId'] : 0;
+			if ( $ref_id <= 0 && isset( $booking['packageId'] ) ) {
+				$ref_id = (int) $booking['packageId'];
+			}
+			$prefix     = $btype === 'package' ? 'pkg_' : 'appt_';
+			$item_key   = $prefix . ( $ref_id > 0 ? $ref_id : md5( $item_name ) );
+			$kind       = $btype; // 'appointment' ou 'package' (différencié pour l'icône)
 		} else {
 			continue;
 		}
@@ -377,7 +387,7 @@ function cordespace_evgating_render_block_banner(): void {
 		?>
 
 		<?php foreach ( $items as $item ) :
-			$icon            = $item['kind'] === 'appointment' ? '🏠' : '📅';
+			$icon            = $item['kind'] === 'appointment' ? '🏠' : ( $item['kind'] === 'package' ? '📦' : '📅' );
 			$applicable_ids  = $item['applicable_types'];
 			$multi_types     = count( $applicable_ids ) > 1;
 			?>
