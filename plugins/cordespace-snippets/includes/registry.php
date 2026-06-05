@@ -271,8 +271,8 @@ return [
 			'default_active'  => true,
 		],
 		'event-gating.magic-links' => [
-			'label'           => 'Magic Links (bypass par event)',
-			'description'     => "Permet à l'admin de générer des URLs magiques pour bypasser le gating sur 1 event Amelia spécifique. Cas d'usage : inviter ponctuellement une personne qui n'a pas de compte / pas dans la liste. Page admin dédiée avec création, listing, révocation. Le clic sur l'URL pose un cookie HTTPONLY qui est lu au scan cart pour skip le check gating pour CET event. Consume le link (incrémente used_count) à la finalisation de la commande WC. Table custom wp_cordespace_magic_links.",
+			'label'           => 'Liens de validation (bypass par event)',
+			'description'     => "Permet à l'admin de générer des liens de validation (URLs avec token) pour bypasser le gating sur 1 event Amelia spécifique. Cas d'usage : inviter ponctuellement une personne qui n'a pas de compte / pas dans la liste. Page admin dédiée avec création, listing, révocation, recherche autocomplete et filtres par tag/date. Le clic sur l'URL pose un cookie HTTPONLY qui est lu au scan cart pour skip le check gating pour CET event. Consume le link (incrémente used_count) à la finalisation de la commande WC. Table custom wp_cordespace_magic_links.",
 			'category'        => 'event-gating',
 			'type'            => 'php',
 			'file'            => 'includes/modules/event-gating-magic-links.php',
