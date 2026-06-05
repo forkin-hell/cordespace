@@ -462,64 +462,96 @@ JS;
 function cordespace_evgating_frontend_block_css(): string {
 	return <<<'CSS'
 .cordespace-evgating-frontend-block {
-	margin: 0.6rem 0;
-	padding: 0.9rem 1rem;
-	background: #fdecea;
-	border: 2px solid #d63638;
-	border-left: 6px solid #d63638;
-	border-radius: 6px;
+	margin: 1rem 0;
+	padding: 1.3rem 1.5rem;
+	background: #fef5f3;
+	border: 1px solid rgba(214, 54, 56, 0.18);
+	border-left: 4px solid #d63638;
+	border-radius: 12px;
 	color: #3c1c1c;
 	font-size: 0.95em;
-	line-height: 1.4;
+	line-height: 1.5;
+	box-shadow: 0 2px 8px rgba(60, 28, 28, 0.06);
 }
 .cordespace-evgating-frontend-block .ceb-header {
 	font-weight: 700;
-	font-size: 1.05em;
-	margin: 0 0 0.5rem;
+	font-size: 1.08em;
+	margin: 0 0 1rem;
+	color: #b3272a;
+	letter-spacing: 0.01em;
 }
 .cordespace-evgating-frontend-block .ceb-type {
-	margin: 0.4rem 0 0;
-	padding: 0.6rem 0.8rem;
-	background: rgba(255, 255, 255, 0.55);
-	border-radius: 4px;
+	margin: 0.9rem 0 0;
+	padding: 1.1rem 1.25rem;
+	background: #ffffff;
+	border-radius: 9px;
+	box-shadow: 0 1px 3px rgba(60, 28, 28, 0.05);
 }
 .cordespace-evgating-frontend-block .ceb-type-title {
-	font-weight: 600;
-	margin: 0 0 0.4rem;
+	font-weight: 700;
+	font-size: 1.02em;
+	margin: 0 0 0.75rem;
+	color: #1a1a2e;
 }
 .cordespace-evgating-frontend-block .ceb-type-content {
-	margin: 0.3rem 0 0.5rem;
-	font-size: 0.92em;
-	line-height: 1.45;
+	margin: 0 0 1rem;
+	font-size: 0.93em;
+	line-height: 1.6;
+	color: #4a3030;
 }
 .cordespace-evgating-frontend-block .ceb-type-content p {
-	margin: 0 0 0.4rem;
+	margin: 0 0 0.75rem;
 }
 .cordespace-evgating-frontend-block .ceb-type-content p:last-child {
 	margin-bottom: 0;
 }
 .cordespace-evgating-frontend-block .ceb-type-content em {
+	display: block;
+	margin: 0.85rem 0 0;
+	padding: 0.85rem 1.1rem;
+	background: #fbf1ee;
+	border-left: 3px solid #d4a3a4;
+	border-radius: 6px;
 	font-style: italic;
+	color: #5c2c2c;
+	font-size: 0.94em;
+	line-height: 1.55;
+}
+.cordespace-evgating-frontend-block .ceb-type-content em p {
+	margin: 0;
 }
 .cordespace-evgating-frontend-block .ceb-type-content a {
-	color: #5c1c1c;
+	color: #1a1a2e;
 	text-decoration: underline;
+	font-weight: 500;
+}
+.cordespace-evgating-frontend-block .ceb-type-content a:hover {
+	color: #d63638;
 }
 .cordespace-evgating-frontend-block .ceb-info-btn {
 	display: inline-block;
-	margin-top: 0.2rem;
-	padding: 0.4rem 0.9rem;
+	margin-top: 0.4rem;
+	padding: 0.65rem 1.4rem;
 	background: #1a1a2e;
 	color: #fff !important;
 	text-decoration: none;
-	border-radius: 4px;
-	font-size: 0.9em;
+	border-radius: 7px;
+	font-size: 0.93em;
 	font-weight: 600;
+	letter-spacing: 0.01em;
+	box-shadow: 0 2px 4px rgba(26, 26, 46, 0.15);
+	transition: background 0.18s ease, transform 0.1s ease, box-shadow 0.18s ease;
 }
 .cordespace-evgating-frontend-block .ceb-info-btn:hover,
 .cordespace-evgating-frontend-block .ceb-info-btn:focus {
 	background: #2a2a4e;
 	color: #fff !important;
+	text-decoration: none;
+	box-shadow: 0 3px 7px rgba(26, 26, 46, 0.22);
+}
+.cordespace-evgating-frontend-block .ceb-info-btn:active {
+	transform: translateY(1px);
+	box-shadow: 0 1px 2px rgba(26, 26, 46, 0.18);
 }
 CSS;
 }
