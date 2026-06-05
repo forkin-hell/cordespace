@@ -424,9 +424,10 @@ function cordespace_render_client_view( $user, $has_linked ) {
 							<?php if ( $price > 0 ) : ?>
 								<span>💵 <strong><?php echo esc_html( $price_label ); ?></strong></span>
 							<?php endif; ?>
-							<?php if ( $persons > 1 ) : ?>
-								<span>👥 <?php printf( esc_html__( '%d personnes', 'cordespace-snippets' ), $persons ); ?></span>
-							<?php endif; ?>
+							<?php // Le champ 'persons' est ambigu en contexte Cordespace : pour
+							// une réservation partagée, il peut représenter la capacité totale
+							// du créneau plutôt que le nombre réel de personnes de cette
+							// réservation. On ne l'affiche pas pour ne pas mal informer. ?>
 							<?php if ( $location !== '' ) : ?>
 								<span>📍 <?php echo esc_html( $location ); ?></span>
 							<?php endif; ?>
