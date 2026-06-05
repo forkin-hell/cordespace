@@ -288,10 +288,33 @@ function cordespace_event_gating_add_info_url_metabox(): void {
 		'cordespace_event_gating_render_info_url_metabox',
 		CORDESPACE_EVENT_TYPE_POST_TYPE,
 		'normal',
+		'high' // 'high' pour apparaître juste sous le WYSIWYG (avant Étiquettes/Membres)
+	);
+}
+// Priorité 5 (avant la valeur par défaut 10) pour s'enregistrer AVANT la
+// metabox des Étiquettes. Comme les deux sont en context=normal/priority=high,
+// l'ordre d'enregistrement détermine l'ordre d'affichage.
+add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_info_url_metabox', 5 );
+
+/**
+ * Déplace la metabox WP « Révisions » dans la colonne de droite (sous « Mettre
+ * à jour ») au lieu de la colonne normale. Plus pratique vu la profondeur de
+ * la page d'édition d'un type.
+ *
+ * Priorité 99 pour passer APRÈS l'enregistrement par défaut fait par WP.
+ */
+function cordespace_event_gating_move_revisions_to_side(): void {
+	remove_meta_box( 'revisionsdiv', CORDESPACE_EVENT_TYPE_POST_TYPE, 'normal' );
+	add_meta_box(
+		'revisionsdiv',
+		__( 'Révisions', 'cordespace-snippets' ),
+		'post_revisions_meta_box',
+		CORDESPACE_EVENT_TYPE_POST_TYPE,
+		'side',
 		'default'
 	);
 }
-add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_add_info_url_metabox' );
+add_action( 'add_meta_boxes_' . CORDESPACE_EVENT_TYPE_POST_TYPE, 'cordespace_event_gating_move_revisions_to_side', 99 );
 
 function cordespace_event_gating_render_info_url_metabox( WP_Post $post ): void {
 	$url = (string) get_post_meta( $post->ID, CORDESPACE_EVENT_TYPE_META_INFO_URL, true );
