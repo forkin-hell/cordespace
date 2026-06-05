@@ -124,6 +124,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/prof-warning.php',
 			'default_active'  => true,
 		],
+		'payments.wc-free-checkout-simplify' => [
+			'label'           => 'Simplifier le checkout pour les commandes gratuites',
+			'description'     => "Quand le panier WooCommerce a un total de 0$ (typique pour les events gratuits genre Munch passés par WC), retire les champs de facturation non essentiels (adresse, ville, code postal, téléphone, etc.) et garde uniquement email + prénom + nom — le minimum requis par Amelia pour créer le booking. Retire aussi shipping et notes de commande. Si l'user est connecté·e, les 3 fields restants sont auto-pré-remplis depuis son compte WP → checkout en quasi 1 clic. N'a aucun effet quand le panier contient un produit payant (total > 0). Compatible avec event-gating.checkout-blocker : la validation bloquante fire AVANT ce filtre.",
+			'category'        => 'payments',
+			'type'            => 'php',
+			'file'            => 'includes/modules/wc-free-checkout-simplify.php',
+			'requires_plugin' => [ 'woocommerce/woocommerce.php' => 'WooCommerce' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/wc-free-checkout-simplify.php',
+			'default_active'  => true,
+		],
 		'waivers.schema' => [
 			'label'           => 'Table waiver_signatures',
 			'description'     => 'Crée et maintient la table append-only cordespace_waiver_signatures (1 ligne = 1 signature horodatée). Doit rester actif tant que des signatures existent.',
