@@ -125,14 +125,14 @@ return [
 			'default_active'  => true,
 		],
 		'payments.wc-free-checkout-simplify' => [
-			'label'           => 'Simplifier le checkout pour les commandes gratuites',
-			'description'     => "Quand le panier WooCommerce a un total de 0$ (typique pour les events gratuits genre Munch passés par WC), retire les champs de facturation non essentiels (adresse, ville, code postal, téléphone, etc.) et garde uniquement email + prénom + nom — le minimum requis par Amelia pour créer le booking. Retire aussi shipping et notes de commande. Si l'user est connecté·e, les 3 fields restants sont auto-pré-remplis depuis son compte WP → checkout en quasi 1 clic. N'a aucun effet quand le panier contient un produit payant (total > 0). Compatible avec event-gating.checkout-blocker : la validation bloquante fire AVANT ce filtre.",
+			'label'           => 'Simplifier le checkout pour les commandes gratuites (Classique seulement)',
+			'description'     => "⚠️ DÉSACTIVÉ par défaut. Module gardé en réserve pour le cas où on voudrait simplifier le checkout pour les events gratuits passés par WC (genre Munch). Quand le panier a un total de 0$, le module retire les champs de facturation non essentiels (adresse, ville, code postal, téléphone, etc.) et garde uniquement email + prénom + nom — le minimum requis par Amelia pour créer le booking. Si l'user est connecté·e, les 3 fields restants sont auto-pré-remplis → quasi 1 clic.\n\nLIMITATION CONNUE : ce module utilise le filter woocommerce_checkout_fields qui ne fire QUE sur le checkout WC Classique (shortcode [woocommerce_checkout]). Sur le checkout Blocks (Gutenberg, = le défaut actuel de cordespace.com), il n'a aucun effet sur les fields billing — seulement sur shipping qui est désactivé via woocommerce_cart_needs_shipping. Pour le faire marcher sur Blocks, il faudrait ajouter du CSS conditionnel + un filter de validation Store API. Le cas d'usage actuel (events gratuits gated réservés aux profs, distribués par lien direct) ne justifie pas l'effort.",
 			'category'        => 'payments',
 			'type'            => 'php',
 			'file'            => 'includes/modules/wc-free-checkout-simplify.php',
 			'requires_plugin' => [ 'woocommerce/woocommerce.php' => 'WooCommerce' ],
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/wc-free-checkout-simplify.php',
-			'default_active'  => true,
+			'default_active'  => false,
 		],
 		'waivers.schema' => [
 			'label'           => 'Table waiver_signatures',
