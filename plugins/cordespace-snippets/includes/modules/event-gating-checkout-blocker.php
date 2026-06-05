@@ -252,6 +252,12 @@ function cordespace_evgating_blocked_items_for_current_cart(): array {
 			if ( $event_id <= 0 ) {
 				continue;
 			}
+			// BYPASS : si l'user a un magic link valide pour cet event,
+			// on skip le gating (= cet event ne sera pas bloqué).
+			if ( function_exists( 'cordespace_magic_link_user_has_valid_pass_for_event' )
+			     && cordespace_magic_link_user_has_valid_pass_for_event( $event_id ) ) {
+				continue;
+			}
 			$applicable = cordespace_event_gating_applicable_types_for_amelia_event( $event_id );
 			$item_tags  = function_exists( 'cordespace_event_gating_get_amelia_event_tags' )
 				? cordespace_event_gating_get_amelia_event_tags( $event_id )

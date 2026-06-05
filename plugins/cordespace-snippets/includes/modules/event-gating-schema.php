@@ -27,9 +27,10 @@
 
 defined( 'ABSPATH' ) || exit;
 
-const CORDESPACE_EVENT_GATING_TABLE_SUFFIX          = 'cordespace_event_type_approvals';
-const CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX  = 'cordespace_pending_email_approvals';
-const CORDESPACE_EVENT_GATING_SCHEMA_VERSION        = 3;
+const CORDESPACE_EVENT_GATING_TABLE_SUFFIX           = 'cordespace_event_type_approvals';
+const CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX   = 'cordespace_pending_email_approvals';
+const CORDESPACE_EVENT_GATING_MAGIC_TABLE_SUFFIX     = 'cordespace_magic_links';
+const CORDESPACE_EVENT_GATING_SCHEMA_VERSION         = 4;
 
 /**
  * Renvoie le nom complet (avec préfixe) de la table principale (approbations
@@ -50,6 +51,15 @@ function cordespace_event_gating_table_name(): string {
 function cordespace_event_gating_pending_table_name(): string {
 	global $wpdb;
 	return $wpdb->prefix . CORDESPACE_EVENT_GATING_PENDING_TABLE_SUFFIX;
+}
+
+/**
+ * Renvoie le nom complet de la table des magic links (= URL avec token qui
+ * permettent à une personne de bypasser le gating pour 1 event Amelia spécifique).
+ */
+function cordespace_event_gating_magic_table_name(): string {
+	global $wpdb;
+	return $wpdb->prefix . CORDESPACE_EVENT_GATING_MAGIC_TABLE_SUFFIX;
 }
 
 /**
@@ -127,6 +137,26 @@ function cordespace_event_gating_install_table(): void {
 		KEY idx_event_type_id (event_type_id)
 	) {$charset};";
 	dbDelta( $pending_sql );
+
+	// Table v4 : magic_links (URL/token qui bypassent le gating pour 1 event)
+	$magic_table = cordespace_event_gating_magic_table_name();
+	$magic_sql   = "CREATE TABLE {$magic_table} (
+		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+		token VARCHAR(64) NOT NULL,
+		event_id BIGINT UNSIGNED NOT NULL,
+		max_uses INT UNSIGNED NOT NULL DEFAULT 0,
+		used_count INT UNSIGNED NOT NULL DEFAULT 0,
+		expires_at DATETIME NULL,
+		notes TEXT NULL,
+		created_by BIGINT UNSIGNED NULL,
+		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		revoked_at DATETIME NULL,
+		PRIMARY KEY  (id),
+		UNIQUE KEY uniq_token (token),
+		KEY idx_event_id (event_id),
+		KEY idx_expires_at (expires_at)
+	) {$charset};";
+	dbDelta( $magic_sql );
 
 	update_option( 'cordespace_event_gating_schema_version', CORDESPACE_EVENT_GATING_SCHEMA_VERSION );
 }

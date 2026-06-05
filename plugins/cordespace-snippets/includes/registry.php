@@ -270,6 +270,19 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-pending.php',
 			'default_active'  => true,
 		],
+		'event-gating.magic-links' => [
+			'label'           => 'Magic Links (bypass par event)',
+			'description'     => "Permet à l'admin de générer des URLs magiques pour bypasser le gating sur 1 event Amelia spécifique. Cas d'usage : inviter ponctuellement une personne qui n'a pas de compte / pas dans la liste. Page admin dédiée avec création, listing, révocation. Le clic sur l'URL pose un cookie HTTPONLY qui est lu au scan cart pour skip le check gating pour CET event. Consume le link (incrémente used_count) à la finalisation de la commande WC. Table custom wp_cordespace_magic_links.",
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-magic-links.php',
+			'requires_plugin' => [
+				'woocommerce/woocommerce.php'     => 'WooCommerce',
+				'ameliabooking/ameliabooking.php' => 'Amelia',
+			],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-magic-links.php',
+			'default_active'  => true,
+		],
 		'event-gating.checkout-blocker' => [
 			'label'           => 'Blocage panier/checkout pour les non-validé·es',
 			'description'     => "Affiche un bandeau rouge bloquant sur le panier et le checkout quand la personne tente de réserver un événement gated sans être validée pour son type. BLOQUE serveur-side via le Store API WC Blocks (RouteException) + filet de sécurité sur le checkout classique (wc_add_notice error). Bandeau affiche le titre du type, son texte WYSIWYG, et un bouton « En savoir plus » vers l'URL d'info. Pour les non-connecté·es, ajoute aussi un bouton « Me connecter ».",
