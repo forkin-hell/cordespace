@@ -499,12 +499,22 @@ function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 		</a>
 	</nav>
 
-	<p style="margin:1rem 0 1.5rem; padding:0.8rem 1rem; background:#f0f6fc; border-left:3px solid #2c70b8; font-size:0.95em; color:#1d4d7e;">
+	<p style="margin:1rem 0 0.6rem; padding:0.8rem 1rem; background:#f0f6fc; border-left:3px solid #2c70b8; font-size:0.95em; color:#1d4d7e;">
 		<strong>📋 <?php esc_html_e( "Deux façons de valider l'accès :", 'cordespace-snippets' ); ?></strong>
 		<br>
 		🏷️ <strong><?php esc_html_e( 'Par tag', 'cordespace-snippets' ); ?></strong> — <?php esc_html_e( "définis des bassins de membres regroupés par étiquette Amelia (ex : toutes les personnes validées « Semi-privé »).", 'cordespace-snippets' ); ?>
 		<br>
 		🔗 <strong><?php esc_html_e( 'Lien de validation', 'cordespace-snippets' ); ?></strong> — <?php esc_html_e( "génère un lien unique à envoyer à quelqu'un pour bypasser le gating sur 1 event Amelia spécifique (utile pour invité·es ponctuel·les).", 'cordespace-snippets' ); ?>
+	</p>
+
+	<p style="margin:0 0 1.5rem; padding:0.8rem 1rem; background:#fef5f3; border-left:3px solid #d63638; font-size:0.95em; color:#5c1c1c; line-height:1.5;">
+		ℹ️ <strong><?php esc_html_e( 'À savoir', 'cordespace-snippets' ); ?> :</strong>
+		<?php
+		echo wp_kses(
+			__( "ce système de validation s'applique uniquement aux événements <strong>payants</strong> (qui passent par le panier WooCommerce). Les événements <strong>gratuits</strong> sont réservés directement via Amelia, sans validation possible. Pour un event gratuit semi-privé, partage le lien de la page directement aux personnes concernées, sans le mettre dans les menus publics.", 'cordespace-snippets' ),
+			[ 'strong' => [] ]
+		);
+		?>
 	</p>
 	<?php
 }
