@@ -797,3 +797,51 @@ function cordespace_event_gating_get_appt_tags( int $type_id ): array {
 	return array_values( array_filter( array_map( 'strval', $tags ) ) );
 }
 
+// ============================================================================
+// Avis admin permanent : limitation aux events payants
+// ============================================================================
+
+/**
+ * Affiche une banderole d'info en haut des écrans du CPT cordespace_evtype
+ * (liste des bassins + édition d'un bassin) pour rappeler que le système
+ * ne bloque QUE les événements payants (qui passent par le panier WC).
+ *
+ * Pourquoi cet avis existe :
+ *   Les événements GRATUITS Amelia (Munch, brunchs, etc.) bypass
+ *   complètement WooCommerce — Amelia les enregistre directement sans
+ *   passer par le panier. Comme le gating est implémenté au niveau du
+ *   panier/checkout WC (choix conscient : intercepter Amelia directement
+ *   serait trop fragile), il ne fire pas pour les events gratuits.
+ *
+ *   Workaround pratique : pour un event gratuit semi-privé (genre une
+ *   séance réservée aux profs), créer la page event en non-référencée
+ *   (URL obscure, pas dans la nav publique) et partager le lien
+ *   directement aux personnes concernées.
+ *
+ * Style : notice notice-info (bleu WP par défaut) avec accent rouge en
+ * border-left pour attirer l'œil sans alarmer.
+ */
+function cordespace_event_gating_free_events_admin_notice(): void {
+	if ( ! function_exists( 'get_current_screen' ) ) {
+		return;
+	}
+	$screen = get_current_screen();
+	if ( ! $screen || $screen->post_type !== CORDESPACE_EVENT_TYPE_POST_TYPE ) {
+		return;
+	}
+	?>
+	<div class="notice notice-info" style="border-left-color:#d63638; background:#fef5f3; padding:12px 16px; margin:1rem 0;">
+		<p style="margin:0; font-size:1.02em; line-height:1.5;">
+			ℹ️ <strong><?php esc_html_e( 'À savoir', 'cordespace-snippets' ); ?> :</strong>
+			<?php
+			echo wp_kses(
+				__( 'ce système de validation s\'applique uniquement aux événements <strong>payants</strong> (qui passent par le panier WooCommerce). Les événements <strong>gratuits</strong> sont réservés directement via Amelia, sans validation possible. Pour un event gratuit semi-privé, partage le lien de la page directement aux personnes concernées, sans le mettre dans les menus publics.', 'cordespace-snippets' ),
+				[ 'strong' => [] ]
+			);
+			?>
+		</p>
+	</div>
+	<?php
+}
+add_action( 'admin_notices', 'cordespace_event_gating_free_events_admin_notice' );
+
