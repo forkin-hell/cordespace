@@ -521,45 +521,71 @@ function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 
 /**
  * Affiche les onglets en haut de la liste des types CPT (post_type =
- * cordespace_evtype). Hook all_admin_notices (et non admin_notices) :
- * fire APRÈS toutes les notices admin natives (warnings WP, thème,
- * autres plugins).
+ * cordespace_evtype). Hook all_admin_notices : nos onglets + bandeaux
+ * sont rendus dans #wpbody-content (HORS de .wrap), avant le contenu
+ * de la page CPT list.
  *
  * Réordonnancement DOM (le JS qui suit) :
- *   Sur les pages CPT list, WP rend dans cet ordre :
- *     1. <h1>Title</h1> + <hr class="wp-header-end">
- *     2. do_action('admin_notices')      ← warnings WP (thème, MAJ…)
- *     3. do_action('all_admin_notices')  ← notre helper d'onglets
- *     4. List table
- *   Du coup, on obtient visuellement : H1 → warning → onglets → liste,
- *   ce qui place le warning ENTRE le H1 et nos onglets — incohérent.
+ *   WP rend dans cet ordre :
+ *     1. (notices natives via admin_notices — souvent déplacées par
+ *        common.js de WP dans .wrap juste après le H1)
+ *     2. (notre helper via all_admin_notices : nav + bandeau bleu + rouge)
+ *        — HORS de .wrap
+ *     3. <div class="wrap"><h1>Title</h1><hr>...<list>...</div>
+ *   Visuellement, common.js déplace les notices DANS .wrap juste après
+ *   le H1. Du coup on voit : onglets+bandeaux (hors wrap) → H1 →
+ *   notices → liste — ce qui met les warnings sous le H1 (bien) mais
+ *   au-dessous de nos onglets (mal).
  *
- *   Tess a proposé la fix : déplacer le H1 AU-DESSUS des onglets via JS.
- *   Résultat final : warning → H1 → onglets + bandeaux → liste, où le
- *   warning reste tout en haut (comme sur la page Rapports) et notre
- *   pile reste un bloc cohérent juste avant la liste.
+ *   Fix : on déplace notre bloc onglets+bandeaux DANS .wrap, juste
+ *   après les notices natives. Ordre final :
+ *     H1 → notices (warnings WP, thème) → onglets + bandeaux → liste
+ *   Cohérent avec la page Rapports : warnings au-dessus des onglets.
  *
- *   Le JS s'exécute au DOMContentLoaded pour s'assurer que le H1 (rendu
- *   plus tard dans le markup) est déjà dans le DOM au moment du move.
+ *   setTimeout(0) pour s'assurer que common.js a fini de déplacer les
+ *   notices avant qu'on calcule leur position.
  */
 function cordespace_event_gating_render_nav_on_cpt_list(): void {
 	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 	if ( ! $screen || $screen->id !== 'edit-cordespace_evtype' ) {
 		return;
 	}
+	// Wrap notre rendu dans un div sentinel pour le retrouver facilement en JS
+	echo '<div class="cordespace-evgating-header-block">';
 	cordespace_event_gating_render_main_nav_tabs( 'types' );
+	echo '</div>';
 	?>
 	<script>
 	document.addEventListener('DOMContentLoaded', function () {
-		var wrap = document.querySelector('.wrap');
-		if (!wrap) return;
-		var nav = wrap.querySelector(':scope > .nav-tab-wrapper');
-		var h1  = wrap.querySelector(':scope > h1.wp-heading-inline');
-		var hr  = wrap.querySelector(':scope > hr.wp-header-end');
-		if (nav && h1) {
-			wrap.insertBefore(h1, nav);
-			if (hr) wrap.insertBefore(hr, nav);
-		}
+		// setTimeout(0) : laisse passer le wp-admin/js/common.js qui déplace
+		// les notices DANS .wrap avant qu'on calcule leur position finale.
+		setTimeout(function () {
+			var wrap  = document.querySelector('.wrap');
+			var block = document.querySelector('.cordespace-evgating-header-block');
+			if (!wrap || !block) return;
+
+			// Cherche le point d'ancrage dans .wrap : après le hr-end ET après
+			// toutes les notices natives qui suivent.
+			var anchor = wrap.querySelector('.wp-header-end');
+			if (!anchor) return;
+			// Avance après les notices qui suivent le hr-end
+			var cur = anchor.nextSibling;
+			while (cur && cur.nodeType === 1 && (
+				cur.classList.contains('notice') ||
+				cur.classList.contains('updated') ||
+				cur.classList.contains('error') ||
+				cur.classList.contains('update-nag')
+			)) {
+				anchor = cur;
+				cur = cur.nextSibling;
+			}
+			// Insère notre block juste après le dernier élément du header
+			if (anchor.nextSibling) {
+				wrap.insertBefore(block, anchor.nextSibling);
+			} else {
+				wrap.appendChild(block);
+			}
+		}, 0);
 	});
 	</script>
 	<?php
