@@ -521,8 +521,11 @@ function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
 
 /**
  * Affiche les onglets en haut de la liste des types CPT (post_type =
- * cordespace_evtype). Hook admin_notices : rend après le H1 mais avant
- * la list table.
+ * cordespace_evtype). Hook all_admin_notices (et non admin_notices) :
+ * fire APRÈS toutes les notices admin natives (warnings WP, thème,
+ * autres plugins). Comme ça les warnings type « this theme recommends
+ * plugins » restent en haut de la zone notices et n'écrasent pas notre
+ * pile (onglets + bandeau bleu + bandeau rouge) qui vient juste après.
  */
 function cordespace_event_gating_render_nav_on_cpt_list(): void {
 	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
@@ -531,7 +534,7 @@ function cordespace_event_gating_render_nav_on_cpt_list(): void {
 	}
 	cordespace_event_gating_render_main_nav_tabs( 'types' );
 }
-add_action( 'admin_notices', 'cordespace_event_gating_render_nav_on_cpt_list' );
+add_action( 'all_admin_notices', 'cordespace_event_gating_render_nav_on_cpt_list' );
 
 /**
  * Render de la page admin Magic Links.
