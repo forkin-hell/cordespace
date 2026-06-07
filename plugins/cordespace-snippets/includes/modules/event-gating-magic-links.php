@@ -523,9 +523,24 @@ function cordespace_event_gating_render_main_nav_tabs( string $current ): void {
  * Affiche les onglets en haut de la liste des types CPT (post_type =
  * cordespace_evtype). Hook all_admin_notices (et non admin_notices) :
  * fire APRÈS toutes les notices admin natives (warnings WP, thème,
- * autres plugins). Comme ça les warnings type « this theme recommends
- * plugins » restent en haut de la zone notices et n'écrasent pas notre
- * pile (onglets + bandeau bleu + bandeau rouge) qui vient juste après.
+ * autres plugins).
+ *
+ * Réordonnancement DOM (le JS qui suit) :
+ *   Sur les pages CPT list, WP rend dans cet ordre :
+ *     1. <h1>Title</h1> + <hr class="wp-header-end">
+ *     2. do_action('admin_notices')      ← warnings WP (thème, MAJ…)
+ *     3. do_action('all_admin_notices')  ← notre helper d'onglets
+ *     4. List table
+ *   Du coup, on obtient visuellement : H1 → warning → onglets → liste,
+ *   ce qui place le warning ENTRE le H1 et nos onglets — incohérent.
+ *
+ *   Tess a proposé la fix : déplacer le H1 AU-DESSUS des onglets via JS.
+ *   Résultat final : warning → H1 → onglets + bandeaux → liste, où le
+ *   warning reste tout en haut (comme sur la page Rapports) et notre
+ *   pile reste un bloc cohérent juste avant la liste.
+ *
+ *   Le JS s'exécute au DOMContentLoaded pour s'assurer que le H1 (rendu
+ *   plus tard dans le markup) est déjà dans le DOM au moment du move.
  */
 function cordespace_event_gating_render_nav_on_cpt_list(): void {
 	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
@@ -533,6 +548,21 @@ function cordespace_event_gating_render_nav_on_cpt_list(): void {
 		return;
 	}
 	cordespace_event_gating_render_main_nav_tabs( 'types' );
+	?>
+	<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		var wrap = document.querySelector('.wrap');
+		if (!wrap) return;
+		var nav = wrap.querySelector(':scope > .nav-tab-wrapper');
+		var h1  = wrap.querySelector(':scope > h1.wp-heading-inline');
+		var hr  = wrap.querySelector(':scope > hr.wp-header-end');
+		if (nav && h1) {
+			wrap.insertBefore(h1, nav);
+			if (hr) wrap.insertBefore(hr, nav);
+		}
+	});
+	</script>
+	<?php
 }
 add_action( 'all_admin_notices', 'cordespace_event_gating_render_nav_on_cpt_list' );
 
