@@ -206,9 +206,13 @@ function cordespace_is_amelia_admin_context(): bool {
 	// son slug ici. La liste complète des slugs admin Amelia est dans
 	// src/Infrastructure/WP/config/Menu.php du plugin.
 	$admin_pages_to_skip = [
-		'wpamelia-settings',      // Settings (général, payments, etc.)
-		'wpamelia-notifications', // Notifications config
-		'wpamelia-customize',     // Customize forms (labels, colors, options avancées)
+		'wpamelia-settings',              // Settings (général, payments, etc.)
+		'wpamelia-notifications',         // Notifications config
+		'wpamelia-customize',             // Customize forms (labels, colors, options avancées)
+		'wpamelia-customfields',          // Champs custom (création/édition)
+		'wpamelia-features-integrations', // Intégrations (Stripe, Zoom, Google Calendar, etc.)
+		'wpamelia-employees',             // Gestion des comptes employé·es (admin-only logique)
+		'wpamelia-locations',             // Gestion des lieux (admin-only logique)
 	];
 
 	// Cas 1 : page wp-admin Amelia (chargement direct).
