@@ -185,15 +185,44 @@ function cordespace_is_amelia_admin_context(): bool {
 		return false;
 	}
 
+	// Pages d'administration Amelia (config) qu'on EXCLUT du contexte
+	// "demote admin → manager". Amelia v3 vérifie explicitement
+	// in_array('administrator', $user->roles, true) dans SettingsStorage
+	// avant d'autoriser la save des settings (cf. SettingsStorage.php:146
+	// et :585 du plugin Amelia). Si on retire le rôle administrator sur
+	// ces pages, le bouton Save échoue silencieusement (réf. ticket bug
+	// signalé par Tess : impossible de changer les Payment methods).
+	//
+	// La protection « voir les events des autres profs » qu'apporte ce
+	// module n'a aucun intérêt sur les écrans de config purs — donc on
+	// renvoie false ici et l'utilisateur·trice garde ses pleines caps.
+	$admin_pages_to_skip = [
+		'wpamelia-settings',      // Settings (général, payments, etc.)
+		'wpamelia-notifications', // Notifications config
+	];
+
 	// Cas 1 : page wp-admin Amelia (chargement direct).
-	if ( ! empty( $_GET['page'] ) && strpos( (string) $_GET['page'], 'wpamelia' ) === 0 ) {
-		return true;
+	if ( ! empty( $_GET['page'] ) ) {
+		$page = (string) $_GET['page'];
+		if ( in_array( $page, $admin_pages_to_skip, true ) ) {
+			return false;
+		}
+		if ( strpos( $page, 'wpamelia' ) === 0 ) {
+			return true;
+		}
 	}
 
 	// Cas 2 : AJAX déclenché depuis une page wp-admin Amelia.
 	if ( wp_doing_ajax() ) {
 		$referer = wp_get_referer();
 		if ( $referer && strpos( $referer, 'page=wpamelia' ) !== false ) {
+			// Même exclusion côté AJAX : la save des settings passe par
+			// admin-ajax.php ou REST avec un referer page=wpamelia-settings.
+			foreach ( $admin_pages_to_skip as $page_slug ) {
+				if ( strpos( $referer, 'page=' . $page_slug ) !== false ) {
+					return false;
+				}
+			}
 			return true;
 		}
 	}
