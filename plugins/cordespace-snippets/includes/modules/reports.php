@@ -840,7 +840,11 @@ function cordespace_reports_render_tab_sommaire(): void {
 	$items     = cordespace_reports_fetch_items( $range['start'], $range['end'], $selected_statuses, 'purchase' );
 	$boutique  = array_filter( $items, fn( $it ) => $it['section'] === 'boutique' );
 
-	// Agrégation par produit (key = item_name)
+	// Agrégation par produit (key = item_name).
+	// tps_real / tvq_real n'agrègent que les statuts "réel" (= commandes
+	// effectivement encaissées, à déclarer fiscalement). Les pending/cancelled
+	// n'ont pas de taxes à comptabiliser, donc on ne stocke pas de buckets
+	// séparés pour simplifier le tableau.
 	$grouped = [];
 	foreach ( $boutique as $it ) {
 		$key = $it['item_name'] !== '' ? $it['item_name'] : 'Produit inconnu';
@@ -849,12 +853,17 @@ function cordespace_reports_render_tab_sommaire(): void {
 				'name'      => $key,
 				'qty_real'  => 0, 'qty_pending' => 0, 'qty_cancelled' => 0,
 				'rev_real'  => 0, 'rev_pending' => 0, 'rev_cancelled' => 0,
+				'tps_real'  => 0, 'tvq_real'    => 0,
 				'orders'    => [],
 			];
 		}
 		$cat = cordespace_reports_status_category( $it['status'] );
 		$grouped[ $key ][ 'qty_' . $cat ] += (int) $it['qty'];
 		$grouped[ $key ][ 'rev_' . $cat ] += $it['total'];
+		if ( $cat === 'real' ) {
+			$grouped[ $key ]['tps_real'] += (float) ( $it['tps'] ?? 0 );
+			$grouped[ $key ]['tvq_real'] += (float) ( $it['tvq'] ?? 0 );
+		}
 		$grouped[ $key ]['orders'][]       = (int) $it['order_id'];
 	}
 
@@ -954,10 +963,13 @@ function cordespace_reports_render_tab_sommaire(): void {
 		<?php else :
 			$tot_qty_real = $tot_qty_pen = $tot_qty_can = 0;
 			$tot_rev_real = $tot_rev_pen = $tot_rev_can = 0;
+			$tot_tps_real = $tot_tvq_real = 0;
 			foreach ( $grouped as $g ) {
 				$tot_qty_real += $g['qty_real'];     $tot_rev_real += $g['rev_real'];
 				$tot_qty_pen  += $g['qty_pending']; $tot_rev_pen  += $g['rev_pending'];
 				$tot_qty_can  += $g['qty_cancelled']; $tot_rev_can  += $g['rev_cancelled'];
+				$tot_tps_real += $g['tps_real'];
+				$tot_tvq_real += $g['tvq_real'];
 			}
 			?>
 			<table class="widefat striped" style="font-size:0.92em;">
@@ -966,6 +978,8 @@ function cordespace_reports_render_tab_sommaire(): void {
 						<th>Produit</th>
 						<th style="text-align:right;">✅ Qté réelle</th>
 						<th style="text-align:right;">✅ Revenu réel</th>
+						<th style="text-align:right;">🧾 TPS</th>
+						<th style="text-align:right;">🧾 TVQ</th>
 						<th style="text-align:right;">🔮 Qté pronostic</th>
 						<th style="text-align:right;">🔮 Revenu pronostic</th>
 						<th style="text-align:right;">🚫 Qté annulée</th>
@@ -977,6 +991,8 @@ function cordespace_reports_render_tab_sommaire(): void {
 							<td><strong><?php echo esc_html( $g['name'] ); ?></strong></td>
 							<td style="text-align:right; color:#2a7a2a;"><strong><?php echo (int) $g['qty_real']; ?></strong></td>
 							<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $g['rev_real'], 2, ',', ' ' ); ?> $</td>
+							<td style="text-align:right; color:#555;"><?php echo number_format( $g['tps_real'], 2, ',', ' ' ); ?> $</td>
+							<td style="text-align:right; color:#555;"><?php echo number_format( $g['tvq_real'], 2, ',', ' ' ); ?> $</td>
 							<td style="text-align:right; color:#7a5d00;"><?php echo (int) $g['qty_pending']; ?></td>
 							<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $g['rev_pending'], 2, ',', ' ' ); ?> $</td>
 							<td style="text-align:right; color:#999;"><?php echo (int) $g['qty_cancelled']; ?></td>
@@ -986,6 +1002,8 @@ function cordespace_reports_render_tab_sommaire(): void {
 						<td>TOTAUX</td>
 						<td style="text-align:right; color:#2a7a2a;"><?php echo (int) $tot_qty_real; ?></td>
 						<td style="text-align:right; color:#2a7a2a;"><?php echo number_format( $tot_rev_real, 2, ',', ' ' ); ?> $</td>
+						<td style="text-align:right; color:#555;"><?php echo number_format( $tot_tps_real, 2, ',', ' ' ); ?> $</td>
+						<td style="text-align:right; color:#555;"><?php echo number_format( $tot_tvq_real, 2, ',', ' ' ); ?> $</td>
 						<td style="text-align:right; color:#7a5d00;"><?php echo (int) $tot_qty_pen; ?></td>
 						<td style="text-align:right; color:#7a5d00;"><?php echo number_format( $tot_rev_pen, 2, ',', ' ' ); ?> $</td>
 						<td style="text-align:right; color:#999;"><?php echo (int) $tot_qty_can; ?></td>
@@ -2092,11 +2110,16 @@ function cordespace_reports_handle_csv_sommaire(): void {
 				'name'      => $key,
 				'qty_real'  => 0, 'qty_pending' => 0, 'qty_cancelled' => 0,
 				'rev_real'  => 0, 'rev_pending' => 0, 'rev_cancelled' => 0,
+				'tps_real'  => 0, 'tvq_real'    => 0,
 			];
 		}
 		$cat = cordespace_reports_status_category( $it['status'] );
 		$grouped[ $key ][ 'qty_' . $cat ] += (int) $it['qty'];
 		$grouped[ $key ][ 'rev_' . $cat ] += $it['total'];
+		if ( $cat === 'real' ) {
+			$grouped[ $key ]['tps_real'] += (float) ( $it['tps'] ?? 0 );
+			$grouped[ $key ]['tvq_real'] += (float) ( $it['tvq'] ?? 0 );
+		}
 	}
 	uasort( $grouped, fn( $a, $b ) => $b['qty_real'] <=> $a['qty_real'] );
 
@@ -2115,27 +2138,34 @@ function cordespace_reports_handle_csv_sommaire(): void {
 
 	fputcsv( $out, [
 		'Produit',
-		'Qté réelle', 'Revenu réel',
+		'Qté réelle', 'Revenu réel', 'TPS', 'TVQ',
 		'Qté pronostic', 'Revenu pronostic',
 		'Qté annulée', 'Revenu annulé',
 	], ';' );
 
 	$tot_qr = $tot_qp = $tot_qc = 0;
 	$tot_rr = $tot_rp = $tot_rc = 0;
+	$tot_tps = $tot_tvq = 0;
 	foreach ( $grouped as $g ) {
 		fputcsv( $out, [
 			$g['name'],
 			$g['qty_real'],     number_format( $g['rev_real'], 2, '.', '' ),
+			number_format( $g['tps_real'], 2, '.', '' ),
+			number_format( $g['tvq_real'], 2, '.', '' ),
 			$g['qty_pending'],  number_format( $g['rev_pending'], 2, '.', '' ),
 			$g['qty_cancelled'], number_format( $g['rev_cancelled'], 2, '.', '' ),
 		], ';' );
 		$tot_qr += $g['qty_real'];     $tot_rr += $g['rev_real'];
 		$tot_qp += $g['qty_pending'];  $tot_rp += $g['rev_pending'];
 		$tot_qc += $g['qty_cancelled']; $tot_rc += $g['rev_cancelled'];
+		$tot_tps += $g['tps_real'];
+		$tot_tvq += $g['tvq_real'];
 	}
 	fputcsv( $out, [
 		'TOTAUX',
 		$tot_qr, number_format( $tot_rr, 2, '.', '' ),
+		number_format( $tot_tps, 2, '.', '' ),
+		number_format( $tot_tvq, 2, '.', '' ),
 		$tot_qp, number_format( $tot_rp, 2, '.', '' ),
 		$tot_qc, number_format( $tot_rc, 2, '.', '' ),
 	], ';' );
