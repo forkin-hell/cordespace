@@ -196,9 +196,19 @@ function cordespace_is_amelia_admin_context(): bool {
 	// La protection « voir les events des autres profs » qu'apporte ce
 	// module n'a aucun intérêt sur les écrans de config purs — donc on
 	// renvoie false ici et l'utilisateur·trice garde ses pleines caps.
+	// Liste des pages de CONFIGURATION admin Amelia : on les exclut du
+	// demote parce qu'elles ne sont pas « opérationnelles » (pas de
+	// gestion d'events au jour le jour). Les sauvegardes et options
+	// avancées de ces pages requièrent souvent le rôle administrator.
+	//
+	// Si tu vois un bug du genre « le bouton Save ne réagit pas » ou
+	// « options Advanced cachées » sur une autre page wpamelia-*, ajoute
+	// son slug ici. La liste complète des slugs admin Amelia est dans
+	// src/Infrastructure/WP/config/Menu.php du plugin.
 	$admin_pages_to_skip = [
 		'wpamelia-settings',      // Settings (général, payments, etc.)
 		'wpamelia-notifications', // Notifications config
+		'wpamelia-customize',     // Customize forms (labels, colors, options avancées)
 	];
 
 	// Cas 1 : page wp-admin Amelia (chargement direct).
