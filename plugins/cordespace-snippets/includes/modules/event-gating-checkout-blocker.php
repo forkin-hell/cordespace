@@ -388,7 +388,7 @@ function cordespace_evgating_render_block_banner(): void {
 		// Pas de texte d'intro hardcode ici : le contenu editable du type
 		// (post_content du CPT cordespace_evtype) est affiche plus bas dans
 		// chaque section, ce qui permet a Tess de rediger son propre message
-		// (incluant le contact gestion@cordespace.com pour les nouvelles
+		// (incluant le contact info@cordespace.com pour les nouvelles
 		// personnes sans compte). Retirer le hardcoded evite la redondance.
 		?>
 

@@ -294,7 +294,7 @@ function cordespace_render_logged_out_view() {
 			Que tu sois enseignant·e ou client·e, ta vue s'adaptera automatiquement après la connexion.
 		</p>
 		<p style="margin:0;">
-			<strong>Pas encore de compte ?</strong> Un compte sera créé automatiquement à ton premier achat sur Cordespace. Si tu rencontres des soucis de connexion, ou si tu ne peux pas acheter ton billet faute de compte (par exemple pour un semi-privé), écris-nous à <a href="mailto:gestion@cordespace.com" style="color:#1d4d7e;text-decoration:underline;">gestion@cordespace.com</a>.
+			<strong>Pas encore de compte ?</strong> Un compte sera créé automatiquement à ton premier achat sur Cordespace. Si tu rencontres des soucis de connexion, ou si tu ne peux pas acheter ton billet faute de compte (par exemple pour un semi-privé), écris-nous à <a href="mailto:info@cordespace.com" style="color:#1d4d7e;text-decoration:underline;">info@cordespace.com</a>.
 		</p>
 	</div>
 	<?php
