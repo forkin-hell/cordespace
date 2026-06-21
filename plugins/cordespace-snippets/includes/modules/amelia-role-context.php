@@ -114,33 +114,6 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 		return $eventsArray;
 	}
 
-	// ── DEBUG TEMPORAIRE (à retirer) : compte chaque invocation du filtre +
-	// le param page + présence de l'event 130. Révèle la pagination.
-	$dbg = get_option( 'cordespace_dbg_cabinet', [] );
-	if ( ! is_array( $dbg ) ) {
-		$dbg = [];
-	}
-	$e130 = null;
-	foreach ( $eventsArray as $e ) {
-		if ( (int) ( $e['id'] ?? 0 ) === 130 ) { $e130 = $e; break; }
-	}
-	$pg     = $GLOBALS['cordespace_amelia_req_ctx']['page'] ?? ( $_GET['page'] ?? '?' );
-	$e130d  = null;
-	if ( is_array( $e130 ) ) {
-		$e130d = [
-			'periods'    => is_array( $e130['periods'] ?? null ) ? count( $e130['periods'] ) : 'n/a',
-			'providers'  => is_array( $e130['providers'] ?? null ) ? count( $e130['providers'] ) : 'n/a',
-			'bookings'   => is_array( $e130['bookings'] ?? null ) ? count( $e130['bookings'] ) : 'n/a',
-			'period0'    => ( is_array( $e130['periods'] ?? null ) && isset( $e130['periods'][0] ) && is_array( $e130['periods'][0] ) ) ? array_keys( $e130['periods'][0] ) : [],
-		];
-	}
-	$dbg[] = [ 'n' => count( $dbg ) + 1, 'count' => count( $eventsArray ), 'page' => (string) $pg, 'e130' => $e130d ];
-	if ( count( $dbg ) > 40 ) {
-		$dbg = array_slice( $dbg, -40 );
-	}
-	update_option( 'cordespace_dbg_cabinet', $dbg, false );
-	// ── FIN DEBUG
-
 	// Le panneau Vue d'Amelia rend UNE CARTE PAR PROVIDER assigné à l'event.
 	// Un event à 3 providers s'affiche donc 3 fois pour un manager (qui voit
 	// tous les providers). Côté serveur l'event n'apparaît pourtant qu'UNE fois
