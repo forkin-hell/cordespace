@@ -114,23 +114,39 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 		return $eventsArray;
 	}
 
-	// Ne garder que les events où cette entité est assignée comme provider.
-	$filtered = array_filter(
-		$eventsArray,
-		function ( $event ) use ( $entity_id ) {
-			if ( empty( $event['providers'] ) || ! is_array( $event['providers'] ) ) {
-				return false;
-			}
+	// Ne garder que les events où cette entité est assignée, EN DÉDUPLIQUANT
+	// par id. Pourquoi dédupliquer : dans la vue manager, Amelia renvoie une
+	// ligne par (event × provider) — un event à 3 providers apparaît donc 3×.
+	// Chaque entrée est l'event COMPLET (avec toutes ses périodes), donc garder
+	// la première occurrence de chaque id ne perd aucune date ; ça collapse
+	// juste les copies par-provider. Des events distincts (ids différents, même
+	// s'ils portent le même nom) restent affichés séparément — c'est voulu.
+	$seen     = [];
+	$filtered = [];
+	foreach ( $eventsArray as $event ) {
+		$is_own = false;
+		if ( ! empty( $event['providers'] ) && is_array( $event['providers'] ) ) {
 			foreach ( $event['providers'] as $p ) {
 				if ( (int) ( $p['id'] ?? 0 ) === $entity_id ) {
-					return true;
+					$is_own = true;
+					break;
 				}
 			}
-			return false;
 		}
-	);
+		if ( ! $is_own ) {
+			continue;
+		}
+		$event_id = (int) ( $event['id'] ?? 0 );
+		if ( $event_id > 0 ) {
+			if ( isset( $seen[ $event_id ] ) ) {
+				continue; // copie par-provider déjà gardée
+			}
+			$seen[ $event_id ] = true;
+		}
+		$filtered[] = $event;
+	}
 
-	return array_values( $filtered );
+	return $filtered;
 }
 
 // ============================================================================
