@@ -82,8 +82,8 @@ return [
 			'default_active'  => true,
 		],
 		'mon-espace.amelia-role-context' => [
-			'label'           => 'Découplage rôle Amelia ↔ contexte',
-			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet /mon-espace (auto-login WP_USER : retire wpamelia-manager de l\'objet user en mémoire sur le frontend pour qu\'Amelia détecte provider). Modifie uniquement l\'objet user de la requête, jamais la DB. NB : le volet « demote admin → manager » dans wp-admin Amelia a été retiré le 2026-06-17 — les comptes admin ne sont plus des entités provider, donc un admin pur voit déjà tous les events nativement.',
+			'label'           => 'Cabinet /mon-espace : prof voit seulement ses cours',
+			'description'     => 'Dans le cabinet /mon-espace (panneau employé Amelia), chaque prof ne voit QUE ses propres cours, tout en gardant la vue « tous les cours » dans wp-admin (managers). Mécanisme robuste via le hook natif amelia_get_events_filter : on ne touche PAS au rôle WP (fini le hack « strip » fragile qui causait le flash-puis-vide au reload), on filtre juste la liste d\'events de la requête cabinet (page=cabinet-provider) pour ne garder que ceux où l\'entité provider du prof est assignée. Marche pour managers ET providers, garde toutes les fonctions du panneau (recherche, dates, scanner QR).',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',
