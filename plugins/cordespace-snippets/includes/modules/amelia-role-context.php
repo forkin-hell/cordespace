@@ -114,41 +114,19 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 		return $eventsArray;
 	}
 
-	// ── DEBUG TEMPORAIRE (à retirer) : compte chaque invocation du filtre +
-	// le param page + présence de l'event 130. Révèle la pagination.
-	$dbg = get_option( 'cordespace_dbg_cabinet', [] );
-	if ( ! is_array( $dbg ) ) {
-		$dbg = [];
-	}
-	$e130 = null;
-	foreach ( $eventsArray as $e ) {
-		if ( (int) ( $e['id'] ?? 0 ) === 130 ) { $e130 = $e; break; }
-	}
-	$pg     = $GLOBALS['cordespace_amelia_req_ctx']['page'] ?? ( $_GET['page'] ?? '?' );
-	$e130d  = null;
-	if ( is_array( $e130 ) ) {
-		$e130d = [
-			'periods'    => is_array( $e130['periods'] ?? null ) ? count( $e130['periods'] ) : 'n/a',
-			'providers'  => is_array( $e130['providers'] ?? null ) ? count( $e130['providers'] ) : 'n/a',
-			'bookings'   => is_array( $e130['bookings'] ?? null ) ? count( $e130['bookings'] ) : 'n/a',
-			'period0'    => ( is_array( $e130['periods'] ?? null ) && isset( $e130['periods'][0] ) && is_array( $e130['periods'][0] ) ) ? array_keys( $e130['periods'][0] ) : [],
-		];
-	}
-	$dbg[] = [ 'n' => count( $dbg ) + 1, 'count' => count( $eventsArray ), 'page' => (string) $pg, 'e130' => $e130d ];
-	if ( count( $dbg ) > 40 ) {
-		$dbg = array_slice( $dbg, -40 );
-	}
-	update_option( 'cordespace_dbg_cabinet', $dbg, false );
-	// ── FIN DEBUG
-
-	// Le panneau Vue d'Amelia rend UNE CARTE PAR PROVIDER assigné à l'event.
-	// Un event à 3 providers s'affiche donc 3 fois pour un manager (qui voit
-	// tous les providers). Côté serveur l'event n'apparaît pourtant qu'UNE fois
-	// dans la liste (vérifié : 12 events, ids uniques) — la duplication est dans
-	// le rendu Vue. La parade : ne garder que les events du prof, ET réduire la
-	// liste 'providers' de chaque event au seul prof connecté → le panneau ne
-	// rend plus qu'une carte par cours. (Un vrai provider scopé reçoit déjà une
-	// liste 'providers' limitée à lui, d'où l'absence de doublons pour eux.)
+	// En vue MANAGER, le panneau employé Amelia rend une carte par RÉSERVATION
+	// (et par provider) — d'où un même cours affiché N fois (N = nb de bookings).
+	// En vue provider, Amelia scope les données et le cours n'apparaît qu'une
+	// fois. Comme on garde le rôle manager (pour « voir tout » en wp-admin), on
+	// reproduit l'effet « une carte par cours » côté données, pour la requête
+	// cabinet uniquement :
+	//   1. ne garder que les events du prof (son entité provider est assignée)
+	//   2. réduire la liste 'providers' au seul prof
+	//   3. vider les tableaux 'bookings' (event + périodes) qui pilotent le
+	//      rendu par-réservation. Les compteurs scalaires (spotsSold, places,
+	//      bookingsApproved…) restent intacts → le badge « X/Y » s'affiche
+	//      toujours, et le détail/scanner QR d'un cours re-fetch ses propres
+	//      données via une autre requête (non filtrée ici).
 	$filtered = [];
 	foreach ( $eventsArray as $event ) {
 		if ( empty( $event['providers'] ) || ! is_array( $event['providers'] ) ) {
@@ -165,7 +143,15 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 			continue; // pas un cours de ce prof
 		}
 		$event['providers'] = [ $own ];
-		$filtered[]         = $event;
+		$event['bookings']  = [];
+		if ( ! empty( $event['periods'] ) && is_array( $event['periods'] ) ) {
+			foreach ( $event['periods'] as $k => $per ) {
+				if ( is_array( $per ) ) {
+					$event['periods'][ $k ]['bookings'] = [];
+				}
+			}
+		}
+		$filtered[] = $event;
 	}
 
 	return array_values( $filtered );
