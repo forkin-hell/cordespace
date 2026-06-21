@@ -114,6 +114,21 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 		return $eventsArray;
 	}
 
+	// ── DEBUG TEMPORAIRE (à retirer) : capture l'état brut reçu par le filtre,
+	// pour trancher doublon serveur vs doublon côté Vue. Lisible en SQL :
+	// SELECT option_value FROM wp_options WHERE option_name='cordespace_dbg_cabinet';
+	$dbg_ids = [];
+	foreach ( $eventsArray as $e ) {
+		$dbg_ids[] = isset( $e['id'] ) ? $e['id'] : '(pas-de-id)';
+	}
+	update_option( 'cordespace_dbg_cabinet', wp_json_encode( [
+		'count'       => count( $eventsArray ),
+		'entity_id'   => $entity_id,
+		'ids'         => $dbg_ids,
+		'sample_keys' => isset( $eventsArray[0] ) && is_array( $eventsArray[0] ) ? array_keys( $eventsArray[0] ) : [],
+	] ), false );
+	// ── FIN DEBUG
+
 	// Ne garder que les events où cette entité est assignée, EN DÉDUPLIQUANT
 	// par id. Pourquoi dédupliquer : dans la vue manager, Amelia renvoie une
 	// ligne par (event × provider) — un event à 3 providers apparaît donc 3×.
