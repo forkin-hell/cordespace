@@ -83,7 +83,7 @@ return [
 		],
 		'mon-espace.amelia-role-context' => [
 			'label'           => 'Découplage rôle Amelia ↔ contexte',
-			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet (auto-login WP_USER). Permet aussi à un administrateur de voir tous les events depuis wp-admin → Amelia (au lieu de seulement les siens en tant que prof). Modifie uniquement l\'objet user en mémoire, jamais la DB.',
+			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet /mon-espace (auto-login WP_USER : retire wpamelia-manager de l\'objet user en mémoire sur le frontend pour qu\'Amelia détecte provider). Modifie uniquement l\'objet user de la requête, jamais la DB. NB : le volet « demote admin → manager » dans wp-admin Amelia a été retiré le 2026-06-17 — les comptes admin ne sont plus des entités provider, donc un admin pur voit déjà tous les events nativement.',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',
