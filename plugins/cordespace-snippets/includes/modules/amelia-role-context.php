@@ -120,12 +120,21 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 	if ( ! is_array( $dbg ) ) {
 		$dbg = [];
 	}
-	$ids_130 = false;
+	$e130 = null;
 	foreach ( $eventsArray as $e ) {
-		if ( (int) ( $e['id'] ?? 0 ) === 130 ) { $ids_130 = true; break; }
+		if ( (int) ( $e['id'] ?? 0 ) === 130 ) { $e130 = $e; break; }
 	}
-	$pg = $GLOBALS['cordespace_amelia_req_ctx']['page'] ?? ( $_GET['page'] ?? '?' );
-	$dbg[] = [ 'n' => count( $dbg ) + 1, 'count' => count( $eventsArray ), 'page' => (string) $pg, 'has130' => $ids_130 ];
+	$pg     = $GLOBALS['cordespace_amelia_req_ctx']['page'] ?? ( $_GET['page'] ?? '?' );
+	$e130d  = null;
+	if ( is_array( $e130 ) ) {
+		$e130d = [
+			'periods'    => is_array( $e130['periods'] ?? null ) ? count( $e130['periods'] ) : 'n/a',
+			'providers'  => is_array( $e130['providers'] ?? null ) ? count( $e130['providers'] ) : 'n/a',
+			'bookings'   => is_array( $e130['bookings'] ?? null ) ? count( $e130['bookings'] ) : 'n/a',
+			'period0'    => ( is_array( $e130['periods'] ?? null ) && isset( $e130['periods'][0] ) && is_array( $e130['periods'][0] ) ) ? array_keys( $e130['periods'][0] ) : [],
+		];
+	}
+	$dbg[] = [ 'n' => count( $dbg ) + 1, 'count' => count( $eventsArray ), 'page' => (string) $pg, 'e130' => $e130d ];
 	if ( count( $dbg ) > 40 ) {
 		$dbg = array_slice( $dbg, -40 );
 	}
