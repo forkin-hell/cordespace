@@ -83,7 +83,7 @@ return [
 		],
 		'mon-espace.amelia-role-context' => [
 			'label'           => 'Cabinet /mon-espace : prof voit seulement ses cours',
-			'description'     => 'Dans le cabinet /mon-espace, un·e prof voit ses cours comme un PROVIDER (une carte par cours, propre + scanner QR/recherche/dates), tout en restant MANAGER ailleurs (wp-admin = voit tous les cours). Mécanisme : on intercepte la LECTURE des capabilities en base (get_user_metadata) uniquement pour le compte courant ET sur les requêtes du cabinet (page=cabinet-provider) → on renvoie wpamelia-provider. Comme ce filtre court-circuite avant le cache, même la re-lecture par email d\'Amelia voit provider → cohérent à chaque requête → plus de flash-puis-vide. Hors cabinet, rien n\'est touché. Désactiver le module = cabinet en vue manager (avec doublons par-réservation).',
+			'description'     => 'Dans le cabinet /mon-espace (panneau employé Amelia), chaque prof ne voit QUE ses propres cours, tout en gardant la vue « tous les cours » dans wp-admin (managers). Mécanisme robuste via le hook natif amelia_get_events_filter : on ne touche PAS au rôle WP (fini le hack « strip » fragile qui causait le flash-puis-vide au reload), on filtre juste la liste d\'events de la requête cabinet (page=cabinet-provider) pour ne garder que ceux où l\'entité provider du prof est assignée. Marche pour managers ET providers, garde toutes les fonctions du panneau (recherche, dates, scanner QR).',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',

@@ -3,37 +3,40 @@
  * Module : mon-espace.amelia-role-context
  *
  * Objectif : dans le cabinet /mon-espace (panneau employé Amelia), un·e prof
- * voit ses cours comme un PROVIDER (une carte par cours, propre) — tout en
- * restant MANAGER partout ailleurs (wp-admin → Amelia : voit tous les cours).
+ * ne voit QUE ses propres cours — tout en gardant sa vue « tous les cours »
+ * dans wp-admin → Amelia (utile pour les managers).
  *
- *  ── Pourquoi pas l'ancien « strip de rôle en mémoire » ──────────────────
- *  L'ancienne version modifiait $user->roles en mémoire (manager → provider).
- *  Mais Amelia RE-CHERCHE le compte en base par email à chaque requête du
- *  cabinet (UserApplicationService L627 : get_user_by('email', …)) et relit le
- *  rôle depuis la DB. Notre modif en mémoire était donc lue par-dessus → Amelia
- *  voyait « manager » → le token (provider) ne matchait plus → AuthorizationException
- *  → panneau VIDE (le « flash-puis-vide »), de façon intermittente.
+ *  ── Pourquoi cette approche (et pas l'ancien « strip de rôle ») ──────────
+ *  L'ancienne version transformait le rôle WP en mémoire (manager → provider)
+ *  pour qu'Amelia scope les events au provider. Mais Amelia ré-évalue le rôle
+ *  à CHAQUE requête du panneau (via le token JWT), et le strip ne s'appliquait
+ *  pas de façon consistante :
+ *    - au login : le strip est appliqué → token = provider → on voit ses cours
+ *    - au reload : le strip ne s'applique pas pareil → le serveur re-voit
+ *      « manager » → le token (provider) ne matche plus → AuthorizationException
+ *      (GetEventsCommandHandler L85) → panneau VIDE. = le fameux « flash-puis-vide ».
  *
- *  ── La nouvelle approche : intercepter la LECTURE en base ───────────────
- *  On filtre `get_user_metadata` sur la clé capabilities, UNIQUEMENT :
- *    - pour le compte WP courant,
- *    - sur une requête du cabinet employé (page/source = 'cabinet-provider'),
- *    - si ce compte a bien une entité Amelia provider (= un·e vrai·e prof).
- *  → On renvoie alors des capabilities « wpamelia-provider ». Comme ce filtre
- *  court-circuite la lecture AVANT le cache, MÊME la re-lecture par email
- *  d'Amelia voit « provider ». Cohérent à chaque requête → plus de désaccord
- *  de token, plus de page vide. Et Amelia, voyant un provider, scope les events
- *  et rend une carte par cours (propre).
+ *  ── La nouvelle approche, robuste ───────────────────────────────────────
+ *  On NE touche PLUS au rôle. Le manager reste manager → Amelia l'authentifie
+ *  sans mismatch de token, et renvoie TOUS les events au cabinet. On filtre
+ *  ensuite la liste via le hook natif `amelia_get_events_filter` pour ne garder
+ *  que les events où l'entité provider du prof est assignée.
  *
- *  Hors cabinet (wp-admin, front public, autres plugins) : le filtre ne touche
- *  rien → le compte reste manager → voit tous les cours, garde ses droits.
+ *  On filtre UNIQUEMENT la requête du cabinet employé (page/source =
+ *  'cabinet-provider'). Jamais wp-admin (le manager y voit tout), jamais les
+ *  formulaires de réservation publics (les client·es y voient tout).
  *
- *  Réversible : désactiver ce module rend le filtre dormant (le manager
- *  reverrait alors le cabinet en vue manager, avec les doublons par-réservation).
+ *  Avantages vs l'ancien hack :
+ *    - Stable au reload (plus de mismatch de token, plus de page vide)
+ *    - Garde 100% du panneau Amelia (recherche, filtres de dates, scanner QR…)
+ *    - Marche pour managers ET providers (on se base sur l'entité, pas le rôle)
+ *    - Réversible : désactiver ce module rend le filtre dormant (le manager
+ *      reverrait alors tous les cours dans son cabinet)
  *
- *  Référence Amelia (v9.5.1) :
- *    - UserApplicationService L627-660 : re-fetch par email + getUserAmeliaRole
- *    - UserRoles::getUserAmeliaRole : lit $wpUser->roles (admin/manager/provider)
+ *  Référence du code Amelia (v9.5.1) :
+ *    - GetEventsCommandHandler L100-101 : scope au provider si type === PROVIDER
+ *    - GetEventsCommandHandler L410     : apply_filters('amelia_get_events_filter')
+ *    - GetEventsCommandHandler L366-375 : chaque event a $event['providers'][n]['id']
  *    - Command.php L179-181 : 'cabinet-provider' → page='cabinet' + cabinetType='provider'
  */
 
@@ -44,9 +47,13 @@ defined( 'ABSPATH' ) || exit;
 // ============================================================================
 
 /**
- * Capture les params `page` et `source` de la requête REST avant que la route
- * Amelia ne s'exécute, pour savoir s'il s'agit du cabinet employé. WP_REST_Request
- * expose proprement les params (query string OU corps JSON).
+ * Capture les paramètres `page` et `source` de la requête REST courante avant
+ * que la route Amelia ne s'exécute. On les stocke pour que le filtre des events
+ * (plus bas) sache s'il s'agit du cabinet employé.
+ *
+ * On passe par rest_pre_dispatch (et non $_GET brut) parce que WP_REST_Request
+ * expose proprement les params, qu'ils soient en query string OU dans le corps
+ * JSON de la requête.
  */
 add_filter( 'rest_pre_dispatch', 'cordespace_capture_amelia_request_context', 10, 3 );
 
@@ -64,7 +71,8 @@ function cordespace_capture_amelia_request_context( $result, $server, $request )
 
 /**
  * True si la requête courante est celle du CABINET EMPLOYÉ Amelia
- * (page ou source = 'cabinet-provider').
+ * (page ou source = 'cabinet-provider'). Vérifie le contexte capturé via
+ * rest_pre_dispatch, puis $_GET / $_POST en filet de sécurité.
  */
 function cordespace_is_amelia_provider_cabinet_request(): bool {
 	$ctx = isset( $GLOBALS['cordespace_amelia_req_ctx'] ) ? (array) $GLOBALS['cordespace_amelia_req_ctx'] : [];
@@ -83,13 +91,66 @@ function cordespace_is_amelia_provider_cabinet_request(): bool {
 }
 
 // ============================================================================
-// 2) Helper : entité provider Amelia du WP user connecté
+// 2) Filtre des events : dans le cabinet employé, ne garder que les siens
+// ============================================================================
+
+add_filter( 'amelia_get_events_filter', 'cordespace_cabinet_scope_events_to_own', 10, 1 );
+
+function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
+	if ( ! is_array( $eventsArray ) || empty( $eventsArray ) ) {
+		return $eventsArray;
+	}
+
+	// Uniquement la requête du cabinet employé (pas wp-admin, pas réservation).
+	if ( ! cordespace_is_amelia_provider_cabinet_request() ) {
+		return $eventsArray;
+	}
+
+	// L'entité provider Amelia du prof connecté.
+	$entity_id = cordespace_current_user_amelia_provider_id();
+	if ( $entity_id <= 0 ) {
+		// Pas d'entité provider (ex : admin pur) → on ne filtre pas (sécurité :
+		// mieux vaut tout montrer que de vider par erreur).
+		return $eventsArray;
+	}
+
+	// Le panneau Vue d'Amelia rend UNE CARTE PAR PROVIDER assigné à l'event.
+	// Un event à 3 providers s'affiche donc 3 fois pour un manager (qui voit
+	// tous les providers). Côté serveur l'event n'apparaît pourtant qu'UNE fois
+	// dans la liste (vérifié : 12 events, ids uniques) — la duplication est dans
+	// le rendu Vue. La parade : ne garder que les events du prof, ET réduire la
+	// liste 'providers' de chaque event au seul prof connecté → le panneau ne
+	// rend plus qu'une carte par cours. (Un vrai provider scopé reçoit déjà une
+	// liste 'providers' limitée à lui, d'où l'absence de doublons pour eux.)
+	$filtered = [];
+	foreach ( $eventsArray as $event ) {
+		if ( empty( $event['providers'] ) || ! is_array( $event['providers'] ) ) {
+			continue;
+		}
+		$own = null;
+		foreach ( $event['providers'] as $p ) {
+			if ( (int) ( $p['id'] ?? 0 ) === $entity_id ) {
+				$own = $p;
+				break;
+			}
+		}
+		if ( $own === null ) {
+			continue; // pas un cours de ce prof
+		}
+		$event['providers'] = [ $own ];
+		$filtered[]         = $event;
+	}
+
+	return array_values( $filtered );
+}
+
+// ============================================================================
+// 3) Helper : entité provider Amelia du WP user connecté
 // ============================================================================
 
 /**
- * ID de l'entité Amelia provider (table wp_amelia_users) liée au WP user
- * connecté via externalId, ou 0. Caché. Ne lit PAS de user meta (pas de
- * récursion avec le filtre des capabilities).
+ * Renvoie l'ID de l'entité Amelia provider (table wp_amelia_users) liée au WP
+ * user connecté via externalId, ou 0 s'il n'en a pas. Caché par requête.
  */
 function cordespace_current_user_amelia_provider_id(): int {
 	$wp_user_id = get_current_user_id();
@@ -108,51 +169,4 @@ function cordespace_current_user_amelia_provider_id(): int {
 	) );
 	$cache[ $wp_user_id ] = $id;
 	return $id;
-}
-
-// ============================================================================
-// 3) Override des capabilities : provider dans le cabinet, manager ailleurs
-// ============================================================================
-
-/**
- * Sur une requête du cabinet employé, force les capabilities du WP user courant
- * à « wpamelia-provider » — au niveau de la LECTURE en base (get_user_metadata),
- * pour que même la re-lecture par email d'Amelia voie provider.
- *
- * Garde anti-récursion ($busy) : la résolution de get_current_user_id() peut
- * elle-même déclencher une lecture des capabilities → on renvoie alors la valeur
- * normale pour ne pas boucler (l'objet user courant se charge en manager, ce
- * qui est sans incidence : Amelia utilise le user re-fetch par email, lui filtré).
- */
-add_filter( 'get_user_metadata', 'cordespace_cabinet_force_provider_caps', 10, 4 );
-
-function cordespace_cabinet_force_provider_caps( $value, $object_id, $meta_key, $single ) {
-	static $busy = false;
-
-	global $wpdb;
-	if ( $meta_key !== $wpdb->prefix . 'capabilities' ) {
-		return $value;
-	}
-	if ( $busy ) {
-		return $value;
-	}
-	if ( ! cordespace_is_amelia_provider_cabinet_request() ) {
-		return $value;
-	}
-
-	$busy        = true;
-	$current_id  = get_current_user_id();
-	$is_current  = ( $current_id > 0 && (int) $object_id === $current_id );
-	$has_entity  = $is_current ? ( cordespace_current_user_amelia_provider_id() > 0 ) : false;
-	$busy        = false;
-
-	if ( ! $has_entity ) {
-		return $value;
-	}
-
-	// Capabilities = juste le rôle provider. WP en dérive $user->roles =
-	// ['wpamelia-provider'] et fusionne les caps du rôle. getUserAmeliaRole
-	// renvoie alors 'provider'. Format de retour compatible $single/non-$single :
-	// WP fait $check[0] si $single, sinon renvoie $check tel quel.
-	return [ [ 'wpamelia-provider' => true ] ];
 }
