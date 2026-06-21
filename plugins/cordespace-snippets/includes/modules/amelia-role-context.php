@@ -114,54 +114,34 @@ function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
 		return $eventsArray;
 	}
 
-	// ── DEBUG TEMPORAIRE (à retirer) : capture l'état brut reçu par le filtre,
-	// pour trancher doublon serveur vs doublon côté Vue. Lisible en SQL :
-	// SELECT option_value FROM wp_options WHERE option_name='cordespace_dbg_cabinet';
-	$dbg_ids = [];
-	foreach ( $eventsArray as $e ) {
-		$dbg_ids[] = isset( $e['id'] ) ? $e['id'] : '(pas-de-id)';
-	}
-	update_option( 'cordespace_dbg_cabinet', wp_json_encode( [
-		'count'       => count( $eventsArray ),
-		'entity_id'   => $entity_id,
-		'ids'         => $dbg_ids,
-		'sample_keys' => isset( $eventsArray[0] ) && is_array( $eventsArray[0] ) ? array_keys( $eventsArray[0] ) : [],
-	] ), false );
-	// ── FIN DEBUG
-
-	// Ne garder que les events où cette entité est assignée, EN DÉDUPLIQUANT
-	// par id. Pourquoi dédupliquer : dans la vue manager, Amelia renvoie une
-	// ligne par (event × provider) — un event à 3 providers apparaît donc 3×.
-	// Chaque entrée est l'event COMPLET (avec toutes ses périodes), donc garder
-	// la première occurrence de chaque id ne perd aucune date ; ça collapse
-	// juste les copies par-provider. Des events distincts (ids différents, même
-	// s'ils portent le même nom) restent affichés séparément — c'est voulu.
-	$seen     = [];
+	// Le panneau Vue d'Amelia rend UNE CARTE PAR PROVIDER assigné à l'event.
+	// Un event à 3 providers s'affiche donc 3 fois pour un manager (qui voit
+	// tous les providers). Côté serveur l'event n'apparaît pourtant qu'UNE fois
+	// dans la liste (vérifié : 12 events, ids uniques) — la duplication est dans
+	// le rendu Vue. La parade : ne garder que les events du prof, ET réduire la
+	// liste 'providers' de chaque event au seul prof connecté → le panneau ne
+	// rend plus qu'une carte par cours. (Un vrai provider scopé reçoit déjà une
+	// liste 'providers' limitée à lui, d'où l'absence de doublons pour eux.)
 	$filtered = [];
 	foreach ( $eventsArray as $event ) {
-		$is_own = false;
-		if ( ! empty( $event['providers'] ) && is_array( $event['providers'] ) ) {
-			foreach ( $event['providers'] as $p ) {
-				if ( (int) ( $p['id'] ?? 0 ) === $entity_id ) {
-					$is_own = true;
-					break;
-				}
-			}
-		}
-		if ( ! $is_own ) {
+		if ( empty( $event['providers'] ) || ! is_array( $event['providers'] ) ) {
 			continue;
 		}
-		$event_id = (int) ( $event['id'] ?? 0 );
-		if ( $event_id > 0 ) {
-			if ( isset( $seen[ $event_id ] ) ) {
-				continue; // copie par-provider déjà gardée
+		$own = null;
+		foreach ( $event['providers'] as $p ) {
+			if ( (int) ( $p['id'] ?? 0 ) === $entity_id ) {
+				$own = $p;
+				break;
 			}
-			$seen[ $event_id ] = true;
 		}
-		$filtered[] = $event;
+		if ( $own === null ) {
+			continue; // pas un cours de ce prof
+		}
+		$event['providers'] = [ $own ];
+		$filtered[]         = $event;
 	}
 
-	return $filtered;
+	return array_values( $filtered );
 }
 
 // ============================================================================
