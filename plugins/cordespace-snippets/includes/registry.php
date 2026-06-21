@@ -83,7 +83,7 @@ return [
 		],
 		'mon-espace.amelia-role-context' => [
 			'label'           => 'Cabinet /mon-espace : prof voit seulement ses cours',
-			'description'     => 'Dans le cabinet /mon-espace (panneau employé Amelia), chaque prof ne voit QUE ses propres cours, tout en gardant la vue « tous les cours » dans wp-admin (managers). Mécanisme robuste via le hook natif amelia_get_events_filter : on ne touche PAS au rôle WP (fini le hack « strip » fragile qui causait le flash-puis-vide au reload), on filtre juste la liste d\'events de la requête cabinet (page=cabinet-provider) pour ne garder que ceux où l\'entité provider du prof est assignée. Marche pour managers ET providers, garde toutes les fonctions du panneau (recherche, dates, scanner QR).',
+			'description'     => 'Dans le cabinet /mon-espace, un prof avec le rôle wpamelia-manager (ou administrator) est vu comme « provider » UNIQUEMENT sur le frontend : on retire ces rôles de l\'objet user EN MÉMOIRE (DB inchangée) pour qu\'Amelia détecte provider → auto-login du cabinet + scope à ses PROPRES cours (une carte par cours, scanner QR/recherche/dates intacts). En wp-admin, rien n\'est touché → le manager garde sa vue « tous les cours ». Marche parce qu\'Amelia utilise logged.in.user (= wp_get_current_user strippé) et SAUTE le re-fetch par email pour un WP user connecté (UserApplicationService::authorization L715-720). Désactiver = les profs managers revoient le formulaire de login Amelia dans le cabinet.',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',
