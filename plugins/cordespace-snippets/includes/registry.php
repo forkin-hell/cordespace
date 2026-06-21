@@ -83,7 +83,7 @@ return [
 		],
 		'mon-espace.amelia-role-context' => [
 			'label'           => 'Cabinet /mon-espace : prof voit seulement ses cours',
-			'description'     => 'Dans le cabinet /mon-espace, un prof avec le rôle wpamelia-manager (ou administrator) est vu comme « provider » UNIQUEMENT sur le frontend : on retire ces rôles de l\'objet user EN MÉMOIRE (DB inchangée) pour qu\'Amelia détecte provider → auto-login du cabinet + scope à ses PROPRES cours (une carte par cours, scanner QR/recherche/dates intacts). En wp-admin, rien n\'est touché → le manager garde sa vue « tous les cours ». Marche parce qu\'Amelia utilise logged.in.user (= wp_get_current_user strippé) et SAUTE le re-fetch par email pour un WP user connecté (UserApplicationService::authorization L715-720). Désactiver = les profs managers revoient le formulaire de login Amelia dans le cabinet.',
+			'description'     => 'Dans le cabinet /mon-espace, chaque prof manager ne voit QUE ses propres cours, tout en gardant « tous les cours » en wp-admin. On ne touche PAS au rôle : on filtre la liste d\'events de la requête cabinet (source=cabinet-provider) via le hook natif amelia_get_events_filter pour ne garder que ceux où l\'entité provider du prof est assignée. Limite connue : la vue manager du panneau Amelia rend une carte par RÉSERVATION, donc un même cours peut apparaître en plusieurs exemplaires (non corrigeable côté serveur sans casser les cartes). Un cabinet sans doublons nécessiterait que le prof soit un vrai provider (marche en prod, mais le cabinet provider est cassé sur le clone local).',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',

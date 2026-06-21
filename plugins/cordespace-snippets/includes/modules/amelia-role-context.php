@@ -2,165 +2,176 @@
 /**
  * Module : mon-espace.amelia-role-context
  *
- * Découple le rôle WP "vu par Amelia" du rôle WP réel sur le FRONTEND, pour
- * permettre l'auto-login au cabinet /mon-espace des profs en rôle
- * `wpamelia-manager`.
+ * Objectif : dans le cabinet /mon-espace (panneau employé Amelia), un·e prof
+ * ne voit QUE ses propres cours — tout en gardant sa vue « tous les cours »
+ * dans wp-admin → Amelia (utile pour les managers).
  *
- *  ── FRONTEND (cabinet /mon-espace) ─────────────────────────────────────
- *  Les profs avec rôle `wpamelia-manager` (cas Bunny, Ember, Ayik…)
- *  déclenchent une exception dans LoginCabinetCommandHandler : leur type DB
- *  Amelia est `provider` mais Amelia détecte `manager` à cause du rôle WP,
- *  donc le check `$user->getType() === $cabinetType` échoue → formulaire de
- *  login Amelia affiché à chaque visite (au lieu de l'auto-login WP).
+ *  ── Pourquoi cette approche (et pas l'ancien « strip de rôle ») ──────────
+ *  L'ancienne version transformait le rôle WP en mémoire (manager → provider)
+ *  pour qu'Amelia scope les events au provider. Mais Amelia ré-évalue le rôle
+ *  à CHAQUE requête du panneau (via le token JWT), et le strip ne s'appliquait
+ *  pas de façon consistante :
+ *    - au login : le strip est appliqué → token = provider → on voit ses cours
+ *    - au reload : le strip ne s'applique pas pareil → le serveur re-voit
+ *      « manager » → le token (provider) ne matche plus → AuthorizationException
+ *      (GetEventsCommandHandler L85) → panneau VIDE. = le fameux « flash-puis-vide ».
  *
- *  Solution : sur le frontend, on retire `wpamelia-manager` (et
- *  `administrator` au cas où) de l'objet $user en mémoire (DB inchangée).
- *  Amelia détecte alors `provider`, match avec le type DB, auto-login OK.
+ *  ── La nouvelle approche, robuste ───────────────────────────────────────
+ *  On NE touche PLUS au rôle. Le manager reste manager → Amelia l'authentifie
+ *  sans mismatch de token, et renvoie TOUS les events au cabinet. On filtre
+ *  ensuite la liste via le hook natif `amelia_get_events_filter` pour ne garder
+ *  que les events où l'entité provider du prof est assignée.
  *
- *  ── HISTORIQUE : le volet « demote admin → manager » a été RETIRÉ ──────
- *  Une 2e fonction (sur les pages wp-admin ?page=wpamelia-*) déclassait
- *  administrator → manager pour qu'un admin qui enseignait (= admin + entité
- *  Amelia provider) voie tous les events au lieu des siens. Retiré le
- *  2026-06-17 : on a nettoyé les comptes pour qu'un admin ne soit JAMAIS
- *  aussi une entité provider. Un admin pur voit donc tous les events
- *  nativement (rôle Amelia = admin), sans hack. Bénéfice : plus de
- *  manipulation de la cap delete_users (qui cassait la sauvegarde des pages
- *  de config Amelia : Settings, Customize, etc.).
+ *  On filtre UNIQUEMENT la requête du cabinet employé (page/source =
+ *  'cabinet-provider'). Jamais wp-admin (le manager y voit tout), jamais les
+ *  formulaires de réservation publics (les client·es y voient tout).
  *
- *  ── Pourquoi en mémoire seulement ──────────────────────────────────────
- *  Les modifs sur $user->roles n'affectent que l'objet user de la requête
- *  courante. Aucune écriture en DB. Réversible en désactivant ce module
- *  depuis wp-admin → Cordespace → Modules.
+ *  Avantages vs l'ancien hack :
+ *    - Stable au reload (plus de mismatch de token, plus de page vide)
+ *    - Garde 100% du panneau Amelia (recherche, filtres de dates, scanner QR…)
+ *    - Marche pour managers ET providers (on se base sur l'entité, pas le rôle)
+ *    - Réversible : désactiver ce module rend le filtre dormant (le manager
+ *      reverrait alors tous les cours dans son cabinet)
  *
- *  ── Si Amelia met à jour `getUserAmeliaRole` ──────────────────────────
- *  Ce module devient silencieusement inopérant : les profs manager
- *  reverront le formulaire de login Amelia (comme avant). Aucun risque de
- *  casse cachée ou de fuite. À adapter si ça arrive.
- *
- *  ── Pourquoi `init` et pas `set_current_user` ─────────────────────────
- *  `set_current_user` fire au moment où WP résout l'utilisateur·trice
- *  courant, AVANT que notre loader (plugins_loaded p5) ait inclus ce
- *  fichier. Conséquence : nos add_action ne seraient pas encore enregistrés.
- *  Le hook `init` priorité 1 s'exécute APRÈS plugins_loaded ET AVANT
- *  qu'Amelia lise $user->roles dans ses handlers. C'est le bon point.
- *
- *  Référence du code Amelia :
- *  - src/Infrastructure/WP/UserRoles/UserRoles.php : getUserAmeliaRole()
- *  - src/Application/Commands/User/LoginCabinetCommandHandler.php L72-74
+ *  Référence du code Amelia (v9.5.1) :
+ *    - GetEventsCommandHandler L100-101 : scope au provider si type === PROVIDER
+ *    - GetEventsCommandHandler L410     : apply_filters('amelia_get_events_filter')
+ *    - GetEventsCommandHandler L366-375 : chaque event a $event['providers'][n]['id']
+ *    - Command.php L179-181 : 'cabinet-provider' → page='cabinet' + cabinetType='provider'
  */
 
 defined( 'ABSPATH' ) || exit;
 
-// ─── Frontend : strip wpamelia-manager ET administrator pour auto-login cabinet ───
-// Sans ça, un prof manager (Bunny, Ember, Ayik…) visitant /mon-espace doit se
-// relogger sur le cabinet parce qu'Amelia détecte 'manager' alors que le
-// cabinet attend 'provider'.
-add_action( 'init', 'cordespace_strip_admin_roles_on_frontend', 1 );
+// ============================================================================
+// 1) Capture du contexte de la requête REST Amelia (page / source)
+// ============================================================================
 
-function cordespace_strip_admin_roles_on_frontend() {
-	if ( ! cordespace_is_frontend_request() ) {
-		return;
-	}
-	$user = wp_get_current_user();
-	if ( ! $user || ! $user->ID ) {
-		return;
-	}
+/**
+ * Capture les paramètres `page` et `source` de la requête REST courante avant
+ * que la route Amelia ne s'exécute. On les stocke pour que le filtre des events
+ * (plus bas) sache s'il s'agit du cabinet employé.
+ *
+ * On passe par rest_pre_dispatch (et non $_GET brut) parce que WP_REST_Request
+ * expose proprement les params, qu'ils soient en query string OU dans le corps
+ * JSON de la requête.
+ */
+add_filter( 'rest_pre_dispatch', 'cordespace_capture_amelia_request_context', 10, 3 );
 
-	$had_admin   = in_array( 'administrator', (array) $user->roles, true );
-	$had_manager = in_array( 'wpamelia-manager', (array) $user->roles, true );
-	if ( ! $had_admin && ! $had_manager ) {
-		return;
+function cordespace_capture_amelia_request_context( $result, $server, $request ) {
+	if ( $request instanceof WP_REST_Request ) {
+		foreach ( [ 'page', 'source' ] as $key ) {
+			$val = $request->get_param( $key );
+			if ( is_string( $val ) && $val !== '' ) {
+				$GLOBALS['cordespace_amelia_req_ctx'][ $key ] = $val;
+			}
+		}
 	}
-
-	$user->roles = array_values( array_diff(
-		(array) $user->roles,
-		[ 'administrator', 'wpamelia-manager' ]
-	) );
-
-	// S'assure que wpamelia-provider est présent (sinon Amelia tombe sur
-	// 'customer' par défaut → cabinet provider refuse le match auto-login).
-	if ( ! in_array( 'wpamelia-provider', $user->roles, true ) ) {
-		$user->roles[] = 'wpamelia-provider';
-	}
+	return $result; // ne court-circuite jamais le dispatch
 }
 
 /**
- * True si la requête courante est "côté frontend" : page publique OU appel
- * AJAX déclenché depuis le frontend (admin-ajax.php avec referer hors wp-admin).
- *
- * Sert à distinguer une vraie page wp-admin (où on garde les rôles intacts)
- * d'une page publique (où on les retire pour que le cabinet Amelia fasse
- * l'auto-login WP_USER au lieu de demander email + password).
- *
- * Exclusions importantes (renvoient false même si is_admin()=false) :
- * - wp-login.php : endpoint d'auth WP, utilisé par User Switching pour
- *   l'action=switch_to_user. Stripper administrator ici casse le check
- *   edit_user → switch refusé (« Could not switch users »).
+ * True si la requête courante est celle du CABINET EMPLOYÉ Amelia
+ * (page ou source = 'cabinet-provider'). Vérifie le contexte capturé via
+ * rest_pre_dispatch, puis $_GET / $_POST en filet de sécurité.
  */
-function cordespace_is_frontend_request(): bool {
-	$script = $_SERVER['SCRIPT_NAME'] ?? '';
-	// wp-login.php : endpoint d'auth WP (login, password reset, User Switching).
-	// On le traite comme wp-admin pour préserver les caps administrator.
-	if ( $script === '/wp-login.php' || substr( $script, -13 ) === '/wp-login.php' ) {
-		return false;
-	}
-
-	if ( ! is_admin() ) {
-		return true;
-	}
-	// AJAX : on regarde le referer pour savoir d'où vient la requête.
-	if ( wp_doing_ajax() ) {
-		$referer = wp_get_referer();
-		// Pas de referer = on n'est sûr de rien, on suppose wp-admin (plus sécurisant).
-		if ( ! $referer ) {
-			return false;
+function cordespace_is_amelia_provider_cabinet_request(): bool {
+	$ctx = isset( $GLOBALS['cordespace_amelia_req_ctx'] ) ? (array) $GLOBALS['cordespace_amelia_req_ctx'] : [];
+	foreach ( [ 'page', 'source' ] as $key ) {
+		if ( isset( $ctx[ $key ] ) && $ctx[ $key ] === 'cabinet-provider' ) {
+			return true;
 		}
-		return strpos( $referer, '/wp-admin/' ) === false;
+		if ( isset( $_GET[ $key ] ) && sanitize_text_field( wp_unslash( $_GET[ $key ] ) ) === 'cabinet-provider' ) {
+			return true;
+		}
+		if ( isset( $_POST[ $key ] ) && sanitize_text_field( wp_unslash( $_POST[ $key ] ) ) === 'cabinet-provider' ) {
+			return true;
+		}
 	}
-	return false; // vraie page wp-admin
+	return false;
 }
 
-// ─── DEBUG TEMPORAIRE (à retirer) : trace le cabinet d'Ayik (WP 132) ─────────
-// Capture, après le strip (init p2), les rôles effectifs + le contexte de chaque
-// requête frontend ; et sur le filtre natif amelia_get_events_filter, le nombre
-// d'events que le cabinet reçoit après scoping. Si le filtre ne loggue jamais →
-// l'auth a échoué (reauthorize). Si count=0 → le scope renvoie vide. Si count>0
-// → le souci est côté rendu.
-add_action( 'init', 'cordespace_dbg_after_strip', 2 );
-function cordespace_dbg_after_strip() {
-	if ( get_current_user_id() !== 132 ) {
-		return;
+// ============================================================================
+// 2) Filtre des events : dans le cabinet employé, ne garder que les siens
+// ============================================================================
+
+add_filter( 'amelia_get_events_filter', 'cordespace_cabinet_scope_events_to_own', 10, 1 );
+
+function cordespace_cabinet_scope_events_to_own( $eventsArray ) {
+	if ( ! is_array( $eventsArray ) || empty( $eventsArray ) ) {
+		return $eventsArray;
 	}
-	$u     = wp_get_current_user();
-	$front = cordespace_is_frontend_request();
-	$dbg   = get_option( 'cordespace_dbg_role', [] );
-	if ( ! is_array( $dbg ) ) {
-		$dbg = [];
+
+	// Uniquement la requête du cabinet employé (pas wp-admin, pas réservation).
+	if ( ! cordespace_is_amelia_provider_cabinet_request() ) {
+		return $eventsArray;
 	}
-	$dbg[] = [
-		'step'   => 'init2',
-		'roles'  => implode( ',', (array) $u->roles ),
-		'front'  => $front ? 'Y' : 'N',
-		'uri'    => substr( (string) ( $_SERVER['REQUEST_URI'] ?? '' ), 0, 70 ),
-	];
-	if ( count( $dbg ) > 25 ) {
-		$dbg = array_slice( $dbg, -25 );
+
+	// L'entité provider Amelia du prof connecté.
+	$entity_id = cordespace_current_user_amelia_provider_id();
+	if ( $entity_id <= 0 ) {
+		// Pas d'entité provider (ex : admin pur) → on ne filtre pas (sécurité :
+		// mieux vaut tout montrer que de vider par erreur).
+		return $eventsArray;
 	}
-	update_option( 'cordespace_dbg_role', $dbg, false );
+
+	// Ne garder que les events où cette entité est assignée, EN DÉDUPLIQUANT
+	// par id. Pourquoi dédupliquer : dans la vue manager, Amelia renvoie une
+	// ligne par (event × provider) — un event à 3 providers apparaît donc 3×.
+	// Chaque entrée est l'event COMPLET (avec toutes ses périodes), donc garder
+	// la première occurrence de chaque id ne perd aucune date ; ça collapse
+	// juste les copies par-provider. Des events distincts (ids différents, même
+	// s'ils portent le même nom) restent affichés séparément — c'est voulu.
+	$seen     = [];
+	$filtered = [];
+	foreach ( $eventsArray as $event ) {
+		$is_own = false;
+		if ( ! empty( $event['providers'] ) && is_array( $event['providers'] ) ) {
+			foreach ( $event['providers'] as $p ) {
+				if ( (int) ( $p['id'] ?? 0 ) === $entity_id ) {
+					$is_own = true;
+					break;
+				}
+			}
+		}
+		if ( ! $is_own ) {
+			continue;
+		}
+		$event_id = (int) ( $event['id'] ?? 0 );
+		if ( $event_id > 0 ) {
+			if ( isset( $seen[ $event_id ] ) ) {
+				continue; // copie par-provider déjà gardée
+			}
+			$seen[ $event_id ] = true;
+		}
+		$filtered[] = $event;
+	}
+
+	return $filtered;
 }
 
-add_filter( 'amelia_get_events_filter', 'cordespace_dbg_events_count', 99, 1 );
-function cordespace_dbg_events_count( $events ) {
-	if ( get_current_user_id() === 132 ) {
-		$dbg = get_option( 'cordespace_dbg_role', [] );
-		if ( ! is_array( $dbg ) ) {
-			$dbg = [];
-		}
-		$dbg[] = [ 'step' => 'events_filter', 'count' => is_array( $events ) ? count( $events ) : 'n/a' ];
-		if ( count( $dbg ) > 25 ) {
-			$dbg = array_slice( $dbg, -25 );
-		}
-		update_option( 'cordespace_dbg_role', $dbg, false );
+// ============================================================================
+// 3) Helper : entité provider Amelia du WP user connecté
+// ============================================================================
+
+/**
+ * Renvoie l'ID de l'entité Amelia provider (table wp_amelia_users) liée au WP
+ * user connecté via externalId, ou 0 s'il n'en a pas. Caché par requête.
+ */
+function cordespace_current_user_amelia_provider_id(): int {
+	$wp_user_id = get_current_user_id();
+	if ( $wp_user_id <= 0 ) {
+		return 0;
 	}
-	return $events;
+	static $cache = [];
+	if ( isset( $cache[ $wp_user_id ] ) ) {
+		return $cache[ $wp_user_id ];
+	}
+	global $wpdb;
+	$id = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT id FROM {$wpdb->prefix}amelia_users
+			WHERE externalId = %d AND type = 'provider' AND status = 'visible' LIMIT 1",
+		$wp_user_id
+	) );
+	$cache[ $wp_user_id ] = $id;
+	return $id;
 }
