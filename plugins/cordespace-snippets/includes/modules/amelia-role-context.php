@@ -119,3 +119,48 @@ function cordespace_is_frontend_request(): bool {
 	}
 	return false; // vraie page wp-admin
 }
+
+// ─── DEBUG TEMPORAIRE (à retirer) : trace le cabinet d'Ayik (WP 132) ─────────
+// Capture, après le strip (init p2), les rôles effectifs + le contexte de chaque
+// requête frontend ; et sur le filtre natif amelia_get_events_filter, le nombre
+// d'events que le cabinet reçoit après scoping. Si le filtre ne loggue jamais →
+// l'auth a échoué (reauthorize). Si count=0 → le scope renvoie vide. Si count>0
+// → le souci est côté rendu.
+add_action( 'init', 'cordespace_dbg_after_strip', 2 );
+function cordespace_dbg_after_strip() {
+	if ( get_current_user_id() !== 132 ) {
+		return;
+	}
+	$u     = wp_get_current_user();
+	$front = cordespace_is_frontend_request();
+	$dbg   = get_option( 'cordespace_dbg_role', [] );
+	if ( ! is_array( $dbg ) ) {
+		$dbg = [];
+	}
+	$dbg[] = [
+		'step'   => 'init2',
+		'roles'  => implode( ',', (array) $u->roles ),
+		'front'  => $front ? 'Y' : 'N',
+		'uri'    => substr( (string) ( $_SERVER['REQUEST_URI'] ?? '' ), 0, 70 ),
+	];
+	if ( count( $dbg ) > 25 ) {
+		$dbg = array_slice( $dbg, -25 );
+	}
+	update_option( 'cordespace_dbg_role', $dbg, false );
+}
+
+add_filter( 'amelia_get_events_filter', 'cordespace_dbg_events_count', 99, 1 );
+function cordespace_dbg_events_count( $events ) {
+	if ( get_current_user_id() === 132 ) {
+		$dbg = get_option( 'cordespace_dbg_role', [] );
+		if ( ! is_array( $dbg ) ) {
+			$dbg = [];
+		}
+		$dbg[] = [ 'step' => 'events_filter', 'count' => is_array( $events ) ? count( $events ) : 'n/a' ];
+		if ( count( $dbg ) > 25 ) {
+			$dbg = array_slice( $dbg, -25 );
+		}
+		update_option( 'cordespace_dbg_role', $dbg, false );
+	}
+	return $events;
+}
