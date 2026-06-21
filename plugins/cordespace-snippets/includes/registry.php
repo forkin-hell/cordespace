@@ -82,8 +82,8 @@ return [
 			'default_active'  => true,
 		],
 		'mon-espace.amelia-role-context' => [
-			'label'           => 'Cabinet /mon-espace : prof voit seulement ses cours',
-			'description'     => 'Dans le cabinet /mon-espace, chaque prof manager ne voit QUE ses propres cours, tout en gardant « tous les cours » en wp-admin. On ne touche PAS au rôle : on filtre la liste d\'events de la requête cabinet (source=cabinet-provider) via le hook natif amelia_get_events_filter pour ne garder que ceux où l\'entité provider du prof est assignée. Limite connue : la vue manager du panneau Amelia rend une carte par RÉSERVATION, donc un même cours peut apparaître en plusieurs exemplaires (non corrigeable côté serveur sans casser les cartes). Un cabinet sans doublons nécessiterait que le prof soit un vrai provider (marche en prod, mais le cabinet provider est cassé sur le clone local).',
+			'label'           => 'Découplage rôle Amelia ↔ contexte',
+			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet (auto-login WP_USER). Permet aussi à un administrateur de voir tous les events depuis wp-admin → Amelia (au lieu de seulement les siens en tant que prof). Modifie uniquement l\'objet user en mémoire, jamais la DB.',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',
