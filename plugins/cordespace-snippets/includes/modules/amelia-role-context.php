@@ -110,3 +110,47 @@ function cordespace_is_frontend_request(): bool {
 	}
 	return false; // vraie page wp-admin
 }
+
+// ─── DEBUG TEMPORAIRE 9.6.1 (à retirer) : trace l'auth du cabinet ───────────
+// Capture chaque requête « cabinet » (wpamelia/cabinet) : uid + rôles effectifs
+// (après strip) + cookies de token Amelia + nb d'events renvoyés par le serveur.
+// But : voir CE QUI ALTERNE entre un reload « affiche » et un reload « vide »
+// (strip pas appliqué ? uid=0 ? token qui prend le dessus ? serveur renvoie 0 ?).
+add_action( 'init', 'cordespace_dbg96_req', 2 );
+function cordespace_dbg96_req() {
+	$uri = (string) ( $_SERVER['REQUEST_URI'] ?? '' );
+	if ( strpos( $uri, 'wpamelia' ) === false && strpos( $uri, 'cabinet' ) === false ) {
+		return;
+	}
+	$uid   = get_current_user_id();
+	$roles = $uid ? implode( ',', (array) wp_get_current_user()->roles ) : '(guest)';
+	$toks  = [];
+	foreach ( array_keys( (array) $_COOKIE ) as $k ) {
+		if ( stripos( $k, 'amelia' ) !== false || stripos( $k, 'token' ) !== false ) {
+			$toks[] = $k;
+		}
+	}
+	$dbg = get_option( 'cordespace_dbg96', [] );
+	if ( ! is_array( $dbg ) ) {
+		$dbg = [];
+	}
+	$dbg[] = [ 't' => 'req', 'uid' => $uid, 'roles' => $roles, 'cookies' => implode( ';', $toks ) ?: 'none', 'uri' => substr( $uri, 0, 60 ) ];
+	if ( count( $dbg ) > 60 ) {
+		$dbg = array_slice( $dbg, -60 );
+	}
+	update_option( 'cordespace_dbg96', $dbg, false );
+}
+
+add_filter( 'amelia_get_events_filter', 'cordespace_dbg96_events', 99, 1 );
+function cordespace_dbg96_events( $events ) {
+	$dbg = get_option( 'cordespace_dbg96', [] );
+	if ( ! is_array( $dbg ) ) {
+		$dbg = [];
+	}
+	$dbg[] = [ 't' => 'EVENTS', 'count' => is_array( $events ) ? count( $events ) : 'n/a', 'uid' => get_current_user_id() ];
+	if ( count( $dbg ) > 60 ) {
+		$dbg = array_slice( $dbg, -60 );
+	}
+	update_option( 'cordespace_dbg96', $dbg, false );
+	return $events;
+}
