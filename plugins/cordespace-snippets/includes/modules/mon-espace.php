@@ -172,7 +172,10 @@ function cordespace_render_mon_espace_shortcode( $atts ) {
 	$has_linked = $linked_id > 0;
 	$is_prof    = cordespace_user_is_amelia_provider( $user->ID );
 
-	cordespace_render_amelia_cookie_sync( $user );
+	// TEST 9.6.1 (temporaire) : désactivé pour confirmer que ce sync (qui efface
+	// ameliaToken + reload) est ce qui casse le cabinet sous 9.6.1. À rétablir
+	// ou réécrire selon le résultat du test.
+	// cordespace_render_amelia_cookie_sync( $user );
 
 	if ( $is_prof ) {
 		cordespace_render_prof_view( $user, $has_linked );
