@@ -82,8 +82,8 @@ return [
 			'default_active'  => true,
 		],
 		'mon-espace.amelia-role-context' => [
-			'label'           => 'Découplage rôle Amelia ↔ contexte',
-			'description'     => 'Évite que les profs avec rôle wpamelia-manager doivent se relogger sur le cabinet (auto-login WP_USER). Permet aussi à un administrateur de voir tous les events depuis wp-admin → Amelia (au lieu de seulement les siens en tant que prof). Modifie uniquement l\'objet user en mémoire, jamais la DB.',
+			'label'           => 'Cabinet /mon-espace : auto-login prof (frontend seulement)',
+			'description'     => 'Sur le FRONTEND uniquement (cabinet /mon-espace) : évite que les profs en rôle wpamelia-manager doivent se relogger, en retirant wpamelia-manager/administrator de l\'objet user EN MÉMOIRE (jamais la DB) → Amelia détecte « provider » → auto-login + le prof voit SES cours. NE touche PLUS au wp-admin : les admins y voient la vue PAR DÉFAUT d\'Amelia et gardent toutes leurs caps (fini le bug de sauvegarde Settings/Customize). Réversible en désactivant le module.',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-role-context.php',
