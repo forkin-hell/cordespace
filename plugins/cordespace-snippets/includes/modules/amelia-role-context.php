@@ -111,48 +111,78 @@ function cordespace_is_frontend_request(): bool {
 	return false; // vraie page wp-admin
 }
 
-// ─── SONDE TEMPORAIRE (à retirer) : capture l'employé null de /entities ──────
-// Le cabinet provider plante car getEmployees contient un employé null
-// (injectProviderOptions lit null.id). Le hook amelia_get_entities_filter
-// (GetEntitiesCommandHandler L721) porte la liste FINALE des employés renvoyée
-// au cabinet. On la scanne : si un élément est null / sans id, on le logge avec
-// tous les ids → on saura QUEL provider arrive null (ou si la liste est saine
-// côté serveur, auquel cas le null est créé côté navigateur).
-add_filter( 'amelia_get_entities_filter', 'cordespace_probe_entities_employees', 999, 1 );
+// ─── FIX cabinet provider : réinjecte tous les providers dans /entities ──────
+// Cause du crash (diagnostiquée par sonde) : pour le cabinet d'un provider,
+// Amelia (GetEntitiesCommandHandler::removeAllExceptUser) réduit la liste des
+// employés au seul provider courant. Mais les events qu'il CO-ANIME référencent
+// d'AUTRES providers (ex : event = [177,158,139]). Le panneau Vue tente de
+// résoudre ces co-profs dans la liste réduite, ne les trouve pas → insère un
+// `null` → injectProviderOptions lit `null.id` → crash (intermittent, timing).
+//
+// Parade serveur (sans patcher Amelia) : sur la réponse /entities du frontend,
+// on AJOUTE tous les providers visibles manquants, en stubs minimalistes (id +
+// nom, listes/relations vidées, mot de passe vidé). Le Vue résout alors tous les
+// co-profs → plus de null → plus de crash. wp-admin n'est jamais touché.
+add_filter( 'amelia_get_entities_filter', 'cordespace_fix_entities_employees', 1000, 1 );
 
-function cordespace_probe_entities_employees( $resultData ) {
-	if ( ! is_array( $resultData ) || ! array_key_exists( 'employees', $resultData ) || ! is_array( $resultData['employees'] ) ) {
+function cordespace_fix_entities_employees( $resultData ) {
+	// Jamais en vraie page wp-admin : on ne modifie que le frontend (cabinet).
+	if ( is_admin() && ! wp_doing_ajax() ) {
 		return $resultData;
 	}
-	$ids      = [];
-	$has_null = false;
-	foreach ( $resultData['employees'] as $i => $e ) {
-		if ( $e === null ) {
-			$ids[]    = "[$i]=NULL";
-			$has_null = true;
-		} elseif ( ! is_array( $e ) ) {
-			$ids[]    = "[$i]=" . gettype( $e );
-			$has_null = true;
-		} elseif ( ! isset( $e['id'] ) || $e['id'] === null ) {
-			$ids[]    = "[$i]=NOID";
-			$has_null = true;
-		} else {
-			$ids[] = (string) (int) $e['id'];
+	if ( ! is_array( $resultData ) || empty( $resultData['employees'] ) || ! is_array( $resultData['employees'] ) ) {
+		return $resultData;
+	}
+
+	// Gabarit = 1re fiche employé existante (structure Amelia complète à copier).
+	$template = null;
+	$present  = [];
+	foreach ( $resultData['employees'] as $e ) {
+		if ( is_array( $e ) && isset( $e['id'] ) ) {
+			$present[ (int) $e['id'] ] = true;
+			if ( $template === null ) {
+				$template = $e;
+			}
 		}
 	}
-	$log = get_option( 'cordespace_probe', [] );
-	if ( ! is_array( $log ) ) {
-		$log = [];
+	if ( $template === null ) {
+		return $resultData;
 	}
-	$log[] = [
-		'uid'     => get_current_user_id(),
-		'count'   => count( $resultData['employees'] ),
-		'hasNull' => $has_null ? 'OUI' : 'non',
-		'ids'     => implode( ',', $ids ),
+
+	// Champs « liste »/relations à vider dans les stubs (pour ne pas propager les
+	// services/horaires du gabarit aux autres profs).
+	$blank_keys = [
+		'serviceList', 'locationList', 'locationsList', 'weekDayList', 'weekDayOutput',
+		'specialDayList', 'dayOffList', 'timeOutList', 'appointmentList', 'eventList',
+		'periodList', 'daysOff', 'specialDays', 'weekDays',
 	];
-	if ( count( $log ) > 40 ) {
-		$log = array_slice( $log, -40 );
+
+	global $wpdb;
+	$all = $wpdb->get_results(
+		"SELECT id, firstName, lastName, email FROM {$wpdb->prefix}amelia_users WHERE type = 'provider' AND status = 'visible'",
+		ARRAY_A
+	);
+	foreach ( (array) $all as $p ) {
+		$id = (int) $p['id'];
+		if ( isset( $present[ $id ] ) ) {
+			continue; // déjà dans la réponse
+		}
+		$stub              = $template;
+		$stub['id']        = $id;
+		$stub['firstName'] = (string) $p['firstName'];
+		$stub['lastName']  = (string) ( $p['lastName'] ?? '' );
+		$stub['email']     = (string) $p['email'];
+		if ( array_key_exists( 'password', $stub ) ) {
+			$stub['password'] = '';
+		}
+		foreach ( $blank_keys as $k ) {
+			if ( array_key_exists( $k, $stub ) ) {
+				$stub[ $k ] = [];
+			}
+		}
+		$resultData['employees'][] = $stub;
+		$present[ $id ]            = true;
 	}
-	update_option( 'cordespace_probe', $log, false );
+
 	return $resultData;
 }
