@@ -91,6 +91,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/amelia-role-context.php',
 			'default_active'  => true,
 		],
+		'mon-espace.amelia-961-cabinet-fix' => [
+			'label'           => 'Fix cabinet Amelia 9.6.1 (réinjecte les providers) — OFF par défaut',
+			'description'     => 'CONTOURNEMENT du crash du cabinet sous Amelia 9.6.1 (« Cannot read properties of null » dans injectProviderOptions). Réinjecte tous les providers dans la réponse /entities du frontend pour que le panneau résolve les co-profs des events. ⚠️ À ACTIVER UNIQUEMENT si tu es en Amelia 9.6.1 ET que le cabinet crashe — INUTILE en 9.5.1 (laisse OFF). Sur une Amelia saine il afficherait tous les providers dans le formulaire de réservation, donc on ne l\'allume que si nécessaire. Réversible en désactivant.',
+			'category'        => 'mon-espace',
+			'type'            => 'php',
+			'file'            => 'includes/modules/amelia-961-cabinet-fix.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/amelia-961-cabinet-fix.php',
+			'default_active'  => false,
+		],
 		'mon-espace.greeting-themes' => [
 			'label'           => 'Thèmes de salutation personnalisés',
 			'description'     => 'Permet d\'appliquer un fond décoratif (dinosaures, etc.) derrière le « Bonjour Prénom » de chaque utilisateur·trice. Configurable par profil dans wp-admin → Utilisateurs.',
