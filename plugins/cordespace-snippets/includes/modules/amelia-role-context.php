@@ -110,26 +110,3 @@ function cordespace_is_frontend_request(): bool {
 	}
 	return false; // vraie page wp-admin
 }
-
-// ─── TEST A (temporaire) : neutralise le cache amelia_stash sur le frontend ──
-// Le cabinet PROVIDER plante par intermittence (Amelia v3 : injectProviderOptions
-// lit l'id d'un employé null dans getEmployees). Symptôme « 2 chargements bons
-// puis crash » → le cache amelia_stash mémorise par moments un employé null. On
-// le vide AVANT chaque requête API Amelia entities/events du frontend → rebuild
-// frais à chaque fois. À retirer si ça ne marche pas, ou à pérenniser si ça règle.
-add_action( 'init', 'cordespace_neutralize_amelia_stash', 0 );
-
-function cordespace_neutralize_amelia_stash() {
-	// Vraies pages wp-admin : on ne touche à rien.
-	if ( is_admin() && ! wp_doing_ajax() ) {
-		return;
-	}
-	$action = isset( $_REQUEST['action'] ) ? sanitize_text_field( wp_unslash( $_REQUEST['action'] ) ) : '';
-	if ( $action !== 'wpamelia_api' ) {
-		return;
-	}
-	$call = isset( $_REQUEST['call'] ) ? (string) wp_unslash( $_REQUEST['call'] ) : '';
-	if ( strpos( $call, 'entities' ) !== false || strpos( $call, 'events' ) !== false ) {
-		delete_option( 'amelia_stash' );
-	}
-}
