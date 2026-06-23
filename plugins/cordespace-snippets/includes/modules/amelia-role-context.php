@@ -110,3 +110,49 @@ function cordespace_is_frontend_request(): bool {
 	}
 	return false; // vraie page wp-admin
 }
+
+// ─── SONDE TEMPORAIRE (à retirer) : capture l'employé null de /entities ──────
+// Le cabinet provider plante car getEmployees contient un employé null
+// (injectProviderOptions lit null.id). Le hook amelia_get_entities_filter
+// (GetEntitiesCommandHandler L721) porte la liste FINALE des employés renvoyée
+// au cabinet. On la scanne : si un élément est null / sans id, on le logge avec
+// tous les ids → on saura QUEL provider arrive null (ou si la liste est saine
+// côté serveur, auquel cas le null est créé côté navigateur).
+add_filter( 'amelia_get_entities_filter', 'cordespace_probe_entities_employees', 999, 1 );
+
+function cordespace_probe_entities_employees( $resultData ) {
+	if ( ! is_array( $resultData ) || ! array_key_exists( 'employees', $resultData ) || ! is_array( $resultData['employees'] ) ) {
+		return $resultData;
+	}
+	$ids      = [];
+	$has_null = false;
+	foreach ( $resultData['employees'] as $i => $e ) {
+		if ( $e === null ) {
+			$ids[]    = "[$i]=NULL";
+			$has_null = true;
+		} elseif ( ! is_array( $e ) ) {
+			$ids[]    = "[$i]=" . gettype( $e );
+			$has_null = true;
+		} elseif ( ! isset( $e['id'] ) || $e['id'] === null ) {
+			$ids[]    = "[$i]=NOID";
+			$has_null = true;
+		} else {
+			$ids[] = (string) (int) $e['id'];
+		}
+	}
+	$log = get_option( 'cordespace_probe', [] );
+	if ( ! is_array( $log ) ) {
+		$log = [];
+	}
+	$log[] = [
+		'uid'     => get_current_user_id(),
+		'count'   => count( $resultData['employees'] ),
+		'hasNull' => $has_null ? 'OUI' : 'non',
+		'ids'     => implode( ',', $ids ),
+	];
+	if ( count( $log ) > 40 ) {
+		$log = array_slice( $log, -40 );
+	}
+	update_option( 'cordespace_probe', $log, false );
+	return $resultData;
+}
