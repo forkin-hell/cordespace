@@ -53,7 +53,7 @@ return [
 		],
 		'mon-espace.abonnement-salles' => [
 			'label'           => 'Carte « Mon abonnement » (packages Amelia)',
-			'description'     => 'Affiche dans la vue cliente de /mon-espace les abonnements Amelia actifs (packages, ex : réservations partagées illimitées) avec leur date de fin de validité. Visible même sans réservation à venir, avec un bouton « Réserver une salle » dans ce cas. Disparaît automatiquement à l\'expiration (aucun cron).',
+			'description'     => 'Affiche dans la vue cliente de /mon-espace les abonnements Amelia actifs (packages, ex : réservations partagées illimitées) avec leur date de fin de validité, même sans réservation à venir. Bouton « Gérer mon abonnement / réserver » vers la page /mon-abonnement/ (qui porte [ameliacustomerpanel appointments=1] : onglets Appointments + Packages, Book Now via l\'abonnement). Disparaît automatiquement à l\'expiration (aucun cron). ⚠️ La page /mon-abonnement/ doit exister (contenu : le shortcode ci-dessus) — URL modifiable via le filtre cordespace_abonnement_salles_manage_url.',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/abonnement-salles.php',

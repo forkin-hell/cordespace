@@ -10,8 +10,14 @@
  *  - S'affiche dès qu'un package est actif (status approved + end >= maintenant),
  *    MÊME sans réservation de salle à venir (choix design option A) : c'est
  *    justement quand on n'a rien réservé que savoir « j'ai un abonnement actif
- *    jusqu'au X » est le plus utile. Dans ce cas, un bouton « Réserver une
- *    salle » pointe vers la page de booking.
+ *    jusqu'au X » est le plus utile.
+ *  - Bouton « Gérer mon abonnement / réserver » (toujours visible) vers la page
+ *    /mon-abonnement/ qui porte [ameliacustomerpanel appointments=1] : ses
+ *    onglets Appointments + Packages permettent de voir ses résa, réserver via
+ *    l'abonnement (Book Now) et suivre sa validité. NB : l'onglet Packages
+ *    n'apparaît côté Amelia que si le client possède un package (natif) et que
+ *    le shortcode active appointments (règle interne du panneau : packages
+ *    visible si appointments OU pas d'events).
  *  - Disparaît tout seul à l'expiration : le filtre se fait à la lecture
  *    (end >= UTC_TIMESTAMP()), aucun cron.
  *  - Aucun customer Amelia / aucun package actif → aucun rendu.
@@ -64,15 +70,11 @@ function cordespace_render_client_abonnement_salles( $user ): void {
 		return;
 	}
 
-	// Bouton « Réserver » seulement si aucune réservation de salle à venir
-	// (sinon la section salles suit immédiatement, le bouton serait redondant).
-	$has_upcoming = function_exists( 'cordespace_user_has_upcoming_appointments' )
-		? cordespace_user_has_upcoming_appointments( $user )
-		: false;
-
-	$booking_url = apply_filters(
-		'cordespace_abonnement_salles_booking_url',
-		home_url( '/formulaire-reservation/' )
+	// Page dédiée [ameliacustomerpanel appointments=1] (onglets Appointments +
+	// Packages) : c'est là qu'un·e abonné·e réserve via son abonnement (Book Now).
+	$manage_url = apply_filters(
+		'cordespace_abonnement_salles_manage_url',
+		home_url( '/mon-abonnement/' )
 	);
 	?>
 	<section id="section-abonnement" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
@@ -92,13 +94,11 @@ function cordespace_render_client_abonnement_salles( $user ): void {
 			<?php endforeach; ?>
 		</div>
 
-		<?php if ( ! $has_upcoming ) : ?>
-			<p style="margin:1rem 0 0;">
-				<a href="<?php echo esc_url( $booking_url ); ?>" style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;text-decoration:none;font-size:0.95em;">
-					🏠 Réserver une salle
-				</a>
-			</p>
-		<?php endif; ?>
+		<p style="margin:1rem 0 0;">
+			<a href="<?php echo esc_url( $manage_url ); ?>" style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;text-decoration:none;font-size:0.95em;">
+				🏠 Gérer mon abonnement / réserver
+			</a>
+		</p>
 	</section>
 	<?php
 }
