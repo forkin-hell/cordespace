@@ -135,9 +135,14 @@ function cordespace_reports_get_available_statuses(): array {
  *   - 'salle'     : booking Amelia type='appointment'
  *   - 'refund'    : ligne de remboursement (type WC shop_order_refund)
  *
- * @param string $period_mode 'purchase' (filtre sur date_created_gmt) ou 'event'
+ * @param string $period_mode 'purchase' (filtre sur date_created_gmt), 'event'
  *                            (filtre sur la date de l'événement/réservation depuis
- *                            la meta ameliabooking). Boutique est exclue en mode event.
+ *                            la meta ameliabooking — boutique exclue), ou 'paid'
+ *                            (encaissement : filtre sur date_paid_gmt de
+ *                            wc_order_operational_data ; les remboursements sont
+ *                            comptés à leur date d'ÉMISSION — vue conciliation
+ *                            bancaire, demandée par Hanna. Les commandes pas
+ *                            encore payées n'apparaissent pas dans ce mode).
  * @return array<int, array<string,mixed>>
  */
 function cordespace_reports_fetch_items( string $start, string $end, array $statuses, string $period_mode = 'purchase' ): array {
@@ -160,6 +165,21 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 	// Échappe les statuts pour SQL IN(...)
 	$status_placeholders = implode( ',', array_fill( 0, count( $statuses ), '%s' ) );
 
+	// Condition de date selon le mode. En 'paid' : les commandes sont filtrées
+	// sur leur date_paid_gmt (posée par WC quand le paiement est confirmé, y
+	// compris confirmation manuelle EMT/sur place) et les remboursements sur
+	// leur PROPRE date de création (= date d'émission du remboursement).
+	if ( $period_mode === 'paid' ) {
+		$date_where  = "((o.type = 'shop_order' AND od.date_paid_gmt BETWEEN %s AND %s)
+		    OR (o.type = 'shop_order_refund' AND o.date_created_gmt BETWEEN %s AND %s))";
+		$date_params = [ $sql_start, $sql_end, $sql_start, $sql_end ];
+		$order_by    = 'COALESCE(od.date_paid_gmt, o.date_created_gmt)';
+	} else {
+		$date_where  = 'o.date_created_gmt BETWEEN %s AND %s';
+		$date_params = [ $sql_start, $sql_end ];
+		$order_by    = 'o.date_created_gmt';
+	}
+
 	// On inclut shop_order ET shop_order_refund (les remboursements créent
 	// une "commande" séparée liée à la commande originale via parent_order_id).
 	// Pour les refunds, on utilise la date du refund et le statut du parent.
@@ -169,6 +189,7 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 			o.type AS order_type,
 			COALESCE(parent.status, o.status) AS status,
 			o.date_created_gmt,
+			od.date_paid_gmt,
 			COALESCE(parent.id, o.id) AS reference_order_id,
 			COALESCE(parent.payment_method_title, o.payment_method_title) AS payment_method_title,
 			COALESCE(parent.payment_method, o.payment_method) AS payment_method,
@@ -186,6 +207,7 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 			MAX(CASE WHEN oim.meta_key = 'ameliabooking' THEN oim.meta_value END) AS ameliabooking_raw
 		   FROM {$wpdb->prefix}wc_orders o
 		   LEFT JOIN {$wpdb->prefix}wc_orders parent ON parent.id = o.parent_order_id
+		   LEFT JOIN {$wpdb->prefix}wc_order_operational_data od ON od.order_id = o.id
 		   LEFT JOIN {$wpdb->prefix}wc_order_addresses oa
 		          ON oa.order_id = o.id AND oa.address_type = 'billing'
 		   LEFT JOIN {$wpdb->prefix}wc_order_addresses parent_oa
@@ -194,12 +216,12 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 		          ON oi.order_id = o.id AND oi.order_item_type = 'line_item'
 		   JOIN {$wpdb->prefix}woocommerce_order_itemmeta oim
 		          ON oim.order_item_id = oi.order_item_id
-		  WHERE o.date_created_gmt BETWEEN %s AND %s
+		  WHERE $date_where
 		    AND o.type IN ('shop_order', 'shop_order_refund')
 		    AND (o.status IN ($status_placeholders) OR (o.type = 'shop_order_refund' AND parent.status IN ($status_placeholders)))
 		  GROUP BY o.id, oi.order_item_id
-		  ORDER BY o.date_created_gmt ASC, o.id ASC, oi.order_item_id ASC",
-		array_merge( [ $sql_start, $sql_end ], $statuses, $statuses )
+		  ORDER BY $order_by ASC, o.id ASC, oi.order_item_id ASC",
+		array_merge( $date_params, $statuses, $statuses )
 	);
 
 	$rows = $wpdb->get_results( $sql, ARRAY_A );
@@ -309,13 +331,20 @@ function cordespace_reports_fetch_items( string $start, string $end, array $stat
 			$client_name = (string) ( $r['billing_email'] ?? '' );
 		}
 
+		// Date affichée : en mode 'paid', la date qui place l'item dans la
+		// période = date d'encaissement (les refunds gardent leur date d'émission).
+		$item_date = (string) $r['date_created_gmt'];
+		if ( $period_mode === 'paid' && ! $is_refund && ! empty( $r['date_paid_gmt'] ) ) {
+			$item_date = (string) $r['date_paid_gmt'];
+		}
+
 		$items[] = [
 			'section'         => $section,
 			'order_id'        => (int) $r['order_id'],
 			'reference_order_id' => (int) ( $r['reference_order_id'] ?? $r['order_id'] ),
 			'is_refund'       => ( $r['order_type'] ?? '' ) === 'shop_order_refund',
 			'status'          => (string) $r['status'],
-			'date'            => (string) $r['date_created_gmt'],
+			'date'            => $item_date,
 			'client_name'     => $client_name,
 			'client_email'    => (string) ( $r['billing_email'] ?? '' ),
 			'item_name'       => (string) $r['order_item_name'],
@@ -659,7 +688,9 @@ function cordespace_reports_render_page(): void {
  */
 function cordespace_reports_render_tab_achats(): void {
 	// Lecture des filtres depuis GET
-	$period_mode      = isset( $_GET['period_mode'] ) && $_GET['period_mode'] === 'event' ? 'event' : 'purchase';
+	$period_mode      = isset( $_GET['period_mode'] ) && in_array( $_GET['period_mode'], [ 'event', 'paid' ], true )
+		? (string) $_GET['period_mode']
+		: 'purchase';
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
 	$custom_start     = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
@@ -719,6 +750,7 @@ function cordespace_reports_render_tab_achats(): void {
 					<select name="period_mode">
 						<option value="purchase" <?php selected( $period_mode, 'purchase' ); ?>>📦 Date d'achat</option>
 						<option value="event"    <?php selected( $period_mode, 'event' );    ?>>📅 Date d'événement</option>
+						<option value="paid"     <?php selected( $period_mode, 'paid' );     ?>>💰 Date de paiement (encaissement)</option>
 					</select>
 				</div>
 
@@ -766,7 +798,7 @@ function cordespace_reports_render_tab_achats(): void {
 		<!-- Résumé période + bouton CSV -->
 		<div style="margin-top:1.2rem; padding:1rem 1.4rem; background:#eef5fd; border-left:4px solid #2c70b8; border-radius:5px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem;">
 			<div>
-				<strong><?php echo $period_mode === 'event' ? '📅 Période d\'événement :' : '📦 Période d\'achat :'; ?></strong>
+				<strong><?php echo $period_mode === 'event' ? '📅 Période d\'événement :' : ( $period_mode === 'paid' ? '💰 Période d\'encaissement :' : '📦 Période d\'achat :' ); ?></strong>
 				<?php echo esc_html( mysql2date( 'j F Y', $range['start'] ) ); ?>
 				→
 				<?php echo esc_html( mysql2date( 'j F Y', $range['end'] ) ); ?>
@@ -775,6 +807,8 @@ function cordespace_reports_render_tab_achats(): void {
 				<span class="cordespace-dino-hidden" title="rawr">🦖</span>
 				<?php if ( $period_mode === 'event' ) : ?>
 					<br><span style="color:#666; font-size:0.9em;">(boutique exclue — pas de notion de "date d'événement" pour les items physiques)</span>
+				<?php elseif ( $period_mode === 'paid' ) : ?>
+					<br><span style="color:#666; font-size:0.9em;">(vue conciliation bancaire : chaque vente est comptée le jour où l'argent est encaissé — les commandes pas encore payées n'apparaissent pas, les remboursements comptent à leur date d'émission)</span>
 				<?php endif; ?>
 			</div>
 			<a href="<?php echo esc_url( $export_url ); ?>" class="button button-secondary">📥 Télécharger CSV</a>
@@ -1820,7 +1854,9 @@ function cordespace_reports_handle_csv_export(): void {
 	}
 	check_admin_referer( 'cordespace_reports_csv' );
 
-	$period_mode      = isset( $_GET['period_mode'] ) && $_GET['period_mode'] === 'event' ? 'event' : 'purchase';
+	$period_mode      = isset( $_GET['period_mode'] ) && in_array( $_GET['period_mode'], [ 'event', 'paid' ], true )
+		? (string) $_GET['period_mode']
+		: 'purchase';
 	$preset           = isset( $_GET['preset'] )   ? sanitize_key( (string) $_GET['preset'] )   : 'this_month';
 	$custom_start     = isset( $_GET['date_start'] ) ? sanitize_text_field( (string) $_GET['date_start'] ) : '';
 	$custom_end       = isset( $_GET['date_end'] )   ? sanitize_text_field( (string) $_GET['date_end'] )   : '';
@@ -1839,7 +1875,7 @@ function cordespace_reports_handle_csv_export(): void {
 
 	$filename = sprintf(
 		'cordespace-rapport-%s-%s-au-%s.csv',
-		$period_mode === 'event' ? 'evt' : 'achat',
+		$period_mode === 'event' ? 'evt' : ( $period_mode === 'paid' ? 'paye' : 'achat' ),
 		substr( $range['start'], 0, 10 ),
 		substr( $range['end'], 0, 10 )
 	);
