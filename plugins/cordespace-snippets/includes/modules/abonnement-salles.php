@@ -2,39 +2,112 @@
 /**
  * Module : mon-espace.abonnement-salles
  *
- * Affiche dans la vue CLIENTE de /mon-espace une carte « Mon abonnement »
- * listant les packages Amelia actifs de la personne (ex : « Abonnement
- * réservations partagées illimités »), avec leur date de fin de validité.
+ * Section « 🏠 Mes réservations » de la vue CLIENTE de /mon-espace : intègre
+ * le cabinet Amelia des salles dans un accordéon + iframe. Le cabinet vient de
+ * la page /mon-abonnement/ qui porte [ameliacustomerpanel appointments=1] :
+ *  - onglet Appointments : les créneaux réservés (annuler / reporter) ;
+ *  - onglet Packages : l'abonnement, sa validité, et « Book Now » pour
+ *    réserver via l'abonnement. Packages n'apparaît que si la personne
+ *    possède un package (comportement natif Amelia).
  *
- * Règles :
- *  - S'affiche dès qu'un package est actif (status approved + end >= maintenant),
- *    MÊME sans réservation de salle à venir (choix design option A) : c'est
- *    justement quand on n'a rien réservé que savoir « j'ai un abonnement actif
- *    jusqu'au X » est le plus utile.
- *  - Bouton « Gérer mon abonnement / réserver » (toujours visible) vers la page
- *    /mon-abonnement/ qui porte [ameliacustomerpanel appointments=1] : ses
- *    onglets Appointments + Packages permettent de voir ses résa, réserver via
- *    l'abonnement (Book Now) et suivre sa validité. NB : l'onglet Packages
- *    n'apparaît côté Amelia que si le client possède un package (natif) et que
- *    le shortcode active appointments (règle interne du panneau : packages
- *    visible si appointments OU pas d'events).
- *  - Disparaît tout seul à l'expiration : le filtre se fait à la lecture
- *    (end >= UTC_TIMESTAMP()), aucun cron.
- *  - Aucun customer Amelia / aucun package actif → aucun rendu.
+ * Visibilité de la section : abonnement actif OU au moins une réservation à
+ * venir. Sinon, aucun rendu.
  *
- * Données : wphu_amelia_packages_to_customers JOIN wphu_amelia_packages.
- * Amelia stocke les datetime en UTC → comparaison en UTC_TIMESTAMP() et
- * affichage converti au fuseau du site (wp_date).
+ * Pourquoi une iframe : Amelia refuse 2 instances de [ameliacustomerpanel]
+ * par page (app single-instance) et mon-espace porte déjà le panneau events.
+ * L'iframe même-domaine partage la session (auto-login OK) et n'est chargée
+ * qu'à la première ouverture de l'accordéon (lazy). Le paramètre
+ * ?cordespace_iframe=1 active le mode « sans chrome » (en-tête / menu /
+ * footer masqués) pour ne montrer que le panneau.
  *
- * S'accroche au slot `cordespace_mon_espace_section_client_abonnement`
- * (déclaré dans mon-espace.php, AVANT la section salles, hors condition
- * has_upcoming_appts).
+ * Historique : la v1 (2026-08-07) affichait une carte-liste des packages
+ * (« Actif jusqu'au X ») + un lien pleine page — retirés à la demande de
+ * Tess : le cabinet intégré montre déjà tout. L'ancienne section custom
+ * « Mes réservations de salles » de mon-espace.php a été retirée à la même
+ * occasion (le cabinet la remplace).
  */
 
 defined( 'ABSPATH' ) || exit;
 
 add_action( 'cordespace_mon_espace_section_client_abonnement', 'cordespace_render_client_abonnement_salles', 10, 1 );
 add_action( 'wp_head', 'cordespace_abonnement_iframe_chrome_css' );
+
+/**
+ * True si la personne a au moins un package Amelia actif (abonnement).
+ * status approved + end >= maintenant (Amelia stocke en UTC). Cache statique
+ * par requête : appelé par le nav de mon-espace ET par le rendu de section.
+ */
+function cordespace_user_has_active_amelia_package( $user ): bool {
+	static $cache = [];
+	if ( ! $user || empty( $user->ID ) ) {
+		return false;
+	}
+	if ( isset( $cache[ $user->ID ] ) ) {
+		return $cache[ $user->ID ];
+	}
+	global $wpdb;
+	$n = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT COUNT(*)
+		   FROM {$wpdb->prefix}amelia_packages_to_customers pc
+		   JOIN {$wpdb->prefix}amelia_users u ON u.id = pc.customerId
+		  WHERE u.externalId = %d AND u.type = 'customer' AND u.status = 'visible'
+		    AND pc.status = 'approved' AND pc.end >= UTC_TIMESTAMP()",
+		$user->ID
+	) );
+
+	$cache[ $user->ID ] = ( $n > 0 );
+	return $cache[ $user->ID ];
+}
+
+function cordespace_render_client_abonnement_salles( $user ): void {
+	if ( ! $user || empty( $user->ID ) ) {
+		return;
+	}
+
+	$has_package  = cordespace_user_has_active_amelia_package( $user );
+	$has_upcoming = function_exists( 'cordespace_user_has_upcoming_appointments' )
+		? cordespace_user_has_upcoming_appointments( $user )
+		: false;
+	if ( ! $has_package && ! $has_upcoming ) {
+		return;
+	}
+
+	// Page compagne [ameliacustomerpanel appointments=1] (voir en-tête).
+	$manage_url = apply_filters(
+		'cordespace_abonnement_salles_manage_url',
+		home_url( '/mon-abonnement/' )
+	);
+	$iframe_url = add_query_arg( 'cordespace_iframe', '1', $manage_url );
+
+	$subtitle = $has_package
+		? 'Tes créneaux de salle — et ton abonnement, dans l\'onglet Packages.'
+		: 'Tes créneaux de location de salle à venir.';
+	?>
+	<section id="section-salles" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
+		<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🏠 Mes réservations</h2>
+		<p style="color:#666;margin:0 0 1rem;font-size:0.92em;"><?php echo esc_html( $subtitle ); ?></p>
+
+		<details id="cordespace-abo-details">
+			<summary style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;cursor:pointer;font-size:0.95em;list-style:none;user-select:none;">
+				🗓️ Voir / gérer mes réservations <span style="font-size:0.8em;">▾</span>
+			</summary>
+			<div style="margin-top:0.8rem;">
+				<iframe id="cordespace-abo-iframe" data-src="<?php echo esc_url( $iframe_url ); ?>" title="Mes réservations" style="width:100%;height:75vh;min-height:560px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;display:block;"></iframe>
+			</div>
+		</details>
+		<script>
+		( function () {
+			var d = document.getElementById( 'cordespace-abo-details' );
+			if ( ! d ) { return; }
+			d.addEventListener( 'toggle', function () {
+				var f = document.getElementById( 'cordespace-abo-iframe' );
+				if ( d.open && f && ! f.src ) { f.src = f.getAttribute( 'data-src' ); }
+			} );
+		} )();
+		</script>
+	</section>
+	<?php
+}
 
 /**
  * Mode « sans chrome » pour l'iframe : quand la page est chargée avec
@@ -53,96 +126,4 @@ function cordespace_abonnement_iframe_chrome_css(): void {
 		html { margin-top: 0 !important; }
 		body { padding-top: 0 !important; }
 	</style>';
-}
-
-function cordespace_render_client_abonnement_salles( $user ): void {
-	if ( ! $user || empty( $user->ID ) ) {
-		return;
-	}
-
-	global $wpdb;
-
-	// WP user → customer Amelia (même pattern que upcoming-qr.php).
-	$amelia_customer_id = (int) $wpdb->get_var( $wpdb->prepare(
-		"SELECT id FROM {$wpdb->prefix}amelia_users
-		  WHERE externalId = %d AND type = 'customer' AND status = 'visible'
-		  LIMIT 1",
-		$user->ID
-	) );
-	if ( $amelia_customer_id <= 0 ) {
-		return;
-	}
-
-	// Packages actifs. MAX(end) par package : en cas de renouvellement/doublon,
-	// on affiche la fin de validité la plus lointaine.
-	$packages = $wpdb->get_results( $wpdb->prepare(
-		"SELECT p.name, MAX(pc.end) AS end_utc
-		   FROM {$wpdb->prefix}amelia_packages_to_customers pc
-		   JOIN {$wpdb->prefix}amelia_packages p ON p.id = pc.packageId
-		  WHERE pc.customerId = %d
-		    AND pc.status = 'approved'
-		    AND pc.end >= UTC_TIMESTAMP()
-		  GROUP BY p.id, p.name
-		  ORDER BY end_utc DESC",
-		$amelia_customer_id
-	) );
-	if ( empty( $packages ) ) {
-		return;
-	}
-
-	// Page dédiée [ameliacustomerpanel appointments=1] (onglets Appointments +
-	// Packages) : c'est là qu'un·e abonné·e réserve via son abonnement (Book Now).
-	$manage_url = apply_filters(
-		'cordespace_abonnement_salles_manage_url',
-		home_url( '/mon-abonnement/' )
-	);
-	?>
-	<section id="section-abonnement" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
-		<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🎟️ Mon abonnement</h2>
-
-		<div style="display:flex; flex-direction:column; gap:0.6rem;">
-			<?php foreach ( $packages as $pkg ) :
-				// end stocké en UTC → timestamp UTC → wp_date affiche au fuseau du site.
-				$ts = strtotime( $pkg->end_utc . ' +00:00' );
-				?>
-				<div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:0.35rem 0.8rem;padding:0.7rem 1rem;background:#fff;border:1px solid #e8e8e8;border-radius:8px;">
-					<strong style="font-size:1.02em;"><?php echo esc_html( $pkg->name ); ?></strong>
-					<span style="color:#2e7d32;font-size:0.92em;white-space:nowrap;">
-						✓ Actif jusqu'au <?php echo esc_html( wp_date( get_option( 'date_format' ), $ts ) ); ?>
-					</span>
-				</div>
-			<?php endforeach; ?>
-		</div>
-
-		<?php
-		// Accordéon + iframe (essai « tout dans le compte », 2026-08-07) : le
-		// panneau [ameliacustomerpanel appointments=1] de /mon-abonnement/ ne
-		// peut PAS être une 2e instance sur cette page (limite Amelia), mais il
-		// peut vivre dans une iframe même-domaine (session partagée, auto-login
-		// OK). Lazy : le src n'est posé qu'à la 1re ouverture du <details>.
-		$iframe_url = add_query_arg( 'cordespace_iframe', '1', $manage_url );
-		?>
-		<details id="cordespace-abo-details" style="margin-top:1rem;">
-			<summary style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;cursor:pointer;font-size:0.95em;list-style:none;user-select:none;">
-				🏠 Gérer mon abonnement / réserver <span style="font-size:0.8em;">▾</span>
-			</summary>
-			<div style="margin-top:0.8rem;">
-				<iframe id="cordespace-abo-iframe" data-src="<?php echo esc_url( $iframe_url ); ?>" title="Mon abonnement" style="width:100%;height:75vh;min-height:560px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;display:block;"></iframe>
-				<p style="margin:0.5rem 0 0;font-size:0.85em;">
-					<a href="<?php echo esc_url( $manage_url ); ?>" style="color:#4a3b8c;">Ouvrir en pleine page ↗</a>
-				</p>
-			</div>
-		</details>
-		<script>
-		( function () {
-			var d = document.getElementById( 'cordespace-abo-details' );
-			if ( ! d ) { return; }
-			d.addEventListener( 'toggle', function () {
-				var f = document.getElementById( 'cordespace-abo-iframe' );
-				if ( d.open && f && ! f.src ) { f.src = f.getAttribute( 'data-src' ); }
-			} );
-		} )();
-		</script>
-	</section>
-	<?php
 }

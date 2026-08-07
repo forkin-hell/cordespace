@@ -361,8 +361,13 @@ function cordespace_render_client_view( $user, $has_linked ) {
 
 	<nav style="display:flex;flex-wrap:wrap;gap:0.5rem;margin-bottom:2rem;padding:0.8rem;background:#f7f7f7;border-radius:6px;">
 		<a href="#section-cours" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📅 Mes cours</a>
-		<?php if ( $has_upcoming_appts ) : ?>
-			<a href="#section-salles" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🏠 Mes réservations de salles</a>
+		<?php
+		// Ancre visible si la section « Mes réservations » (module abonnement-salles)
+		// va se rendre : résa à venir OU abonnement actif.
+		$has_salles_section = $has_upcoming_appts
+			|| ( function_exists( 'cordespace_user_has_active_amelia_package' ) && cordespace_user_has_active_amelia_package( $user ) );
+		if ( $has_salles_section ) : ?>
+			<a href="#section-salles" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">🏠 Mes réservations</a>
 		<?php endif; ?>
 		<a href="#section-waivers" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">📋 Mes waivers</a>
 		<a href="#section-credits" style="text-decoration:none;padding:0.5rem 1rem;background:#fff;border-radius:5px;color:#333;border:1px solid #e0e0e0;font-size:0.95em;">💰 Historique crédits</a>
@@ -375,78 +380,19 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		<?php // Le panneau Amelia montre 3 onglets (Appointments / Events / Packages).
 		// Vu qu'on ne peut pas mettre 2 panneaux Amelia sur la même page (Vue.js
 		// SPA singleton + counter limité à 1001 dans Amelia), on garde une
-		// seule instance ici pour les events. Les réservations de salles sont
-		// rendues en HTML custom plus bas pour les avoir vraiment séparées. ?>
+		// seule instance ici pour les events. Les réservations de salles vivent
+		// dans le cabinet intégré en iframe (module abonnement-salles, plus bas). ?>
 		<?php echo do_shortcode( '[ameliacustomerpanel events=1]' ); ?>
 	</section>
 
 	<?php
-	// Slot : carte « Mon abonnement » (module mon-espace.abonnement-salles).
-	// Volontairement HORS du if has_upcoming_appts : un abonnement actif
-	// s'affiche même sans réservation à venir (option A validée).
+	// Slot : section « 🏠 Mes réservations » (module mon-espace.abonnement-salles).
+	// Rend le cabinet salles intégré (accordéon + iframe : onglets Appointments
+	// et Packages) si la personne a un abonnement actif OU une résa à venir.
+	// Remplace l'ancienne section custom « Mes réservations de salles » en HTML
+	// (cards maison), retirée le 2026-08-07 : le cabinet montre déjà tout.
 	do_action( 'cordespace_mon_espace_section_client_abonnement', $user );
-
-	// Section conditionnelle : réservations de salles (appointments Amelia).
-	// Render HTML CUSTOM (pas un panneau Amelia) parce qu'Amelia n'autorise
-	// pas 2 instances de [ameliacustomerpanel] sur la même page. Du coup on
-	// fait notre propre rendu simple en cards : date + heure + service +
-	// statut. Affiché UNIQUEMENT si has_upcoming_appts.
-	if ( $has_upcoming_appts ) :
-		$appts = cordespace_user_get_upcoming_appointments_uncached( $user );
-		?>
-		<section id="section-salles" style="margin-bottom:2.5rem;padding:1.4rem 1.8rem;background:#fafaf8;border:1px solid #e5e5e5;border-radius:10px;">
-			<h2 style="margin:0 0 0.4rem;font-size:1.25rem;">🏠 Mes réservations de salles</h2>
-			<p style="color:#666;margin:0 0 1.2rem;font-size:0.92em;">Tes créneaux de location de salle à venir.</p>
-
-			<div style="display:flex; flex-direction:column; gap:0.6rem;">
-			<?php foreach ( $appts as $a ) :
-				$start_ts    = strtotime( (string) $a['booking_start'] . ' UTC' );
-				$end_ts      = strtotime( (string) $a['booking_end'] . ' UTC' );
-				$date_label  = $start_ts ? date_i18n( 'l d F Y', $start_ts ) : '—';
-				$start_label = $start_ts ? date_i18n( 'H\hi', $start_ts ) : '';
-				$end_label   = $end_ts   ? date_i18n( 'H\hi', $end_ts )   : '';
-				$status_raw  = (string) ( $a['status'] ?? '' );
-				$status_label = $status_raw === 'approved'
-					? '✅ Confirmée'
-					: ( $status_raw === 'pending' ? '⏳ En attente' : '· ' . $status_raw );
-				$status_color = $status_raw === 'approved' ? '#1a5c1a' : '#7a5d00';
-				$price        = (float) ( $a['price'] ?? 0 );
-				$persons      = (int) ( $a['persons'] ?? 1 );
-				$location     = (string) ( $a['location_name'] ?? '' );
-				$price_label  = function_exists( 'wc_price' )
-					? wp_strip_all_tags( wc_price( $price ) )
-					: number_format_i18n( $price, 2 ) . ' $';
-				?>
-				<div style="display:flex; flex-wrap:wrap; gap:0.5rem 1rem; align-items:center; padding:0.8rem 1rem; background:#fff; border:1px solid #e5e5e5; border-radius:6px;">
-					<div style="flex:1; min-width:240px;">
-						<div style="font-weight:600; color:#333; text-transform:capitalize;">
-							<?php echo esc_html( $date_label ); ?>
-						</div>
-						<div style="font-size:0.92em; color:#555; margin-top:0.15rem;">
-							🕘 <?php echo esc_html( $start_label ); ?><?php if ( $end_label !== '' ) : ?> – <?php echo esc_html( $end_label ); ?><?php endif; ?>
-							&nbsp;·&nbsp; <?php echo esc_html( (string) $a['service_name'] ); ?>
-						</div>
-						<div style="font-size:0.88em; color:#666; margin-top:0.3rem; display:flex; flex-wrap:wrap; gap:0.3rem 1rem;">
-							<?php if ( $price > 0 ) : ?>
-								<span>💵 <strong><?php echo esc_html( $price_label ); ?></strong></span>
-							<?php endif; ?>
-							<?php // Le champ 'persons' est ambigu en contexte Cordespace : pour
-							// une réservation partagée, il peut représenter la capacité totale
-							// du créneau plutôt que le nombre réel de personnes de cette
-							// réservation. On ne l'affiche pas pour ne pas mal informer. ?>
-							<?php if ( $location !== '' ) : ?>
-								<span>📍 <?php echo esc_html( $location ); ?></span>
-							<?php endif; ?>
-						</div>
-					</div>
-					<div style="font-size:0.9em; color:<?php echo esc_attr( $status_color ); ?>;">
-						<?php echo esc_html( $status_label ); ?>
-					</div>
-				</div>
-			<?php endforeach; ?>
-			</div>
-		</section>
-	<?php endif; ?>
+	?>
 
 	<?php
 	/**
