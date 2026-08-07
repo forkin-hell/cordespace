@@ -7,9 +7,10 @@
  * remplissent.
  *
  * Sous-modules associés :
- *   - mon-espace.upcoming-qr     → do_action('cordespace_mon_espace_section_client_qr')
- *   - mon-espace.credit-history  → do_action('cordespace_mon_espace_section_client_credits')
- *   - mon-espace.linked-accounts → fournit [cordespace_switch_button]
+ *   - mon-espace.upcoming-qr       → do_action('cordespace_mon_espace_section_client_qr')
+ *   - mon-espace.credit-history    → do_action('cordespace_mon_espace_section_client_credits')
+ *   - mon-espace.abonnement-salles → do_action('cordespace_mon_espace_section_client_abonnement')
+ *   - mon-espace.linked-accounts   → fournit [cordespace_switch_button]
  *
  * Helpers utilisés (depuis includes/core/helpers.php) :
  *   - cordespace_user_is_amelia_provider()
@@ -380,6 +381,11 @@ function cordespace_render_client_view( $user, $has_linked ) {
 	</section>
 
 	<?php
+	// Slot : carte « Mon abonnement » (module mon-espace.abonnement-salles).
+	// Volontairement HORS du if has_upcoming_appts : un abonnement actif
+	// s'affiche même sans réservation à venir (option A validée).
+	do_action( 'cordespace_mon_espace_section_client_abonnement', $user );
+
 	// Section conditionnelle : réservations de salles (appointments Amelia).
 	// Render HTML CUSTOM (pas un panneau Amelia) parce qu'Amelia n'autorise
 	// pas 2 instances de [ameliacustomerpanel] sur la même page. Du coup on

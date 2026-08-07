@@ -51,6 +51,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/credit-history.php',
 			'default_active'  => true,
 		],
+		'mon-espace.abonnement-salles' => [
+			'label'           => 'Carte « Mon abonnement » (packages Amelia)',
+			'description'     => 'Affiche dans la vue cliente de /mon-espace les abonnements Amelia actifs (packages, ex : réservations partagées illimitées) avec leur date de fin de validité. Visible même sans réservation à venir, avec un bouton « Réserver une salle » dans ce cas. Disparaît automatiquement à l\'expiration (aucun cron).',
+			'category'        => 'mon-espace',
+			'type'            => 'php',
+			'file'            => 'includes/modules/abonnement-salles.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/abonnement-salles.php',
+			'default_active'  => true,
+		],
 		'mon-espace.orders' => [
 			'label'           => 'Mes commandes',
 			'description'     => 'Section tableau des 10 dernières commandes WooCommerce dans la vue cliente, avec lien vers le détail natif WC pour chaque commande.',
