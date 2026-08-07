@@ -34,6 +34,26 @@
 defined( 'ABSPATH' ) || exit;
 
 add_action( 'cordespace_mon_espace_section_client_abonnement', 'cordespace_render_client_abonnement_salles', 10, 1 );
+add_action( 'wp_head', 'cordespace_abonnement_iframe_chrome_css' );
+
+/**
+ * Mode « sans chrome » pour l'iframe : quand la page est chargée avec
+ * ?cordespace_iframe=1 (depuis l'accordéon de mon-espace), on masque
+ * l'en-tête, le menu, le footer et l'admin bar pour ne laisser que le
+ * panneau Amelia. Sélecteurs génériques + spécifiques au thème Inspiro.
+ */
+function cordespace_abonnement_iframe_chrome_css(): void {
+	if ( empty( $_GET['cordespace_iframe'] ) ) {
+		return;
+	}
+	echo '<style id="cordespace-iframe-chrome">
+		#wpadminbar, .site-header, #masthead, #site-header, header.header,
+		.zoom-top-bar, .navbar, .site-footer, #colophon, footer.footer,
+		.entry-header, .page-header, .breadcrumbs { display: none !important; }
+		html { margin-top: 0 !important; }
+		body { padding-top: 0 !important; }
+	</style>';
+}
 
 function cordespace_render_client_abonnement_salles( $user ): void {
 	if ( ! $user || empty( $user->ID ) ) {
@@ -94,11 +114,35 @@ function cordespace_render_client_abonnement_salles( $user ): void {
 			<?php endforeach; ?>
 		</div>
 
-		<p style="margin:1rem 0 0;">
-			<a href="<?php echo esc_url( $manage_url ); ?>" style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;text-decoration:none;font-size:0.95em;">
-				🏠 Gérer mon abonnement / réserver
-			</a>
-		</p>
+		<?php
+		// Accordéon + iframe (essai « tout dans le compte », 2026-08-07) : le
+		// panneau [ameliacustomerpanel appointments=1] de /mon-abonnement/ ne
+		// peut PAS être une 2e instance sur cette page (limite Amelia), mais il
+		// peut vivre dans une iframe même-domaine (session partagée, auto-login
+		// OK). Lazy : le src n'est posé qu'à la 1re ouverture du <details>.
+		$iframe_url = add_query_arg( 'cordespace_iframe', '1', $manage_url );
+		?>
+		<details id="cordespace-abo-details" style="margin-top:1rem;">
+			<summary style="display:inline-block;padding:0.55rem 1.1rem;background:#4a3b8c;color:#fff;border-radius:6px;cursor:pointer;font-size:0.95em;list-style:none;user-select:none;">
+				🏠 Gérer mon abonnement / réserver <span style="font-size:0.8em;">▾</span>
+			</summary>
+			<div style="margin-top:0.8rem;">
+				<iframe id="cordespace-abo-iframe" data-src="<?php echo esc_url( $iframe_url ); ?>" title="Mon abonnement" style="width:100%;height:75vh;min-height:560px;border:1px solid #e0e0e0;border-radius:8px;background:#fff;display:block;"></iframe>
+				<p style="margin:0.5rem 0 0;font-size:0.85em;">
+					<a href="<?php echo esc_url( $manage_url ); ?>" style="color:#4a3b8c;">Ouvrir en pleine page ↗</a>
+				</p>
+			</div>
+		</details>
+		<script>
+		( function () {
+			var d = document.getElementById( 'cordespace-abo-details' );
+			if ( ! d ) { return; }
+			d.addEventListener( 'toggle', function () {
+				var f = document.getElementById( 'cordespace-abo-iframe' );
+				if ( d.open && f && ! f.src ) { f.src = f.getAttribute( 'data-src' ); }
+			} );
+		} )();
+		</script>
 	</section>
 	<?php
 }
