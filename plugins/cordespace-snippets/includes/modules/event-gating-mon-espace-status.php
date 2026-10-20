@@ -124,7 +124,7 @@ function cordespace_evgating_status_texts( string $type_title ): array {
 		'none_pop_link'   => 'Lire les critères et faire une demande',
 	];
 	if ( $type_title === 'Semi-privé' ) {
-		$texts['none_pop'] = 'Les semi-privés demandent une bonne expérience des cordes et de l\'espace. Deux formulaires : simplifié (performances seulement) ou complet (tout). Réponse au moins une fois par mois.';
+		$texts['none_pop'] = 'Les semi-privés demandent une bonne expérience des cordes et de l\'espace. Deux formulaires : simplifié (performances seulement) ou complet (tout).';
 	}
 	return (array) apply_filters( 'cordespace_evgating_status_texts', $texts, $type_title );
 }
