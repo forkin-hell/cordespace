@@ -17,6 +17,19 @@
  * Dépendances : Amelia. Le helper cordespace_user_is_amelia_provider() vit
  * dans includes/core/helpers.php (toujours chargé).
  *
+ * Badge « argent » à côté du nom (cordespace_presence_payment_badge) :
+ * il se base sur la COMMANDE WooCommerce (statut + méthode + montant de la
+ * ligne), pas sur `amelia_payments.amount`. Raison (diagnostic 2026-10-20) :
+ * Amelia crée sa ligne de paiement avec amount = 0 et ne la remplit qu'une
+ * fois, au passage qui crée le booking ; si ce passage est un échec (carte
+ * refusée, DNS, Interac annulée par délai) et que la commande est complétée
+ * ensuite, amount reste 0 pour toujours alors que la personne a payé
+ * (17/17 cas vérifiés en prod). Se fier au montant = badge « SUR PLACE » faux.
+ * Chez Cordespace la passerelle cod est désactivée au checkout : une commande
+ * passe en `cod` quand l'équipe encaisse via l'app WooCommerce (« Collect
+ * payment → Cash », typiquement un Interac en attente réglé au comptoir), donc
+ * `cod` + complétée = encaissée (84/84 cas en prod au 2026-10-20).
+ *
  * Historique : avant on stockait dans une table custom wp_cordespace_checkins.
  * On a basculé sur le JSON Amelia pour avoir UNE source de vérité partagée
  * avec le scanner natif. La table reste en place (no-op) pour ne pas casser
@@ -200,17 +213,25 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 					    AND p.wcOrderId IS NOT NULL
 					  ORDER BY p.id DESC
 					  LIMIT 1) AS wc_order_id,
-					COALESCE((SELECT p.amount
-					   FROM {$wpdb->prefix}amelia_payments p
-					  WHERE p.customerBookingId = b.id
-					  ORDER BY p.id DESC
-					  LIMIT 1), 0) AS booking_amount,
+					COALESCE(lp.amount, 0)         AS booking_amount,
+					COALESCE(lp.status, '')        AS pay_status,
+					COALESCE(lp.gateway, '')       AS pay_gateway,
+					COALESCE(o.status, '')         AS wc_status,
+					COALESCE(o.payment_method, '') AS wc_payment_method,
+					COALESCE(lt.meta_value, 0) + COALESCE(lx.meta_value, 0) AS wc_line_amount,
 					COALESCE((SELECT SUM(bt.persons * bt.price)
 					   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_tickets bt
 					  WHERE bt.customerBookingId = b.id), 0) AS ticket_face_value
 			   FROM {$wpdb->prefix}amelia_customer_bookings_to_events_periods bep
 			   JOIN {$wpdb->prefix}amelia_customer_bookings b ON b.id = bep.customerBookingId
 			   JOIN {$wpdb->prefix}amelia_users u ON u.id = b.customerId
+			   LEFT JOIN {$wpdb->prefix}amelia_payments lp
+			          ON lp.id = (SELECT MAX(p.id) FROM {$wpdb->prefix}amelia_payments p WHERE p.customerBookingId = b.id)
+			   LEFT JOIN {$wpdb->prefix}wc_orders o ON o.id = lp.wcOrderId
+			   LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta lt
+			          ON lt.order_item_id = lp.wcOrderItemId AND lt.meta_key = '_line_total'
+			   LEFT JOIN {$wpdb->prefix}woocommerce_order_itemmeta lx
+			          ON lx.order_item_id = lp.wcOrderItemId AND lx.meta_key = '_line_tax'
 			  WHERE bep.eventPeriodId = %d
 			    AND b.status IN ('approved', 'pending')
 			  ORDER BY u.firstName, u.lastName",
@@ -234,6 +255,54 @@ function cordespace_get_prof_today_events( int $wp_user_id ): array {
 	unset( $event );
 
 	return $events;
+}
+
+/**
+ * Décide le badge « argent » d'une ligne élève (voir en-tête du module).
+ *
+ * @param array $b Ligne de cordespace_get_prof_today_events() : booking_amount,
+ *                 ticket_face_value, pay_status, pay_gateway, wc_status,
+ *                 wc_payment_method, wc_line_amount.
+ * @return array{kind: string, amount: float} kind ∈ paid | onsite | onhold | none.
+ *   - paid   : encaissé (commande WC completed/processing, ou booking admin
+ *              marqué payé dans Amelia). Montant = Amelia si > 0, sinon la
+ *              ligne WC (total + taxes), comme Amelia l'aurait calculé.
+ *   - onsite : à encaisser pendant le cours (booking admin non payé, ou cod
+ *              encore en traitement).
+ *   - onhold : Interac en attente de confirmation (commande on-hold).
+ *   - none   : rien à afficher (gratuit, 0 $, commande échouée/annulée —
+ *              le booking pending porte déjà « PAIEMENT À VALIDER »).
+ */
+function cordespace_presence_payment_badge( array $b ): array {
+	$none      = [ 'kind' => 'none', 'amount' => 0.0 ];
+	$face      = (float) ( $b['ticket_face_value'] ?? 0 );
+	$amelia    = (float) ( $b['booking_amount'] ?? 0 );
+	$line      = (float) ( $b['wc_line_amount'] ?? 0 );
+	$paid_amt  = $amelia > 0 ? $amelia : $line;
+	$wc_status = str_replace( 'wc-', '', (string) ( $b['wc_status'] ?? '' ) );
+	$method    = (string) ( $b['wc_payment_method'] ?? '' );
+
+	if ( $wc_status !== '' ) {
+		if ( $wc_status === 'completed' || ( $wc_status === 'processing' && $method !== 'cod' ) ) {
+			return $paid_amt > 0 ? [ 'kind' => 'paid', 'amount' => $paid_amt ] : $none;
+		}
+		if ( $wc_status === 'processing' ) {
+			return $face > 0 ? [ 'kind' => 'onsite', 'amount' => $face ] : $none;
+		}
+		if ( $wc_status === 'on-hold' ) {
+			$due = $paid_amt > 0 ? $paid_amt : $face;
+			return $due > 0 ? [ 'kind' => 'onhold', 'amount' => $due ] : $none;
+		}
+		return $none;
+	}
+
+	if ( $face <= 0 ) {
+		return $none;
+	}
+	if ( ( $b['pay_status'] ?? '' ) === 'paid' ) {
+		return [ 'kind' => 'paid', 'amount' => $amelia > 0 ? $amelia : $face ];
+	}
+	return [ 'kind' => 'onsite', 'amount' => $face ];
 }
 
 // ============================================================================
@@ -422,16 +491,14 @@ function cordespace_render_today_students( $atts ) {
 											?></span>
 										<?php endif; ?>
 										<?php
-										// Priorité d'affichage :
-										//   1. payment.amount > 0  → personne A PAYÉ via WC (Interac/CB/crédits) → badge vert
-										//   2. tickets price × persons > 0 → réservation Amelia onSite, NON encaissée → badge orange "💵 SUR PLACE"
-										//   3. les 2 à zéro → vraie invitation / billet gratuit → aucun badge
-										$paid_amount = (float) ( $b['booking_amount']     ?? 0 );
-										$face_value  = (float) ( $b['ticket_face_value']  ?? 0 );
-										if ( $paid_amount > 0 ) : ?>
-											<span class="cordespace-amount-badge" style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:600;letter-spacing:0.2px;" title="Montant payé via WooCommerce (incl. taxes)">💰 <?php echo number_format( $paid_amount, 2, ',', ' ' ); ?> $</span>
-										<?php elseif ( $face_value > 0 ) : ?>
-											<span class="cordespace-amount-onsite-badge" style="display:inline-block;background:#fff3cd;color:#856404;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Réservation Amelia avec paiement « sur place » (gateway onSite) — pas de transaction WooCommerce. À encaisser pendant le cours.">💵 <?php echo number_format( $face_value, 2, ',', ' ' ); ?> $ SUR PLACE</span>
+										$badge        = cordespace_presence_payment_badge( $b );
+										$badge_amount = number_format( $badge['amount'], 2, ',', ' ' );
+										if ( $badge['kind'] === 'paid' ) : ?>
+											<span class="cordespace-amount-badge" style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:600;letter-spacing:0.2px;" title="Encaissé (commande WooCommerce payée, ou marqué payé dans Amelia) — incl. taxes">💰 <?php echo $badge_amount; ?> $</span>
+										<?php elseif ( $badge['kind'] === 'onsite' ) : ?>
+											<span class="cordespace-amount-onsite-badge" style="display:inline-block;background:#fff3cd;color:#856404;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Pas de paiement enregistré (réservation ajoutée en admin, non payée). À encaisser pendant le cours.">💵 <?php echo $badge_amount; ?> $ SUR PLACE</span>
+										<?php elseif ( $badge['kind'] === 'onhold' ) : ?>
+											<span class="cordespace-amount-onhold-badge" style="display:inline-block;background:#e3f2fd;color:#0d47a1;font-size:0.75em;padding:0.15rem 0.45rem;border-radius:4px;margin-left:0.35rem;font-weight:700;letter-spacing:0.2px;" title="Virement Interac choisi mais pas encore confirmé par l'équipe (commande WooCommerce « en attente »).">🏦 <?php echo $badge_amount; ?> $ INTERAC EN ATTENTE</span>
 										<?php endif; ?>
 										<?php
 										/**

@@ -73,7 +73,7 @@ return [
 		],
 		'mon-espace.teacher-presence' => [
 			'label'           => 'Présence des élèves',
-			'description'     => 'Toggle iOS-style pour marquer les élèves présent·es (vue prof) + endpoint REST + table SQL.',
+			'description'     => 'Toggle iOS-style pour marquer les élèves présent·es (vue prof) + endpoint REST + table SQL. Badges paiement à côté du nom (💰 encaissé / 💵 sur place / 🏦 Interac en attente) basés sur la commande WooCommerce, pas sur le montant Amelia (qui reste à 0 après un 1er paiement échoué).',
 			'category'        => 'mon-espace',
 			'type'            => 'php',
 			'file'            => 'includes/modules/teacher-presence.php',
