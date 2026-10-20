@@ -254,7 +254,11 @@ function cordespace_evgating_print_status_assets(): void {
 		.cordespace-evg-pop { margin-top:0.8rem; max-width:560px; background:#fff; color:#333; border-radius:10px; padding:0.8rem 1rem; box-shadow:0 4px 16px rgba(0,0,0,0.2); font-size:0.9em; line-height:1.5; }
 		.cordespace-evg-pop[hidden] { display:none; }
 		.cordespace-evg-info:focus-visible { outline:2px solid #fff; outline-offset:2px; }
-		@media (hover:hover) { .cordespace-evg-card:hover .cordespace-evg-pop { display:block; } }
+		/* Survol : seulement le bouton ⓘ (pas toute la carte) ; le clic la garde ouverte. */
+		@media (hover:hover) {
+			.cordespace-evg-card:has(.cordespace-evg-info:hover) .cordespace-evg-pop,
+			.cordespace-evg-card .cordespace-evg-pop:hover { display:block; }
+		}
 	</style>
 	<script>
 	( function () {
