@@ -51,16 +51,6 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/credit-history.php',
 			'default_active'  => true,
 		],
-		'mon-espace.abonnement-salles' => [
-			'label'           => 'Section « Mes réservations » (cabinet salles intégré)',
-			'description'     => 'Section « 🏠 Mes réservations » de la vue cliente de /mon-espace : accordéon qui intègre en iframe le cabinet Amelia des salles (onglet Appointments = créneaux réservés, annulation/report ; onglet Packages = abonnement + Book Now, visible seulement pour les abonné·es — natif Amelia). Affichée si abonnement actif OU réservation à venir. Remplace l\'ancienne section custom en HTML. ⚠️ La page /mon-abonnement/ doit exister avec le shortcode [ameliacustomerpanel appointments=1] (URL modifiable via le filtre cordespace_abonnement_salles_manage_url).',
-			'category'        => 'mon-espace',
-			'type'            => 'php',
-			'file'            => 'includes/modules/abonnement-salles.php',
-			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
-			'github_path'     => 'plugins/cordespace-snippets/includes/modules/abonnement-salles.php',
-			'default_active'  => true,
-		],
 		'mon-espace.orders' => [
 			'label'           => 'Mes commandes',
 			'description'     => 'Section tableau des 10 dernières commandes WooCommerce dans la vue cliente, avec lien vers le détail natif WC pour chaque commande.',
