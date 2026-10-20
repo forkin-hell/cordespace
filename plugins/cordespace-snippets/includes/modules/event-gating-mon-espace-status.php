@@ -19,7 +19,10 @@
  *   - partial : certaines → pastilles vertes + pastille « faire une demande » ;
  *   - none    : aucune → carte d'invitation vers la page d'info.
  * Le bouton ⓘ ouvre une bulle (clic ; survol sur desktop) avec une phrase et
- * le lien vers l'URL d'info du type (méta du CPT, modifiable en admin).
+ * le lien vers l'URL d'info du type (méta du CPT, modifiable en admin). La
+ * bulle s'ouvre dans le flux de la carte (la carte s'agrandit) : le bloc
+ * d'accueil masque ce qui dépasse, une bulle flottante serait coupée.
+ * La carte prend toute la largeur restante à côté de « Mes crédits ».
  *
  * Étiquette Amelia → libellé client·e : filtre cordespace_evgating_client_tag
  * (défauts pour les trois étiquettes de « Semi-privé » ; sinon l'étiquette,
@@ -202,7 +205,7 @@ function cordespace_evgating_render_status_card( int $type_id, string $title, ar
 		return '<span style="display:inline-flex;align-items:center;gap:0.3rem;background:#e8f5e9;color:#1b5e20;font-size:0.8em;font-weight:600;padding:0.2rem 0.6rem;border-radius:999px;white-space:nowrap;">✓ ' . esc_html( $label ) . '</span>';
 	};
 	?>
-	<div class="cordespace-evg-card" style="position:relative;background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;max-width:100%;">
+	<div class="cordespace-evg-card" style="flex:1 1 320px;min-width:0;background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;">
 		<?php if ( $model['state'] === 'none' ) : ?>
 			<div style="font-size:0.95em;line-height:1.5;">
 				✨ <?php echo esc_html( $fill( $t['none_card'] ) ); ?>
@@ -246,7 +249,9 @@ function cordespace_evgating_print_status_assets(): void {
 	$done = true;
 	?>
 	<style>
-		.cordespace-evg-pop { position:absolute; top:calc(100% + 8px); left:0; z-index:30; width:min(360px, 88vw); background:#fff; color:#333; border-radius:10px; padding:0.8rem 1rem; box-shadow:0 6px 24px rgba(0,0,0,0.25); font-size:0.9em; line-height:1.5; }
+		/* La bulle s'ouvre DANS la carte (flux normal) : le bloc d'accueil masque
+		   ce qui dépasse (décor des thèmes), une bulle flottante serait coupée. */
+		.cordespace-evg-pop { margin-top:0.8rem; max-width:560px; background:#fff; color:#333; border-radius:10px; padding:0.8rem 1rem; box-shadow:0 4px 16px rgba(0,0,0,0.2); font-size:0.9em; line-height:1.5; }
 		.cordespace-evg-pop[hidden] { display:none; }
 		.cordespace-evg-info:focus-visible { outline:2px solid #fff; outline-offset:2px; }
 		@media (hover:hover) { .cordespace-evg-card:hover .cordespace-evg-pop { display:block; } }
