@@ -18,10 +18,12 @@
  *   - full    : toutes les étiquettes validées → pastilles vertes ;
  *   - partial : certaines → pastilles vertes + pastille « faire une demande » ;
  *   - none    : aucune → carte d'invitation vers la page d'info.
- * Le bouton ⓘ ouvre une bulle (clic ; survol sur desktop) avec une phrase et
- * le lien vers l'URL d'info du type (méta du CPT, modifiable en admin). La
- * bulle s'ouvre dans le flux de la carte (la carte s'agrandit) : le bloc
- * d'accueil masque ce qui dépasse, une bulle flottante serait coupée.
+ * Le bouton ⓘ ouvre une info-bulle flottante (survol : reste ouverte tant que
+ * la souris est sur le ⓘ ou la bulle ; clic : verrouillée jusqu'au clic
+ * ailleurs / Échap ; mobile : toucher) avec une phrase et le lien vers l'URL
+ * d'info du type (méta du CPT, modifiable en admin). La bulle est déplacée
+ * dans <body> à l'ouverture et positionnée sous le ⓘ : le bloc d'accueil
+ * masque ce qui dépasse, une bulle laissée dedans serait coupée.
  * La carte prend toute la largeur restante à côté de « Mes crédits ».
  *
  * Étiquette Amelia → libellé client·e : filtre cordespace_evgating_client_tag
@@ -176,11 +178,12 @@ function cordespace_evgating_render_mon_espace_status( $user ): void {
 		}
 		$model = cordespace_evgating_status_model( $tags, cordespace_evgating_user_tag_statuses( (int) $user->ID, $type_id ), $names );
 		$url   = function_exists( 'cordespace_event_gating_get_info_url' ) ? cordespace_event_gating_get_info_url( $type_id ) : '';
-		if ( ! $printed ) {
-			cordespace_evgating_print_status_assets();
-			$printed = true;
-		}
 		cordespace_evgating_render_status_card( $type_id, $title, $model, $url );
+		$printed = true;
+	}
+	// Après les cartes : le script s'accroche aux boutons déjà dans le DOM.
+	if ( $printed ) {
+		cordespace_evgating_print_status_assets();
 	}
 }
 
@@ -249,36 +252,55 @@ function cordespace_evgating_print_status_assets(): void {
 	$done = true;
 	?>
 	<style>
-		/* La bulle s'ouvre DANS la carte (flux normal) : le bloc d'accueil masque
-		   ce qui dépasse (décor des thèmes), une bulle flottante serait coupée. */
-		.cordespace-evg-pop { margin-top:0.8rem; max-width:560px; background:#fff; color:#333; border-radius:10px; padding:0.8rem 1rem; box-shadow:0 4px 16px rgba(0,0,0,0.2); font-size:0.9em; line-height:1.5; }
+		/* Bulle flottante : déplacée dans <body> à l'ouverture et positionnée sous
+		   le ⓘ, pour ne pas être coupée par le bloc d'accueil (qui masque ce qui
+		   dépasse à cause du décor des thèmes). */
+		.cordespace-evg-pop { position:absolute; z-index:9999; background:#fff; color:#333; border-radius:10px; padding:0.8rem 1rem; box-shadow:0 6px 24px rgba(0,0,0,0.25); font-size:0.9rem; line-height:1.5; }
 		.cordespace-evg-pop[hidden] { display:none; }
 		.cordespace-evg-info:focus-visible { outline:2px solid #fff; outline-offset:2px; }
-		/* Survol : seulement le bouton ⓘ (pas toute la carte) ; le clic la garde ouverte. */
-		@media (hover:hover) {
-			.cordespace-evg-card:has(.cordespace-evg-info:hover) .cordespace-evg-pop,
-			.cordespace-evg-card .cordespace-evg-pop:hover { display:block; }
-		}
 	</style>
 	<script>
 	( function () {
-		function closeAll() {
-			document.querySelectorAll( '.cordespace-evg-pop' ).forEach( function ( p ) { p.hidden = true; } );
-			document.querySelectorAll( '.cordespace-evg-info' ).forEach( function ( b ) { b.setAttribute( 'aria-expanded', 'false' ); } );
+		var DELAY = 300, pinned = null, timers = {};
+		function popOf( btn ) { return document.getElementById( btn.getAttribute( 'aria-controls' ) ); }
+		function place( btn, pop ) {
+			var r = btn.getBoundingClientRect(), w = Math.min( 360, Math.floor( window.innerWidth * 0.88 ) );
+			var left = r.left + window.scrollX, maxLeft = window.scrollX + window.innerWidth - w - 12;
+			pop.style.width = w + 'px';
+			pop.style.left  = Math.max( window.scrollX + 12, Math.min( left, maxLeft ) ) + 'px';
+			pop.style.top   = ( r.bottom + window.scrollY + 8 ) + 'px';
 		}
-		document.addEventListener( 'click', function ( e ) {
-			var btn = e.target.closest( '.cordespace-evg-info' );
-			if ( btn ) {
-				var pop = document.getElementById( btn.getAttribute( 'aria-controls' ) );
-				var open = pop && pop.hidden;
-				closeAll();
-				if ( pop && open ) { pop.hidden = false; btn.setAttribute( 'aria-expanded', 'true' ); }
+		function open( btn ) {
+			var pop = popOf( btn ); if ( ! pop ) { return; }
+			if ( pop.parentNode !== document.body ) { document.body.appendChild( pop ); }
+			pop.hidden = false; place( btn, pop ); btn.setAttribute( 'aria-expanded', 'true' );
+		}
+		function close( btn ) {
+			var pop = popOf( btn ); if ( pop ) { pop.hidden = true; }
+			btn.setAttribute( 'aria-expanded', 'false' );
+			if ( pinned === btn ) { pinned = null; }
+		}
+		var buttons = Array.prototype.slice.call( document.querySelectorAll( '.cordespace-evg-info' ) );
+		function closeAll() { buttons.forEach( close ); }
+		buttons.forEach( function ( btn, i ) {
+			var pop = popOf( btn ); if ( ! pop ) { return; }
+			function cancel() { clearTimeout( timers[ i ] ); }
+			function later() { cancel(); timers[ i ] = setTimeout( function () { if ( pinned !== btn ) { close( btn ); } }, DELAY ); }
+			btn.addEventListener( 'mouseenter', function () { cancel(); open( btn ); } );
+			btn.addEventListener( 'mouseleave', later );
+			pop.addEventListener( 'mouseenter', cancel );
+			pop.addEventListener( 'mouseleave', later );
+			btn.addEventListener( 'click', function ( e ) {
 				e.stopPropagation();
-				return;
-			}
-			if ( ! e.target.closest( '.cordespace-evg-pop' ) ) { closeAll(); }
+				if ( pinned === btn ) { close( btn ); } else { closeAll(); pinned = btn; open( btn ); }
+			} );
+			pop.addEventListener( 'click', function ( e ) { e.stopPropagation(); } );
 		} );
+		document.addEventListener( 'click', closeAll );
 		document.addEventListener( 'keydown', function ( e ) { if ( e.key === 'Escape' ) { closeAll(); } } );
+		window.addEventListener( 'resize', function () {
+			buttons.forEach( function ( btn ) { var pop = popOf( btn ); if ( pop && ! pop.hidden ) { place( btn, pop ); } } );
+		} );
 	} )();
 	</script>
 	<?php
