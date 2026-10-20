@@ -9,6 +9,7 @@
  * Sous-modules associés :
  *   - mon-espace.upcoming-qr       → do_action('cordespace_mon_espace_section_client_qr')
  *   - mon-espace.credit-history    → do_action('cordespace_mon_espace_section_client_credits')
+ *   - event-gating.mon-espace-status → do_action('cordespace_mon_espace_greeting_stats')
  *   - mon-espace.linked-accounts   → fournit [cordespace_switch_button]
  *
  * Panneau client Amelia : UNE instance [ameliacustomerpanel appointments=1
@@ -237,11 +238,19 @@ function cordespace_render_client_view( $user, $has_linked ) {
 		} ?>
 		<h1 style="margin:0 0 0.4rem;color:#fff;font-size:1.8rem;">Bonjour<?php echo $greet_name !== '' ? ' ' . esc_html( $greet_name ) : ''; ?></h1>
 		<p style="margin:0;opacity:0.9;font-size:1.05em;">Bienvenue dans ton espace Cordespace.</p>
-		<div style="margin-top:1.5rem;">
-			<div style="display:inline-block;background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;">
+		<div style="margin-top:1.5rem;display:flex;flex-wrap:wrap;gap:12px;align-items:stretch;">
+			<div style="background:rgba(255,255,255,0.15);padding:0.8rem 1.4rem;border-radius:8px;">
 				<div style="font-size:0.85em;opacity:0.85;text-transform:uppercase;letter-spacing:0.5px;">Mes crédits</div>
 				<div style="font-size:1.6rem;font-weight:700;margin-top:0.2rem;"><?php echo do_shortcode( '[mycred_my_balance show_zero=yes]' ); ?></div>
 			</div>
+			<?php
+			/**
+			 * Slot : cartes à côté de « Mes crédits » dans le bloc d'accueil
+			 * (ex. event-gating.mon-espace-status → « Accès semi-privé »).
+			 * Args : $user (WP_User).
+			 */
+			do_action( 'cordespace_mon_espace_greeting_stats', $user );
+			?>
 		</div>
 	</div>
 

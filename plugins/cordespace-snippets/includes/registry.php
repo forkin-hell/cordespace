@@ -306,6 +306,15 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-checkout-blocker.php',
 			'default_active'  => true,
 		],
+		'event-gating.mon-espace-status' => [
+			'label'           => 'Carte « Accès semi-privé » dans Mon espace',
+			'description'     => 'Dans le bloc d\'accueil de la vue cliente de /mon-espace, à côté de « Mes crédits » : pastilles vertes pour les niveaux validés (Événements / Performances / Réservation de l\'espace), pastille « faire une demande » pour le reste, et carte d\'invitation pour les personnes sans aucun accès — jamais de mention de refus (pending et rejected s\'affichent pareil). Bouton ⓘ → bulle explicative + lien vers l\'URL d\'info du type. Libellés et textes modifiables via les filtres cordespace_evgating_client_tag et cordespace_evgating_status_texts.',
+			'category'        => 'event-gating',
+			'type'            => 'php',
+			'file'            => 'includes/modules/event-gating-mon-espace-status.php',
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/event-gating-mon-espace-status.php',
+			'default_active'  => true,
+		],
 		'styles.wc-checkout-layout' => [
 			'label'           => 'Marges WC panier / checkout',
 			'description'     => 'Ajoute des marges latérales et un max-width sur les pages panier et checkout WooCommerce. Évite que le contenu colle aux bords du viewport sur grands écrans.',
