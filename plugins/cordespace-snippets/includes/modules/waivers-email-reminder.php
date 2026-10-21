@@ -380,11 +380,14 @@ function cordespace_waivers_ajax_test_email(): void {
 		wp_send_json_error( [ 'message' => __( 'Ton compte n\'a pas d\'adresse courriel valide.', 'cordespace-snippets' ) ] );
 	}
 	$first        = trim( (string) $user->first_name ) !== '' ? trim( (string) $user->first_name ) : trim( (string) $user->display_name );
+	$title        = trim( (string) get_the_title( $post_id ) );
+	// Valeurs fictives : il n'y a pas de réservation derrière un test. Date = après-demain 18 h 30.
+	$sample_date  = new DateTimeImmutable( 'today +2 days 18:30', wp_timezone() );
 	$placeholders = [
 		'{prenom}'         => $first !== '' ? $first : 'à toi',
 		'{nom_cours}'      => __( 'Initiation au ligotage (exemple)', 'cordespace-snippets' ),
-		'{date_cours}'     => wp_date( 'l j F Y à H\hi', time() + 2 * DAY_IN_SECONDS ),
-		'{titre_document}' => (string) get_the_title( $post_id ),
+		'{date_cours}'     => wp_date( 'l j F Y à H\hi', $sample_date->getTimestamp() ),
+		'{titre_document}' => $title !== '' ? $title : __( 'Décharge de responsabilité (titre du waiver)', 'cordespace-snippets' ),
 		'{lien_signature}' => add_query_arg( 'preview', '1', cordespace_waivers_get_sign_url( $post_id, cordespace_waivers_get_mon_espace_url() ) ),
 	];
 	$mail = cordespace_waivers_compose_reminder_email( $post_id, $placeholders );
@@ -395,7 +398,7 @@ function cordespace_waivers_ajax_test_email(): void {
 	wp_send_json_success( [
 		'message' => sprintf(
 			/* translators: 1 = destinataire, 2 = nom expéditeur, 3 = adresse expéditeur */
-			__( 'Envoyé à %1$s, expéditeur « %2$s <%3$s> ». (Sur un site Local, regarde dans Mailpit.)', 'cordespace-snippets' ),
+			__( 'Envoyé à %1$s, expéditeur « %2$s <%3$s> ».', 'cordespace-snippets' ),
 			$to,
 			$from['name'],
 			$from['email']
