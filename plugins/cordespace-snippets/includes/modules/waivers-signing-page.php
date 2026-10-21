@@ -51,9 +51,14 @@ function cordespace_waivers_signing_page_handle(): void {
 		return;
 	}
 	$waiver = get_post( $waiver_id );
-	if ( ! $waiver
-	     || $waiver->post_type !== CORDESPACE_WAIVER_POST_TYPE
-	     || $waiver->post_status !== 'publish' ) {
+	if ( ! $waiver || $waiver->post_type !== CORDESPACE_WAIVER_POST_TYPE ) {
+		return;
+	}
+
+	// Aperçu admin (&preview=1) : réservé aux personnes qui peuvent éditer le
+	// waiver, accepte les brouillons, n'enregistre jamais rien.
+	$preview = ! empty( $_GET['preview'] ) && is_user_logged_in() && current_user_can( 'edit_post', $waiver->ID );
+	if ( ! $preview && $waiver->post_status !== 'publish' ) {
 		return;
 	}
 
@@ -66,13 +71,142 @@ function cordespace_waivers_signing_page_handle(): void {
 	$redirect_to = isset( $_GET['redirect_to'] ) ? esc_url_raw( (string) $_GET['redirect_to'] ) : '';
 
 	if ( $_SERVER['REQUEST_METHOD'] === 'POST' ) {
+		if ( $preview ) {
+			wp_safe_redirect( add_query_arg( null, null ) );
+			exit;
+		}
 		cordespace_waivers_signing_page_handle_post( (int) $waiver->ID, $redirect_to );
 		return;
 	}
 
-	cordespace_waivers_signing_page_render( $waiver, $redirect_to );
+	cordespace_waivers_signing_page_render( $waiver, $redirect_to, $preview );
 	exit;
 }
+
+// ============================================================================
+// Phrases des deux cases à cocher — modifiables par waiver (metabox), avec
+// les phrases d'origine comme défaut. Deux affirmations distinctes (lecture /
+// acceptation) : c'est la forme retenue pour le consentement explicite (LCJTI).
+// ============================================================================
+
+const CORDESPACE_WAIVER_META_CONSENT_READ   = '_cordespace_waiver_consent_read';
+const CORDESPACE_WAIVER_META_CONSENT_ACCEPT = '_cordespace_waiver_consent_accept';
+
+/**
+ * @return array{read:string, accept:string}
+ */
+function cordespace_waivers_default_consent_texts(): array {
+	return [
+		'read'   => __( "J'ai lu et compris l'intégralité du texte ci-dessus.", 'cordespace-snippets' ),
+		'accept' => __( "J'accepte expressément le contenu de ce document et j'adhère à toutes ses conditions.", 'cordespace-snippets' ),
+	];
+}
+
+/**
+ * Phrases des cases pour un waiver : meta si renseignée, sinon défaut.
+ * Filtre cordespace_waivers_consent_texts( array $texts, int $waiver_id ).
+ *
+ * @return array{read:string, accept:string}
+ */
+function cordespace_waivers_get_consent_texts( int $waiver_id ): array {
+	$texts = cordespace_waivers_default_consent_texts();
+	$read   = trim( (string) get_post_meta( $waiver_id, CORDESPACE_WAIVER_META_CONSENT_READ, true ) );
+	$accept = trim( (string) get_post_meta( $waiver_id, CORDESPACE_WAIVER_META_CONSENT_ACCEPT, true ) );
+	if ( $read !== '' ) {
+		$texts['read'] = $read;
+	}
+	if ( $accept !== '' ) {
+		$texts['accept'] = $accept;
+	}
+	return (array) apply_filters( 'cordespace_waivers_consent_texts', $texts, $waiver_id );
+}
+
+/**
+ * Metaboxes sur l'écran d'édition du waiver : « Cases à cocher » (normal) et
+ * « Aperçu » (side, bouton vers la page de signature en mode preview).
+ */
+function cordespace_waivers_signing_page_register_metaboxes(): void {
+	add_meta_box(
+		'cordespace-waiver-consent',
+		__( '☑️ Cases à cocher (signature)', 'cordespace-snippets' ),
+		'cordespace_waivers_render_consent_metabox',
+		CORDESPACE_WAIVER_POST_TYPE,
+		'normal',
+		'high'
+	);
+	add_meta_box(
+		'cordespace-waiver-preview',
+		__( '👁️ Aperçu', 'cordespace-snippets' ),
+		'cordespace_waivers_render_preview_metabox',
+		CORDESPACE_WAIVER_POST_TYPE,
+		'side',
+		'high'
+	);
+}
+add_action( 'add_meta_boxes_' . CORDESPACE_WAIVER_POST_TYPE, 'cordespace_waivers_signing_page_register_metaboxes' );
+
+function cordespace_waivers_render_consent_metabox( WP_Post $post ): void {
+	wp_nonce_field( 'cordespace_waiver_consent_save', 'cordespace_waiver_consent_nonce' );
+	$defaults = cordespace_waivers_default_consent_texts();
+	$read     = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_READ, true );
+	$accept   = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_ACCEPT, true );
+	?>
+	<p style="margin-top:0; color:#555;">
+		<?php esc_html_e( 'Sous le texte du document, la personne doit cocher ces deux cases avant de pouvoir cliquer « Je signe ». Laisse vide pour garder la phrase par défaut.', 'cordespace-snippets' ); ?>
+	</p>
+	<p>
+		<label for="cordespace_waiver_consent_read"><strong><?php esc_html_e( 'Case 1 — lecture', 'cordespace-snippets' ); ?></strong></label><br>
+		<input type="text" id="cordespace_waiver_consent_read" name="cordespace_waiver_consent_read" class="widefat" value="<?php echo esc_attr( $read ); ?>" placeholder="<?php echo esc_attr( $defaults['read'] ); ?>">
+	</p>
+	<p>
+		<label for="cordespace_waiver_consent_accept"><strong><?php esc_html_e( 'Case 2 — acceptation', 'cordespace-snippets' ); ?></strong></label><br>
+		<input type="text" id="cordespace_waiver_consent_accept" name="cordespace_waiver_consent_accept" class="widefat" value="<?php echo esc_attr( $accept ); ?>" placeholder="<?php echo esc_attr( $defaults['accept'] ); ?>">
+	</p>
+	<p style="font-size:0.9em; color:#666; margin-bottom:0;">
+		<?php esc_html_e( 'Garde deux affirmations distinctes (avoir lu / accepter) : c\'est la forme retenue pour un consentement explicite. Si tu changes le sens d\'une phrase, pense à changer aussi la version du document pour que tout le monde re-signe.', 'cordespace-snippets' ); ?>
+	</p>
+	<?php
+}
+
+function cordespace_waivers_render_preview_metabox( WP_Post $post ): void {
+	if ( $post->post_status === 'auto-draft' ) {
+		echo '<p style="margin:0; color:#666;">' . esc_html__( 'Enregistre d\'abord le brouillon pour pouvoir le prévisualiser.', 'cordespace-snippets' ) . '</p>';
+		return;
+	}
+	$url = add_query_arg( 'preview', '1', cordespace_waivers_get_sign_url( (int) $post->ID ) );
+	?>
+	<p style="margin:0 0 0.6rem;">
+		<a href="<?php echo esc_url( $url ); ?>" target="_blank" rel="noopener" class="button button-secondary" style="width:100%; text-align:center;">
+			<?php esc_html_e( '👁️ Prévisualiser la page de signature', 'cordespace-snippets' ); ?>
+		</a>
+	</p>
+	<p style="margin:0; font-size:0.9em; color:#666;">
+		<?php esc_html_e( 'Ouvre la page telle que la verra la personne (texte, cases, bouton), sans rien enregistrer. Pense à enregistrer tes modifications avant.', 'cordespace-snippets' ); ?>
+	</p>
+	<?php
+}
+
+function cordespace_waivers_save_consent_meta( int $post_id ): void {
+	if ( wp_is_post_autosave( $post_id ) || wp_is_post_revision( $post_id ) ) {
+		return;
+	}
+	if ( get_post_type( $post_id ) !== CORDESPACE_WAIVER_POST_TYPE || ! current_user_can( 'edit_post', $post_id ) ) {
+		return;
+	}
+	if ( ! isset( $_POST['cordespace_waiver_consent_nonce'] )
+	     || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['cordespace_waiver_consent_nonce'] ) ), 'cordespace_waiver_consent_save' ) ) {
+		return;
+	}
+	foreach ( [ 'cordespace_waiver_consent_read' => CORDESPACE_WAIVER_META_CONSENT_READ, 'cordespace_waiver_consent_accept' => CORDESPACE_WAIVER_META_CONSENT_ACCEPT ] as $field => $meta ) {
+		$value = isset( $_POST[ $field ] ) ? sanitize_text_field( wp_unslash( $_POST[ $field ] ) ) : '';
+		if ( $value === '' ) {
+			delete_post_meta( $post_id, $meta );
+		} else {
+			update_post_meta( $post_id, $meta, $value );
+		}
+	}
+}
+add_action( 'save_post', 'cordespace_waivers_save_consent_meta' );
 add_action( 'wp_loaded', 'cordespace_waivers_signing_page_handle', 20 );
 
 /**
@@ -127,7 +261,8 @@ function cordespace_waivers_signing_page_handle_post( int $waiver_id, string $re
 /**
  * Rend la page de signature (form ou "déjà signé").
  */
-function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redirect_to ): void {
+function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redirect_to, bool $preview = false ): void {
+	$consent      = cordespace_waivers_get_consent_texts( (int) $waiver->ID );
 	$user         = wp_get_current_user();
 	$default_name = $user->display_name ?: trim( $user->first_name . ' ' . $user->last_name );
 	$already      = cordespace_waivers_has_signed_current( (int) $user->ID, (int) $waiver->ID );
@@ -142,6 +277,14 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 	get_header();
 	?>
 	<main class="cordespace-sign-waiver" style="max-width:760px; margin:2rem auto 3rem; padding:0 1rem;">
+		<?php if ( $preview ) : ?>
+			<p style="padding:0.8rem 1.1rem; background:#e8f0fe; border-left:4px solid #1a73e8; border-radius:0 4px 4px 0; color:#174ea6; font-weight:600;">
+				👁️ <?php esc_html_e( 'Aperçu — c\'est ce que verra la personne. Rien n\'est enregistré depuis cette page.', 'cordespace-snippets' ); ?>
+				<?php if ( $waiver->post_status !== 'publish' ) : ?>
+					<span style="font-weight:400;">(<?php esc_html_e( 'brouillon non publié', 'cordespace-snippets' ); ?>)</span>
+				<?php endif; ?>
+			</p>
+		<?php endif; ?>
 		<h1 style="margin-bottom:0.4rem;"><?php echo esc_html( get_the_title( $waiver ) ); ?></h1>
 		<p style="color:#666; margin-top:0;">
 			<?php printf( esc_html__( 'Version %s', 'cordespace-snippets' ), esc_html( $version ) ); ?>
@@ -171,7 +314,7 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 			<?php echo apply_filters( 'the_content', (string) $waiver->post_content ); // phpcs:ignore ?>
 		</article>
 
-		<?php if ( $already ) : ?>
+		<?php if ( $already && ! $preview ) : ?>
 			<p style="margin-top:1.5rem;">
 				<a href="<?php echo esc_url( $back ); ?>" style="display:inline-block; padding:0.6rem 1.2rem; background:#eee; color:#333; text-decoration:none; border-radius:4px;">
 					<?php esc_html_e( '← Retour', 'cordespace-snippets' ); ?>
@@ -189,20 +332,20 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 				<p style="padding:0.9rem 1.1rem; background:#fff8e1; border-left:4px solid #d97706; margin:0.6rem 0; border-radius:0 4px 4px 0;">
 					<label style="cursor:pointer;">
 						<input type="checkbox" name="confirm_read" value="1" class="cordespace-waiver-check" required>
-						<?php esc_html_e( "J'ai lu et compris l'intégralité du texte ci-dessus.", 'cordespace-snippets' ); ?>
+						<?php echo esc_html( $consent['read'] ); ?>
 					</label>
 				</p>
 
 				<p style="padding:0.9rem 1.1rem; background:#fff8e1; border-left:4px solid #d97706; margin:0.6rem 0 1.2rem; border-radius:0 4px 4px 0;">
 					<label style="cursor:pointer;">
 						<input type="checkbox" name="confirm_accept" value="1" class="cordespace-waiver-check" required>
-						<?php esc_html_e( "J'accepte expressément le contenu de ce document et j'adhère à toutes ses conditions.", 'cordespace-snippets' ); ?>
+						<?php echo esc_html( $consent['accept'] ); ?>
 					</label>
 				</p>
 
 				<p style="margin:1.2rem 0;">
-					<button type="submit" id="cordespace-waiver-submit" disabled style="padding:0.7rem 1.6rem; background:#1a1a2e; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:1em; font-weight:600; opacity:0.4;">
-						<?php esc_html_e( 'Je signe', 'cordespace-snippets' ); ?>
+					<button type="submit" id="cordespace-waiver-submit" disabled data-preview="<?php echo $preview ? '1' : '0'; ?>" style="padding:0.7rem 1.6rem; background:#1a1a2e; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:1em; font-weight:600; opacity:0.4;">
+						<?php echo esc_html( $preview ? __( 'Je signe (désactivé en aperçu)', 'cordespace-snippets' ) : __( 'Je signe', 'cordespace-snippets' ) ); ?>
 					</button>
 				</p>
 
@@ -223,6 +366,7 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 				var checks = form.querySelectorAll('.cordespace-waiver-check');
 				var btn    = form.querySelector('#cordespace-waiver-submit');
 				if (!btn || !checks.length) return;
+				if (btn.getAttribute('data-preview') === '1') { return; }
 				function refresh() {
 					var allChecked = true;
 					checks.forEach(function (c) { if (!c.checked) allChecked = false; });

@@ -176,7 +176,7 @@ return [
 		],
 		'waivers.signing-page' => [
 			'label'           => 'Page de signature',
-			'description'     => 'URL /?cordespace_sign_waiver=1&waiver_id=X qui affiche le waiver + 2 cases d\'acceptation + bouton "Je signe". Sauvegarde la signature en DB. Indispensable pour que les gens puissent signer.',
+			'description'     => 'URL /?cordespace_sign_waiver=1&waiver_id=X qui affiche le waiver + 2 cases d\'acceptation + bouton "Je signe". Sauvegarde la signature en DB. Indispensable pour que les gens puissent signer. Les phrases des 2 cases sont modifiables par waiver (metabox « Cases à cocher ») et la metabox « Aperçu » ouvre la page telle que la verra la personne (&preview=1, brouillons acceptés, rien n\'est enregistré).',
 			'category'        => 'waivers',
 			'type'            => 'php',
 			'file'            => 'includes/modules/waivers-signing-page.php',
@@ -232,7 +232,7 @@ return [
 		],
 		'waivers.email-reminder' => [
 			'label'           => 'Email rappel 48h avant l\'événement',
-			'description'     => 'WP cron quotidien (9h Montréal) qui envoie un email rappel aux client·es ayant un cours Amelia dans 36-60h et n\'ayant pas encore signé un document requis. Tracking custom-table pour ne JAMAIS envoyer deux fois le même email (1 par paire booking×document). Volume estimé : 5-20 emails/jour max.',
+			'description'     => 'WP cron quotidien (9h Montréal) qui envoie un email rappel aux client·es ayant un cours Amelia dans 36-60h et n\'ayant pas encore signé un document requis. Tracking custom-table pour ne JAMAIS envoyer deux fois le même email (1 par paire booking×document). Volume estimé : 5-20 emails/jour max. Expéditeur = celui des courriels WooCommerce (Réglages → Emails), avec Reply-To. Bouton « M\'envoyer un courriel test » dans l\'éditeur du waiver.',
 			'category'        => 'waivers',
 			'type'            => 'php',
 			'file'            => 'includes/modules/waivers-email-reminder.php',
