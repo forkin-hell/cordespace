@@ -12,6 +12,9 @@
  */
 defined( 'ABSPATH' ) || exit;
 
+// Tables d'état et de journal (ne dépend pas de l'ordre de chargement des modules).
+require_once __DIR__ . '/amelia-waitlist-schema.php';
+
 /**
  * Le cours (événement Amelia) et ce que le module a besoin d'en savoir. null si inconnu.
  *
@@ -211,4 +214,89 @@ function cordespace_waitlist_decide( array $pool, ?array $state ): array {
 	$was_full = $state === null || (int) ( $state['free_spots'] ?? 0 ) === 0;
 	$announce = $free >= 1 && $was_full && ! empty( $pool['waiting'] );
 	return [ 'announce' => $announce, 'free_spots' => $free ];
+}
+
+// ─── État et journal en base ─────────────────────────────────────────────────
+
+/**
+ * Dernier état connu d'un bassin : [ free_spots, checked_at, announced_at ] ; null si jamais vérifié.
+ */
+function cordespace_waitlist_state_get( int $event_id, string $pool_key ): ?array {
+	global $wpdb;
+	$row = $wpdb->get_row( $wpdb->prepare(
+		'SELECT free_spots, checked_at, announced_at FROM ' . cordespace_waitlist_state_table() . ' WHERE event_id = %d AND pool_key = %s',
+		$event_id,
+		$pool_key
+	), ARRAY_A );
+	if ( ! $row ) {
+		return null;
+	}
+	return [
+		'free_spots'   => (int) $row['free_spots'],
+		'checked_at'   => (string) $row['checked_at'],
+		'announced_at' => $row['announced_at'] !== null && $row['announced_at'] !== '' ? (string) $row['announced_at'] : null,
+	];
+}
+
+/**
+ * Enregistre l'état d'un bassin (upsert). announced_at n'est mis à jour que si $announced.
+ */
+function cordespace_waitlist_state_set( int $event_id, string $pool_key, int $free_spots, bool $announced ): void {
+	global $wpdb;
+	$table = cordespace_waitlist_state_table();
+	$now   = gmdate( 'Y-m-d H:i:s' );
+	if ( $announced ) {
+		$sql = $wpdb->prepare(
+			"INSERT INTO {$table} (event_id, pool_key, free_spots, checked_at, announced_at) VALUES (%d, %s, %d, %s, %s)
+			 ON DUPLICATE KEY UPDATE free_spots = %d, checked_at = %s, announced_at = %s",
+			$event_id, $pool_key, $free_spots, $now, $now, $free_spots, $now, $now
+		);
+	} else {
+		$sql = $wpdb->prepare(
+			"INSERT INTO {$table} (event_id, pool_key, free_spots, checked_at, announced_at) VALUES (%d, %s, %d, %s, NULL)
+			 ON DUPLICATE KEY UPDATE free_spots = %d, checked_at = %s",
+			$event_id, $pool_key, $free_spots, $now, $free_spots, $now
+		);
+	}
+	$wpdb->query( $sql );
+}
+
+/**
+ * Journalise un événement du module : kind = announce | leave | removed | cleanup.
+ */
+function cordespace_waitlist_log( int $event_id, string $pool_key, int $booking_id, string $email, string $kind ): void {
+	global $wpdb;
+	$wpdb->insert( cordespace_waitlist_log_table(), [
+		'event_id'   => $event_id,
+		'pool_key'   => $pool_key,
+		'booking_id' => $booking_id,
+		'email'      => $email,
+		'kind'       => $kind,
+		'created_at' => gmdate( 'Y-m-d H:i:s' ),
+	] );
+}
+
+/**
+ * Garde-fou : cette inscription a-t-elle déjà reçu une annonce pour ce bassin récemment ?
+ */
+function cordespace_waitlist_recently_announced( int $booking_id, string $pool_key, int $within_seconds = 3600 ): bool {
+	global $wpdb;
+	$since = gmdate( 'Y-m-d H:i:s', time() - $within_seconds );
+	$count = (int) $wpdb->get_var( $wpdb->prepare(
+		'SELECT COUNT(*) FROM ' . cordespace_waitlist_log_table() . " WHERE booking_id = %d AND pool_key = %s AND kind = 'announce' AND created_at >= %s",
+		$booking_id,
+		$pool_key,
+		$since
+	) );
+	return $count > 0;
+}
+
+/**
+ * Purge le journal au-delà de $days jours. Retourne le nombre de lignes effacées.
+ */
+function cordespace_waitlist_log_purge( int $days = 90 ): int {
+	global $wpdb;
+	$before = gmdate( 'Y-m-d H:i:s', time() - $days * DAY_IN_SECONDS );
+	$n      = $wpdb->query( $wpdb->prepare( 'DELETE FROM ' . cordespace_waitlist_log_table() . ' WHERE created_at < %s', $before ) );
+	return $n === false ? 0 : (int) $n;
 }
