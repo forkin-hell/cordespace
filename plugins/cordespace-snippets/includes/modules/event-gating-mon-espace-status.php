@@ -118,13 +118,13 @@ function cordespace_evgating_status_texts( string $type_title ): array {
 		'partial_pill'    => '{missing_labels} : faire une demande',
 		'partial_pop'     => 'Tu es validé·e pour {approved}. Pour {missing}, une demande est nécessaire.',
 		'partial_link'    => 'Voir comment faire une demande',
-		'none_card'       => 'Envie d\'aller plus loin ? {Missing} sont ouverts aux personnes validées.',
+		'none_card'       => 'Envie d\'aller plus loin ? {Missing} : c\'est pour les personnes qui ont déjà une bonne expérience des cordes et de l\'espace. Quand tu t\'y sens prêt·e :',
 		'none_link'       => 'Voir comment faire une demande',
 		'none_pop'        => 'Pour y avoir accès, fais une demande via la page d\'information.',
 		'none_pop_link'   => 'Lire les critères et faire une demande',
 	];
 	if ( $type_title === 'Semi-privé' ) {
-		$texts['none_pop'] = 'Les semi-privés demandent une bonne expérience des cordes et de l\'espace. Deux formulaires : simplifié (performances seulement) ou complet (tout).';
+		$texts['none_pop'] = 'Deux formulaires selon ce qui t\'intéresse : simplifié (performances seulement) ou complet (tout).';
 	}
 	return (array) apply_filters( 'cordespace_evgating_status_texts', $texts, $type_title );
 }
