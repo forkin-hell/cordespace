@@ -121,6 +121,16 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/reports.php',
 			'default_active'  => true,
 		],
+		'admin.rest-debug' => [
+			'label'           => 'Journal de diagnostic — app mobile WooCommerce',
+			'description'     => 'À activer seulement le temps d\'un diagnostic. Consigne chaque écriture faite par l\'API commandes/clients (ce qu\'utilise l\'app mobile) dans WooCommerce → Statut → Journaux (source « cordespace-rest-debug ») : compte, action, code HTTP et, en cas de refus, la raison exacte renvoyée par le serveur. Ne journalise que les clés des paramètres (pas les valeurs), sauf pour signaler les champs d\'adresse vides.',
+			'category'        => 'admin',
+			'type'            => 'php',
+			'file'            => 'includes/modules/admin-rest-debug.php',
+			'requires_plugin' => [ 'woocommerce/woocommerce.php' => 'WooCommerce' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/admin-rest-debug.php',
+			'default_active'  => false,
+		],
 		'payments.prof-warning' => [
 			'label'           => 'Bandeau d\'achat prof',
 			'description'     => 'Avertit les profs au moment du panier qu\'iels sont sur leur compte enseignant·e.',
