@@ -300,3 +300,118 @@ function cordespace_waitlist_log_purge( int $days = 90 ): int {
 	$n      = $wpdb->query( $wpdb->prepare( 'DELETE FROM ' . cordespace_waitlist_log_table() . ' WHERE created_at < %s', $before ) );
 	return $n === false ? 0 : (int) $n;
 }
+
+// ─── Liens et courriel d'annonce ─────────────────────────────────────────────
+
+/**
+ * Signature du lien de retrait : 32 premiers caractères du HMAC (id|jeton Amelia, sel WP).
+ */
+function cordespace_waitlist_leave_signature( int $booking_id, string $token ): string {
+	return substr( hash_hmac( 'sha256', $booking_id . '|' . $token, wp_salt( 'auth' ) ), 0, 32 );
+}
+
+/**
+ * Lien « Je ne veux plus être sur la liste d'attente » (sans connexion).
+ */
+function cordespace_waitlist_leave_url( int $booking_id, string $token ): string {
+	return home_url( '/?cordespace_waitlist_leave=' . $booking_id . '&k=' . cordespace_waitlist_leave_signature( $booking_id, $token ) );
+}
+
+/**
+ * Page de réservation du cours : la page « wpa-events » du cours (ou de son parent pour un
+ * cours récurrent), sinon la liste des événements filtrée sur ce cours.
+ */
+function cordespace_waitlist_event_url( array $event ): string {
+	$ids = array_values( array_unique( array_filter( [ (int) ( $event['id'] ?? 0 ), (int) ( $event['parentId'] ?? 0 ) ] ) ) );
+	foreach ( $ids as $id ) {
+		$posts = get_posts( [
+			'post_type'   => 'wpa-events',
+			'post_status' => 'publish',
+			'meta_key'    => '_amelia_event_id',
+			'meta_value'  => (string) $id,
+			'numberposts' => 1,
+		] );
+		if ( ! empty( $posts ) ) {
+			$post = $posts[0];
+			return (string) get_permalink( is_object( $post ) ? (int) $post->ID : (int) $post );
+		}
+	}
+	return home_url( '/evenements/?ameliaEventId=' . (int) ( $event['id'] ?? 0 ) );
+}
+
+/**
+ * Textes du courriel d'annonce (filtre cordespace_waitlist_texts).
+ */
+function cordespace_waitlist_texts(): array {
+	$texts = [
+		'subject'    => 'Une place s\'est libérée : {cours}, {date}',
+		'greeting'   => 'Bonjour {prenom},',
+		'intro'      => 'Une place vient de se libérer pour {cours}, {date}.',
+		'ticket'     => 'Il s\'agit du billet « {billet} » : {places}.',
+		'noticket'   => '{places}.',
+		'first_come' => 'Premier·ère arrivé·e, premier·ère servi·e. Si la place est déjà prise, tu restes sur la liste pour la prochaine.',
+		'button'     => 'Réserver ma place',
+		'leave'      => 'Je ne veux plus être sur la liste d\'attente',
+		'signature'  => 'L\'équipe Cordespace',
+	];
+	return (array) apply_filters( 'cordespace_waitlist_texts', $texts );
+}
+
+/**
+ * Date Amelia (UTC) → « jeudi 22 octobre 2026 à 18 h 30 » en heure de Montréal.
+ */
+function cordespace_waitlist_format_date( string $utc ): string {
+	$dt = cordespace_waitlist_utc( $utc );
+	if ( $dt === null ) {
+		return $utc;
+	}
+	$tz = wp_timezone();
+	$dt = $dt->setTimezone( $tz );
+	if ( class_exists( 'IntlDateFormatter' ) ) {
+		$fmt = new IntlDateFormatter( 'fr_CA', IntlDateFormatter::FULL, IntlDateFormatter::SHORT, $tz->getName(), IntlDateFormatter::GREGORIAN, "EEEE d MMMM yyyy 'à' H 'h' mm" );
+		$out = $fmt->format( $dt );
+		if ( is_string( $out ) && $out !== '' ) {
+			return $out;
+		}
+	}
+	return date_i18n( 'l j F Y \à G \h i', $dt->getTimestamp() );
+}
+
+/**
+ * Compose le courriel d'annonce : [ subject, body (HTML) ].
+ *
+ * @param array $person  ligne de réservation (firstName, email…)
+ * @param array $event   event_row (name, periodStart…)
+ * @param array $pool    bassin (label, free)
+ */
+function cordespace_waitlist_compose_email( array $person, array $event, array $pool, string $event_url, string $leave_url ): array {
+	$t      = cordespace_waitlist_texts();
+	$free   = max( 1, (int) ( $pool['free'] ?? 1 ) );
+	$places = $free === 1 ? '1 place libre' : $free . ' places libres';
+	$vars   = [
+		'{prenom}' => trim( (string) ( $person['firstName'] ?? '' ) ),
+		'{cours}'  => (string) ( $event['name'] ?? '' ),
+		'{date}'   => cordespace_waitlist_format_date( (string) ( $event['periodStart'] ?? '' ) ),
+		'{billet}' => (string) ( $pool['label'] ?? '' ),
+		'{places}' => $places,
+	];
+	$fill = static fn( string $s ): string => strtr( $s, $vars );
+
+	$greeting = $vars['{prenom}'] !== '' ? $fill( $t['greeting'] ) : 'Bonjour,';
+	$ticket   = $vars['{billet}'] !== '' ? $fill( $t['ticket'] ) : $fill( $t['noticket'] );
+	$subject  = $fill( $t['subject'] );
+	// Nœuds texte d'un HTML que nous composons : on échappe < > & mais pas les apostrophes
+	// (lisibilité du courriel et des tests ; les guillemets n'ont pas à être échappés hors attribut).
+	$esc = static fn( string $s ): string => htmlspecialchars( $s, ENT_NOQUOTES, 'UTF-8' );
+
+	$body = '<div style="font-family:Helvetica,Arial,sans-serif;font-size:16px;line-height:1.5;color:#222;max-width:560px;margin:0 auto;padding:24px;">'
+		. '<p>' . $esc( $greeting ) . '</p>'
+		. '<p>' . $esc( $fill( $t['intro'] ) ) . ' ' . $esc( $ticket ) . '</p>'
+		. '<p style="margin:28px 0;"><a href="' . esc_url( $event_url ) . '" style="display:inline-block;background:#5b3ea6;color:#fff;text-decoration:none;font-weight:700;padding:12px 22px;border-radius:6px;">' . $esc( $t['button'] ) . '</a></p>'
+		. '<p>' . $esc( $t['first_come'] ) . '</p>'
+		. '<p>' . $esc( $t['signature'] ) . '</p>'
+		. '<p style="margin-top:32px;font-size:13px;color:#666;"><a href="' . esc_url( $leave_url ) . '" style="color:#666;">' . $esc( $t['leave'] ) . '</a></p>'
+		. '</div>';
+
+	return [ 'subject' => $subject, 'body' => $body ];
+}
