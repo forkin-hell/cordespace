@@ -166,3 +166,49 @@ function cordespace_waitlist_pools( int $event_id ): array {
 	}
 	return cordespace_waitlist_compute_pools( $event, cordespace_waitlist_tickets( $event_id ), cordespace_waitlist_bookings( $event_id ) );
 }
+
+// ─── Règles pures ────────────────────────────────────────────────────────────
+
+/**
+ * Date Amelia (UTC, « Y-m-d H:i:s ») → DateTimeImmutable UTC ; null si vide/invalide.
+ */
+function cordespace_waitlist_utc( ?string $value ): ?DateTimeImmutable {
+	if ( $value === null || trim( $value ) === '' ) {
+		return null;
+	}
+	try {
+		return new DateTimeImmutable( $value, new DateTimeZone( 'UTC' ) );
+	} catch ( Exception $e ) {
+		return null;
+	}
+}
+
+/**
+ * Un cours peut-il recevoir des annonces ? Approuvé, liste d'attente activée, « réserver
+ * plusieurs fois » activé (sinon une personne en attente ne pourrait pas réserver), pas encore
+ * commencé, réservations pas encore fermées.
+ */
+function cordespace_waitlist_event_is_announceable( array $event, DateTimeImmutable $now_utc ): bool {
+	if ( ( $event['status'] ?? '' ) !== 'approved' || empty( $event['waitingListEnabled'] ) || empty( $event['bookMultipleTimes'] ) ) {
+		return false;
+	}
+	$start = cordespace_waitlist_utc( $event['periodStart'] ?? null );
+	if ( $start === null || $start <= $now_utc ) {
+		return false;
+	}
+	$closes = cordespace_waitlist_utc( $event['bookingCloses'] ?? null );
+	return $closes === null || $closes > $now_utc;
+}
+
+/**
+ * Règle d'annonce « par état » : on annonce quand un bassin passe de 0 place libre
+ * (ou jamais vérifié) à au moins 1, et seulement s'il y a des personnes en attente.
+ *
+ * @return array{announce:bool,free_spots:int}
+ */
+function cordespace_waitlist_decide( array $pool, ?array $state ): array {
+	$free     = max( 0, (int) ( $pool['free'] ?? 0 ) );
+	$was_full = $state === null || (int) ( $state['free_spots'] ?? 0 ) === 0;
+	$announce = $free >= 1 && $was_full && ! empty( $pool['waiting'] );
+	return [ 'announce' => $announce, 'free_spots' => $free ];
+}
