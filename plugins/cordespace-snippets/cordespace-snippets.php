@@ -24,6 +24,7 @@ define( 'CORDESPACE_SNIPPETS_URL',     plugin_dir_url( __FILE__ ) );
 
 // Helpers partagés : toujours chargés, avant tout le reste.
 require_once CORDESPACE_SNIPPETS_DIR . '/includes/core/helpers.php';
+require_once CORDESPACE_SNIPPETS_DIR . '/includes/core/mail.php';
 
 // Bootstrap (init de l'option des modules actifs).
 require_once CORDESPACE_SNIPPETS_DIR . '/includes/core/boot.php';
