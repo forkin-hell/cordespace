@@ -118,7 +118,7 @@ function cordespace_evgating_status_texts( string $type_title ): array {
 		'partial_pill'    => '{missing_labels} : faire une demande',
 		'partial_pop'     => 'Tu es validé·e pour {approved}. Pour {missing}, une demande est nécessaire.',
 		'partial_link'    => 'Voir comment faire une demande',
-		'none_card'       => 'Envie d\'aller plus loin ? {Missing} : c\'est pour les personnes qui ont déjà une bonne expérience des cordes et de l\'espace. Quand tu t\'y sens prêt·e :',
+		'none_card'       => 'Envie d\'aller plus loin ? Il y a aussi {missing}. Ces activités s\'adressent aux personnes qui ont déjà une bonne expérience des cordes et de l\'espace. Quand tu t\'y sens prêt·e :',
 		'none_link'       => 'Voir comment faire une demande',
 		'none_pop'        => 'Pour y avoir accès, fais une demande via la page d\'information.',
 		'none_pop_link'   => 'Lire les critères et faire une demande',
