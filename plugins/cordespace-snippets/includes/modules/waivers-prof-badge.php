@@ -54,9 +54,7 @@ function cordespace_waivers_prof_badge_render( $booking, $event ): void {
 	// Cas particulier : pas de compte WP (Amelia-only customer, ex: futur·e
 	// partenaire Bob qui n'a pas finalisé son inscription)
 	if ( $wp_user_id <= 0 ) {
-		echo '<span title="Cette personne n\'a pas (encore) de compte WordPress pour signer le document requis"'
-			. ' style="display:inline-block;background:#d63638;color:#fff;font-size:0.7em;padding:0.15rem 0.5rem;border-radius:4px;margin-left:0.4rem;font-weight:700;letter-spacing:0.3px;">'
-			. '⚠️ COMPTE NON CRÉÉ</span>';
+		cordespace_waivers_prof_badge_print( 'Pas de compte pour signer', 'Cette personne n\'a pas (encore) de compte WordPress : elle ne peut pas signer le document requis.' );
 		return;
 	}
 
@@ -73,10 +71,37 @@ function cordespace_waivers_prof_badge_render( $booking, $event ): void {
 	}
 
 	$label = $missing_count > 1
-		? sprintf( '⚠️ %d WAIVERS MANQUANTS', $missing_count )
-		: '⚠️ WAIVER MANQUANT';
+		? sprintf( '%d waivers à signer', $missing_count )
+		: 'Waiver à signer';
+	cordespace_waivers_prof_badge_print( $label, 'Cette personne doit signer le ou les documents requis avant le cours : Mon espace → Mes waivers.' );
+}
 
-	echo '<span title="Cette personne doit signer le (les) document(s) requis avant le début du cours"'
-		. ' style="display:inline-block;background:#d63638;color:#fff;font-size:0.7em;padding:0.15rem 0.5rem;border-radius:4px;margin-left:0.4rem;font-weight:700;letter-spacing:0.3px;">'
-		. esc_html( $label ) . '</span>';
+/**
+ * Le badge lui-même : pastille rouge pâle, sans majuscules. Sur téléphone, il passe sur sa
+ * propre ligne sous le nom, pour ne pas se perdre parmi les autres badges.
+ */
+function cordespace_waivers_prof_badge_print( string $label, string $title ): void {
+	cordespace_waivers_prof_badge_styles_once();
+	echo '<span class="cordespace-waiver-badge" title="' . esc_attr( $title ) . '"'
+		. ' style="display:inline-block;background:#fdecea;color:#b32d2e;border:1px solid #f1b3b3;font-size:0.78em;padding:0.15rem 0.6rem;border-radius:999px;margin-left:0.35rem;font-weight:600;letter-spacing:0;vertical-align:middle;">'
+		. '✍️ ' . esc_html( $label ) . '</span>';
+}
+
+/**
+ * Feuille de style du badge, imprimée une seule fois par page. Sur téléphone (≤ 600 px), la vue
+ * de présence compacte tous les badges du nom ; celui-ci garde une taille lisible et sa propre ligne.
+ */
+function cordespace_waivers_prof_badge_styles_once(): void {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+	echo '<style>'
+		. '@media (max-width: 600px){'
+		. '.cordespace-today-students-wrapper li > div:first-child > div:first-child > span.cordespace-waiver-badge{'
+		. 'display:block !important;width:max-content;max-width:100%;white-space:normal;'
+		. 'margin:0.35rem 0 0 !important;font-size:0.74em !important;padding:0.15rem 0.6rem !important;'
+		. '}}'
+		. '</style>';
 }

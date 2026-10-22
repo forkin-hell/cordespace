@@ -148,3 +148,47 @@ function cordespace_waivers_history_for_user_and_waiver( int $user_id, int $waiv
 	), ARRAY_A );
 	return is_array( $rows ) ? $rows : [];
 }
+
+/**
+ * Toutes les signatures d'un waiver (toutes versions), les plus récentes en premier.
+ * Pour la boîte « Signatures » de l'écran d'édition.
+ *
+ * @return list<array{id:int,user_id:int,waiver_version:string,signed_name:string,email:string,signed_at:string}>
+ */
+function cordespace_waivers_signatures_for_waiver( int $waiver_id, int $limit = 500 ): array {
+	global $wpdb;
+	$table = cordespace_waivers_table_name();
+	$rows  = $wpdb->get_results( $wpdb->prepare(
+		"SELECT id, user_id, waiver_version, signed_name, email, signed_at
+		   FROM {$table}
+		  WHERE waiver_id = %d
+		  ORDER BY signed_at DESC, id DESC
+		  LIMIT %d",
+		$waiver_id,
+		max( 1, min( $limit, 5000 ) )
+	), ARRAY_A );
+	$out = [];
+	foreach ( is_array( $rows ) ? $rows : [] as $r ) {
+		$out[] = [
+			'id'             => (int) $r['id'],
+			'user_id'        => (int) $r['user_id'],
+			'waiver_version' => (string) $r['waiver_version'],
+			'signed_name'    => (string) $r['signed_name'],
+			'email'          => (string) ( $r['email'] ?? '' ),
+			'signed_at'      => (string) $r['signed_at'],
+		];
+	}
+	return $out;
+}
+
+/**
+ * Nombre de signatures d'un waiver, toutes versions ou pour une version donnée.
+ */
+function cordespace_waivers_signatures_count( int $waiver_id, ?string $version = null ): int {
+	global $wpdb;
+	$table = cordespace_waivers_table_name();
+	if ( $version === null ) {
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE waiver_id = %d", $waiver_id ) );
+	}
+	return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE waiver_id = %d AND waiver_version = %s", $waiver_id, $version ) );
+}
