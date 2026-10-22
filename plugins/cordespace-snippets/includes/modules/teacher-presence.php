@@ -509,7 +509,15 @@ function cordespace_render_today_students( $atts ) {
 										do_action( 'cordespace_teacher_presence_student_badges', $b, $event );
 										?>
 									</div>
-									<div style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
+									<div class="cordespace-student-email" style="font-size:0.85em;color:#888;margin-top:0.1rem;"><?php echo esc_html( $b['email'] ); ?></div>
+									<?php
+									/**
+									 * Slot : lignes sous la personne (ex: partenaires d'une réservation à plusieurs).
+									 * Hook : cordespace_teacher_presence_after_student
+									 * Args : booking array + event array.
+									 */
+									do_action( 'cordespace_teacher_presence_after_student', $b, $event );
+									?>
 								</div>
 
 								<label class="cordespace-checkin-switch" style="display:inline-flex;align-items:center;gap:0.7rem;cursor:pointer;user-select:none;">
@@ -545,6 +553,9 @@ function cordespace_render_today_students( $atts ) {
 		.cordespace-today-students-wrapper details.cordespace-event-block[open] .cordespace-disclosure { transform: rotate(0deg); }
 		/* Réduit l'espacement vertical quand un cours est replié (pas de border-bottom sur summary) */
 		.cordespace-today-students-wrapper details.cordespace-event-block:not([open]) > summary { margin-bottom:0; padding-bottom:0; border-bottom:none; }
+		/* Lignes partenaires (réservations à plusieurs) sous le courriel de l'hôte */
+		.cordespace-today-students-wrapper .cordespace-partner-lines { padding-left:1.2rem; margin-top:0.3rem; font-size:0.92em; color:#444; line-height:1.5; }
+		.cordespace-today-students-wrapper .cordespace-partner-lines > div { display:flex; flex-wrap:wrap; align-items:center; gap:0.2rem 0.4rem; }
 
 		/* ===================== Mobile (<= 600px) ===================== */
 		@media (max-width: 600px) {
@@ -582,11 +593,20 @@ function cordespace_render_today_students( $atts ) {
 				white-space: nowrap;
 			}
 			/* Email : tronqué (1 ligne max), souvent long */
-			.cordespace-today-students-wrapper li > div:first-child > div:last-child {
+			.cordespace-today-students-wrapper li > div:first-child > .cordespace-student-email {
 				font-size: 0.78em !important;
 				white-space: nowrap;
 				overflow: hidden;
 				text-overflow: ellipsis;
+			}
+			/* Lignes partenaires : moins de retrait, badge compact */
+			.cordespace-today-students-wrapper .cordespace-partner-lines {
+				padding-left: 0.6rem;
+				font-size: 0.82em;
+			}
+			.cordespace-today-students-wrapper .cordespace-partner-lines .cordespace-waiver-badge {
+				margin-left: 0 !important;
+				font-size: 0.85em !important;
 			}
 			/* Cache le label texte "À venir / Présent·e" — le toggle parle de lui-même */
 			.cordespace-today-students-wrapper .cordespace-switch-label {

@@ -503,10 +503,15 @@ function cordespace_waivers_partner_link_is_live( array $partner ): bool {
 	return $partner['partner_email'] !== '' && $partner['declined_at'] === null && ! cordespace_waivers_partner_booking_over( $partner );
 }
 
-/** Vrai si la requête vise une place qui existe (lien périmé : clé d'un ancien courriel, place déclinée ou séance passée). */
+/**
+ * Vrai si la requête ressemble à un lien partenaire (clé au bon format) vers une place qui existe :
+ * lien périmé (clé d'un ancien courriel, place déclinée ou séance passée). La page affichée ne révèle rien ;
+ * sans clé au bon format, on garde le comportement d'un inconnu (connexion).
+ */
 function cordespace_waivers_partner_dead_link_requested( array $query ): bool {
 	$id = isset( $query['partner'] ) ? absint( $query['partner'] ) : 0;
-	return $id > 0 && cordespace_waivers_partner_get( $id ) !== null;
+	$k  = isset( $query['k'] ) ? (string) $query['k'] : '';
+	return $id > 0 && preg_match( '/^[a-f0-9]{32}$/', $k ) === 1 && cordespace_waivers_partner_get( $id ) !== null;
 }
 
 /** Page autonome « Ce lien n'est plus valide » (lien partenaire périmé). */
@@ -833,3 +838,58 @@ function cordespace_waivers_partners_handle_post(): void {
 	}
 }
 add_action( 'template_redirect', 'cordespace_waivers_partners_handle_post', 2 );
+
+// ─── Vue prof : lignes partenaires sous l'hôte ──────────────────────────────
+
+/**
+ * Sous chaque hôte d'une réservation à plusieurs : une ligne par place partenaire
+ * (« + Camille ✓ a signé », « + Yann ✍️ Waiver à signer », « + 1 place : partenaire non renseigné·e »,
+ * « + Yann · ne vient pas »). Rien pour une réservation d'une personne. Cours sans waiver : le nom seul.
+ */
+function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
+	if ( ! is_array( $b ) || ! is_array( $event ) ) {
+		return;
+	}
+	$booking_id = (int) ( $b['booking_id'] ?? 0 );
+	$event_id   = (int) ( $event['event_id'] ?? 0 );
+	if ( $booking_id <= 0 || $event_id <= 0 || cordespace_waivers_booking_people( $booking_id ) < 2 ) {
+		return;
+	}
+	static $applicable_cache = [];
+	if ( ! isset( $applicable_cache[ $event_id ] ) ) {
+		$applicable_cache[ $event_id ] = function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' )
+			? cordespace_waivers_applicable_defaults_for_amelia_event( $event_id ) : [];
+	}
+	$applicable = $applicable_cache[ $event_id ];
+	$slots      = cordespace_waivers_partner_slots( $booking_id, $event_id, (int) ( $b['wp_user_id'] ?? 0 ) );
+	if ( ! $slots ) {
+		return;
+	}
+	echo '<div class="cordespace-partner-lines">';
+	foreach ( $slots as $slot ) {
+		echo '<div>';
+		if ( $slot['partner_email'] === '' ) {
+			echo '<span style="color:#8a5a00;">+ ' . esc_html__( '1 place : partenaire non renseigné·e', 'cordespace-snippets' ) . '</span>';
+			echo '</div>';
+			continue;
+		}
+		$name = $slot['partner_name'] !== '' ? $slot['partner_name'] : $slot['partner_email'];
+		echo '<span style="font-weight:600;color:#333;">+ ' . esc_html( $name ) . '</span>';
+		if ( $slot['declined_at'] !== null ) {
+			echo '<span style="color:#888;">· ' . esc_html__( 'ne vient pas', 'cordespace-snippets' ) . '</span>';
+		} elseif ( $applicable ) {
+			if ( cordespace_waivers_partner_missing_waivers( $slot ) ) {
+				if ( function_exists( 'cordespace_waivers_prof_badge_print' ) ) {
+					cordespace_waivers_prof_badge_print( __( 'Waiver à signer', 'cordespace-snippets' ), __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation envoyée par courriel).', 'cordespace-snippets' ) );
+				} else {
+					echo '<span style="color:#b32d2e;">✍️ ' . esc_html__( 'Waiver à signer', 'cordespace-snippets' ) . '</span>';
+				}
+			} else {
+				echo '<span style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.85em;padding:0.1rem 0.5rem;border-radius:999px;">✓ ' . esc_html__( 'a signé', 'cordespace-snippets' ) . '</span>';
+			}
+		}
+		echo '</div>';
+	}
+	echo '</div>';
+}
+add_action( 'cordespace_teacher_presence_after_student', 'cordespace_waivers_partners_render_teacher_lines', 10, 2 );
