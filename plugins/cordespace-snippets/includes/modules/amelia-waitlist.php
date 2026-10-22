@@ -511,5 +511,167 @@ function cordespace_waitlist_render_notice( $content ) {
 	return $html . $content;
 }
 
+// ─── Déclencheurs et planification ──────────────────────────────────────────
+
+const CORDESPACE_WAITLIST_AS_GROUP = 'cordespace-waitlist';
+const CORDESPACE_WAITLIST_DELAY    = 600;
+
+/**
+ * Cours liés à une réservation (par ses périodes).
+ */
+function cordespace_waitlist_event_ids_for_booking( int $booking_id ): array {
+	global $wpdb;
+	$p   = $wpdb->prefix;
+	$ids = $wpdb->get_col( $wpdb->prepare(
+		"SELECT DISTINCT ep.eventId FROM {$p}amelia_customer_bookings_to_events_periods bp
+		 JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		 WHERE bp.customerBookingId = %d ORDER BY ep.eventId",
+		$booking_id
+	) );
+	return array_values( array_map( 'intval', $ids ?: [] ) );
+}
+
+/**
+ * Cours liés à une commande WooCommerce (par les paiements Amelia qui la référencent).
+ */
+function cordespace_waitlist_event_ids_for_order( int $order_id ): array {
+	global $wpdb;
+	$p   = $wpdb->prefix;
+	$ids = $wpdb->get_col( $wpdb->prepare(
+		"SELECT DISTINCT ep.eventId FROM {$p}amelia_payments pay
+		 JOIN {$p}amelia_customer_bookings_to_events_periods bp ON bp.customerBookingId = pay.customerBookingId
+		 JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		 WHERE pay.wcOrderId = %d ORDER BY ep.eventId",
+		$order_id
+	) );
+	return array_values( array_map( 'intval', $ids ?: [] ) );
+}
+
+/**
+ * Planifie une vérification du cours dans 10 minutes (une seule en attente par cours).
+ * Sans Action Scheduler : vérification immédiate.
+ */
+function cordespace_waitlist_schedule_check( int $event_id ): void {
+	if ( $event_id <= 0 ) {
+		return;
+	}
+	if ( function_exists( 'as_schedule_single_action' ) && function_exists( 'as_has_scheduled_action' ) ) {
+		if ( as_has_scheduled_action( 'cordespace_waitlist_check_event', [ $event_id ], CORDESPACE_WAITLIST_AS_GROUP ) ) {
+			return;
+		}
+		as_schedule_single_action( time() + CORDESPACE_WAITLIST_DELAY, 'cordespace_waitlist_check_event', [ $event_id ], CORDESPACE_WAITLIST_AS_GROUP );
+		return;
+	}
+	if ( function_exists( 'cordespace_waitlist_run_check' ) ) {
+		cordespace_waitlist_run_check( $event_id );
+	}
+}
+
+/**
+ * Hooks Amelia (réservation mise à jour / supprimée / annulée / enregistrée) :
+ * le 2e argument est le tableau de l'événement quand Amelia le fournit (clé `periods`),
+ * sinon on retrouve le cours par la réservation.
+ */
+function cordespace_waitlist_on_amelia_booking_hook( $booking, $second = null ): void {
+	$event_ids = [];
+	if ( is_array( $second ) && ! empty( $second['id'] ) && array_key_exists( 'periods', $second ) ) {
+		$event_ids = [ (int) $second['id'] ];
+	} elseif ( is_array( $booking ) && ! empty( $booking['id'] ) ) {
+		$event_ids = cordespace_waitlist_event_ids_for_booking( (int) $booking['id'] );
+	}
+	foreach ( $event_ids as $event_id ) {
+		cordespace_waitlist_schedule_check( $event_id );
+	}
+}
+
+/**
+ * Changement de statut d'une commande WooCommerce (annulée, échouée, remboursée, impayée
+ * annulée automatiquement…) : Amelia met la réservation à jour sans hook, on vérifie nous-mêmes.
+ */
+function cordespace_waitlist_on_order_status_changed( $order_id, $from = '', $to = '', $order = null ): void {
+	foreach ( cordespace_waitlist_event_ids_for_order( (int) $order_id ) as $event_id ) {
+		cordespace_waitlist_schedule_check( $event_id );
+	}
+}
+
+/**
+ * Actions récurrentes : balayage horaire de sécurité, ménage quotidien.
+ */
+function cordespace_waitlist_register_recurring(): void {
+	if ( ! function_exists( 'as_schedule_recurring_action' ) || ! function_exists( 'as_has_scheduled_action' ) ) {
+		return;
+	}
+	if ( ! as_has_scheduled_action( 'cordespace_waitlist_hourly_sweep', [], CORDESPACE_WAITLIST_AS_GROUP ) ) {
+		as_schedule_recurring_action( time() + 300, HOUR_IN_SECONDS, 'cordespace_waitlist_hourly_sweep', [], CORDESPACE_WAITLIST_AS_GROUP );
+	}
+	if ( ! as_has_scheduled_action( 'cordespace_waitlist_daily_cleanup', [], CORDESPACE_WAITLIST_AS_GROUP ) ) {
+		as_schedule_recurring_action( time() + 600, DAY_IN_SECONDS, 'cordespace_waitlist_daily_cleanup', [], CORDESPACE_WAITLIST_AS_GROUP );
+	}
+}
+
+/**
+ * Cours approuvés à venir ayant au moins une inscription en attente.
+ */
+function cordespace_waitlist_events_with_waiting(): array {
+	global $wpdb;
+	$p   = $wpdb->prefix;
+	$ids = $wpdb->get_col(
+		"SELECT DISTINCT ep.eventId FROM {$p}amelia_customer_bookings b
+		 JOIN {$p}amelia_customer_bookings_to_events_periods bp ON bp.customerBookingId = b.id
+		 JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		 JOIN {$p}amelia_events e ON e.id = ep.eventId
+		 WHERE b.status = 'waiting' AND e.status = 'approved' AND ep.periodStart > UTC_TIMESTAMP()
+		 ORDER BY ep.eventId"
+	);
+	return array_values( array_map( 'intval', $ids ?: [] ) );
+}
+
+function cordespace_waitlist_hourly_sweep(): void {
+	foreach ( cordespace_waitlist_events_with_waiting() as $event_id ) {
+		cordespace_waitlist_schedule_check( $event_id );
+	}
+}
+
+/**
+ * Ménage : efface les inscriptions en attente des cours terminés depuis plus de 24 h,
+ * puis purge le journal (90 jours). Retourne le nombre d'inscriptions effacées.
+ */
+function cordespace_waitlist_daily_cleanup(): int {
+	global $wpdb;
+	$p    = $wpdb->prefix;
+	$rows = $wpdb->get_results(
+		"SELECT b.id, u.email,
+		        (SELECT ep2.eventId FROM {$p}amelia_customer_bookings_to_events_periods bp2
+		           JOIN {$p}amelia_events_periods ep2 ON ep2.id = bp2.eventPeriodId
+		          WHERE bp2.customerBookingId = b.id LIMIT 1) AS eventId
+		 FROM {$p}amelia_customer_bookings b
+		 LEFT JOIN {$p}amelia_users u ON u.id = b.customerId
+		 WHERE b.status = 'waiting'
+		   AND EXISTS (SELECT 1 FROM {$p}amelia_customer_bookings_to_events_periods bp WHERE bp.customerBookingId = b.id)
+		   AND NOT EXISTS (SELECT 1 FROM {$p}amelia_customer_bookings_to_events_periods bp
+		                     JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		                    WHERE bp.customerBookingId = b.id AND ep.periodEnd >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 1 DAY))",
+		ARRAY_A
+	);
+	$n = 0;
+	foreach ( $rows ?: [] as $r ) {
+		if ( cordespace_waitlist_delete_waiting_booking( (int) $r['id'] ) ) {
+			cordespace_waitlist_log( (int) ( $r['eventId'] ?? 0 ), '', (int) $r['id'], (string) ( $r['email'] ?? '' ), 'cleanup' );
+			$n++;
+		}
+	}
+	cordespace_waitlist_log_purge( 90 );
+	return $n;
+}
+
 add_action( 'template_redirect', 'cordespace_waitlist_handle_leave', 1 );
 add_filter( 'the_content', 'cordespace_waitlist_render_notice' );
+add_action( 'amelia_after_event_booking_updated', 'cordespace_waitlist_on_amelia_booking_hook', 10, 2 );
+add_action( 'amelia_after_event_booking_deleted', 'cordespace_waitlist_on_amelia_booking_hook', 10, 2 );
+add_action( 'amelia_before_booking_canceled', 'cordespace_waitlist_on_amelia_booking_hook', 10, 1 );
+add_action( 'amelia_after_event_booking_saved', 'cordespace_waitlist_on_amelia_booking_hook', 10, 2 );
+add_action( 'woocommerce_order_status_changed', 'cordespace_waitlist_on_order_status_changed', 20, 4 );
+add_action( 'init', 'cordespace_waitlist_register_recurring' );
+add_action( 'cordespace_waitlist_check_event', 'cordespace_waitlist_run_check' );
+add_action( 'cordespace_waitlist_hourly_sweep', 'cordespace_waitlist_hourly_sweep' );
+add_action( 'cordespace_waitlist_daily_cleanup', 'cordespace_waitlist_daily_cleanup' );
