@@ -65,8 +65,14 @@ function cordespace_waivers_signing_page_handle(): void {
 	// Mode partenaire (lien signé reçu par courriel, module waivers.partners) : pas de compte requis.
 	$partner = function_exists( 'cordespace_waivers_partner_from_request' ) ? cordespace_waivers_partner_from_request( $_GET ) : null;
 
-	// Non connecté·e (et pas de lien partenaire valide) → redirige vers login avec retour ici
+	// Non connecté·e (et pas de lien partenaire valide) → redirige vers login avec retour ici ;
+	// sauf lien partenaire périmé vers une place qui existe (courriel changé, déclinée, séance passée) : page explicative.
 	if ( ! is_user_logged_in() && $partner === null ) {
+		if ( function_exists( 'cordespace_waivers_partner_dead_link_requested' ) && cordespace_waivers_partner_dead_link_requested( $_GET ) ) {
+			cordespace_waivers_render_partner_dead_link();
+			cordespace_waivers_signing_exit();
+			return;
+		}
 		wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ) ) );
 		cordespace_waivers_signing_exit();
 		return;

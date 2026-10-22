@@ -492,13 +492,35 @@ function cordespace_waivers_partner_from_request( array $query ): ?array {
 		return null;
 	}
 	$partner = cordespace_waivers_partner_get( $id );
-	if ( $partner === null || $partner['partner_email'] === '' || $partner['declined_at'] !== null ) {
-		return null;
-	}
-	if ( ! hash_equals( cordespace_waivers_partner_key( $partner ), $k ) || cordespace_waivers_partner_booking_over( $partner ) ) {
+	if ( $partner === null || ! cordespace_waivers_partner_link_is_live( $partner ) || ! hash_equals( cordespace_waivers_partner_key( $partner ), $k ) ) {
 		return null;
 	}
 	return $partner;
+}
+
+/** Un lien partenaire est vivant tant que la place a un courriel, n'est pas déclinée et que la dernière séance n'est pas passée. */
+function cordespace_waivers_partner_link_is_live( array $partner ): bool {
+	return $partner['partner_email'] !== '' && $partner['declined_at'] === null && ! cordespace_waivers_partner_booking_over( $partner );
+}
+
+/** Vrai si la requête vise une place qui existe (lien périmé : clé d'un ancien courriel, place déclinée ou séance passée). */
+function cordespace_waivers_partner_dead_link_requested( array $query ): bool {
+	$id = isset( $query['partner'] ) ? absint( $query['partner'] ) : 0;
+	return $id > 0 && cordespace_waivers_partner_get( $id ) !== null;
+}
+
+/** Page autonome « Ce lien n'est plus valide » (lien partenaire périmé). */
+function cordespace_waivers_render_partner_dead_link(): void {
+	if ( function_exists( 'nocache_headers' ) ) {
+		nocache_headers();
+	}
+	$esc = static fn( string $s ): string => htmlspecialchars( $s, ENT_NOQUOTES, 'UTF-8' );
+	echo '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex"><title>' . $esc( __( 'Lien plus valide', 'cordespace-snippets' ) ) . '</title>'
+		. '<style>body{font-family:Helvetica,Arial,sans-serif;background:#f5f3f8;color:#222;margin:0;padding:24px}main{max-width:520px;margin:40px auto;background:#fff;border-radius:10px;padding:28px 32px;box-shadow:0 2px 12px rgba(0,0,0,.08)}h1{font-size:1.4em;margin:0 0 12px}p{line-height:1.5}a{color:#5b3ea6}</style></head><body><main>'
+		. '<h1>' . $esc( __( 'Ce lien n\'est plus valide.', 'cordespace-snippets' ) ) . '</h1>'
+		. '<p>' . $esc( __( 'Demande un nouveau lien à la personne qui t\'a invité·e : elle peut le renvoyer depuis son espace sur le site. Si le cours est déjà passé, il n\'y a plus rien à signer.', 'cordespace-snippets' ) ) . '</p>'
+		. '<p><a href="' . esc_url( home_url( '/' ) ) . '">' . $esc( __( 'Retour au site', 'cordespace-snippets' ) ) . '</a></p>'
+		. '</main></body></html>';
 }
 
 /** Dernière signature portant ce courriel pour ce waiver (sans compte ou compte au même courriel). */
