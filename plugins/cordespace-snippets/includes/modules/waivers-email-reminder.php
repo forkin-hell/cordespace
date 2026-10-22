@@ -156,22 +156,30 @@ function cordespace_waivers_email_reminder_run(): int {
 		}
 
 		$applicable = cordespace_waivers_applicable_defaults_for_amelia_event( $event_id );
+		// Places partenaire encore vides (module Partenaires) : l'hôte est relancé·e même si son waiver est signé.
+		$empty = $applicable && function_exists( 'cordespace_waivers_partners_empty_slots_for_booking' )
+			? cordespace_waivers_partners_empty_slots_for_booking( $booking_id, $event_id, $user_id )
+			: 0;
 		foreach ( $applicable as $waiver_id ) {
 			$waiver_id = (int) $waiver_id;
 			if ( $waiver_id <= 0 ) {
 				continue;
 			}
-			if ( cordespace_waivers_has_signed_current( $user_id, $waiver_id ) ) {
+			if ( $empty <= 0 && cordespace_waivers_has_signed_current( $user_id, $waiver_id ) ) {
 				continue;
 			}
 			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id ) ) {
 				continue;
 			}
-			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id );
+			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id, $empty );
 			if ( $ok ) {
 				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
 				$sent_count++;
 			}
+		}
+		// Partenaires invité·es qui n'ont pas encore signé : une relance, une seule fois par place.
+		if ( $applicable && function_exists( 'cordespace_waivers_partners_remind' ) ) {
+			$sent_count += cordespace_waivers_partners_remind( $booking );
 		}
 	}
 
@@ -216,11 +224,13 @@ function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id,
 /**
  * Construit et envoie l'email reminder pour un booking + waiver donné.
  *
- * @param array $booking Row de la query reminder_run (booking_id, wp_user_id, etc.)
- * @param int   $waiver_id ID du post waiver à rappeler
+ * @param array $booking     Row de la query reminder_run (booking_id, wp_user_id, etc.)
+ * @param int   $waiver_id   ID du post waiver à rappeler
+ * @param int   $empty_slots Places partenaire encore vides (module Partenaires) : ajoute la phrase
+ *                           « Il manque encore le nom de… » ; si l'hôte a déjà signé, courriel dédié.
  * @return bool true si wp_mail a accepté l'envoi
  */
-function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id ): bool {
+function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id, int $empty_slots = 0 ): bool {
 	$waiver = get_post( $waiver_id );
 	if ( ! $waiver ) {
 		return false;
@@ -276,6 +286,15 @@ function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id 
 	];
 
 	$mail = cordespace_waivers_compose_reminder_email( $waiver_id, $placeholders );
+
+	if ( $empty_slots > 0 && function_exists( 'cordespace_waivers_partners_host_reminder' ) ) {
+		$mail = cordespace_waivers_partners_host_reminder( $mail, $empty_slots, [
+			'first_name' => $first_name,
+			'event_name' => $event_name,
+			'event_date' => $event_date_str,
+			'signed'     => $user_id > 0 && cordespace_waivers_has_signed_current( $user_id, $waiver_id ),
+		] );
+	}
 
 	return cordespace_waivers_mail( $email, $mail['subject'], $mail['body'] );
 }

@@ -195,8 +195,13 @@ function cordespace_waivers_post_purchase_missing_from_events( array $amelia_eve
  * @param array  $missing  [waiver_id => ['waiver'=>WP_Post, 'event_names'=>string[]]]
  * @param string $context  'thankyou' | 'dashboard' (texte d'intro)
  */
-function cordespace_waivers_post_purchase_render_banner( array $missing, string $context = 'dashboard' ): void {
+function cordespace_waivers_post_purchase_render_banner( array $missing, string $context = 'dashboard', int $empty_slots = 0 ): void {
+	if ( empty( $missing ) && $empty_slots <= 0 ) {
+		return;
+	}
 	if ( empty( $missing ) ) {
+		// Rien à signer pour l'hôte, mais des places partenaire sans nom (module Partenaires).
+		cordespace_waivers_post_purchase_render_partners_only_banner( $empty_slots );
 		return;
 	}
 
@@ -244,8 +249,43 @@ function cordespace_waivers_post_purchase_render_banner( array $missing, string 
 		<p style="margin:1rem 0 0; font-size:0.88em; color:#5c4c00;">
 			<?php esc_html_e( 'Tu ne le signes qu\'une seule fois — il restera valide pour tes futurs cours du même type.', 'cordespace-snippets' ); ?>
 		</p>
+		<?php if ( $empty_slots > 0 ) : ?>
+			<p style="margin:0.8rem 0 0; padding-top:0.8rem; border-top:1px solid rgba(60,44,0,0.15);">
+				👥 <?php esc_html_e( 'Tu as réservé pour plusieurs personnes : indique qui vient avec toi.', 'cordespace-snippets' ); ?>
+				<a href="<?php echo esc_url( cordespace_waivers_post_purchase_partners_url() ); ?>" style="color:#3c2c00; font-weight:700;"><?php esc_html_e( 'Indiquer qui vient avec moi', 'cordespace-snippets' ); ?></a>
+			</p>
+		<?php endif; ?>
 	</div>
 	<?php
+}
+
+/** Lien vers la section « Mes réservations à plusieurs » de Mon espace. */
+function cordespace_waivers_post_purchase_partners_url(): string {
+	return cordespace_waivers_get_mon_espace_url() . '#section-partenaires';
+}
+
+/** Banderole quand il n'y a rien à signer pour l'hôte mais des places partenaire sans nom. */
+function cordespace_waivers_post_purchase_render_partners_only_banner( int $empty_slots ): void {
+	?>
+	<div class="cordespace-waivers-post-purchase cordespace-waivers-partners-banner" role="status" style="margin:0 0 1.5rem; padding:1.2rem 1.6rem; background:#eef3fb; border:2px solid #9db7d9; border-left:6px solid #1d4d7e; border-radius:6px; color:#1b3a5c;">
+		<p style="margin:0 0 0.8rem; font-weight:700; font-size:1.05em;">
+			👥 <?php esc_html_e( 'Tu as réservé pour plusieurs personnes : indique qui vient avec toi.', 'cordespace-snippets' ); ?>
+		</p>
+		<p style="margin:0 0 0.8rem; font-size:0.92em;">
+			<?php echo esc_html( sprintf( _n( 'Il manque encore le nom de %d personne. Si le cours demande un document à signer, elle recevra un courriel pour le signer elle-même.', 'Il manque encore le nom de %d personnes. Si le cours demande un document à signer, elles recevront un courriel pour le signer elles-mêmes.', $empty_slots, 'cordespace-snippets' ), $empty_slots ) ); ?>
+		</p>
+		<p style="margin:0;">
+			<a href="<?php echo esc_url( cordespace_waivers_post_purchase_partners_url() ); ?>" class="button" style="background:#1a1a2e; color:#fff; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block;">
+				👥 <?php esc_html_e( 'Indiquer qui vient avec moi', 'cordespace-snippets' ); ?>
+			</a>
+		</p>
+	</div>
+	<?php
+}
+
+/** Places partenaire vides du compte (0 sans le module Partenaires). */
+function cordespace_waivers_post_purchase_empty_slots( int $user_id ): int {
+	return $user_id > 0 && function_exists( 'cordespace_waivers_partners_empty_slots_for_user' ) ? cordespace_waivers_partners_empty_slots_for_user( $user_id ) : 0;
 }
 
 // ============================================================================
@@ -262,8 +302,9 @@ function cordespace_waivers_post_purchase_render_thankyou( $order_id ): void {
 		return;
 	}
 	$missing = cordespace_waivers_post_purchase_missing_for_order( $order_id );
-	if ( ! empty( $missing ) ) {
-		cordespace_waivers_post_purchase_render_banner( $missing, 'thankyou' );
+	$empty   = cordespace_waivers_post_purchase_empty_slots( get_current_user_id() );
+	if ( ! empty( $missing ) || $empty > 0 ) {
+		cordespace_waivers_post_purchase_render_banner( $missing, 'thankyou', $empty );
 	}
 }
 add_action( 'woocommerce_thankyou', 'cordespace_waivers_post_purchase_render_thankyou', 5 );
@@ -279,8 +320,9 @@ function cordespace_waivers_post_purchase_render_wc_dashboard(): void {
 		return;
 	}
 	$missing = cordespace_waivers_post_purchase_missing_for_user_upcoming( $user_id );
-	if ( ! empty( $missing ) ) {
-		cordespace_waivers_post_purchase_render_banner( $missing, 'dashboard' );
+	$empty   = cordespace_waivers_post_purchase_empty_slots( $user_id );
+	if ( ! empty( $missing ) || $empty > 0 ) {
+		cordespace_waivers_post_purchase_render_banner( $missing, 'dashboard', $empty );
 	}
 }
 add_action( 'woocommerce_account_dashboard', 'cordespace_waivers_post_purchase_render_wc_dashboard', 5 );
@@ -300,8 +342,9 @@ function cordespace_waivers_post_purchase_render_mon_espace( $user ): void {
 		return;
 	}
 	$missing = cordespace_waivers_post_purchase_missing_for_user_upcoming( $user_id );
-	if ( ! empty( $missing ) ) {
-		cordespace_waivers_post_purchase_render_banner( $missing, 'dashboard' );
+	$empty   = cordespace_waivers_post_purchase_empty_slots( $user_id );
+	if ( ! empty( $missing ) || $empty > 0 ) {
+		cordespace_waivers_post_purchase_render_banner( $missing, 'dashboard', $empty );
 	}
 }
 add_action( 'cordespace_mon_espace_section_client_top_banner', 'cordespace_waivers_post_purchase_render_mon_espace' );

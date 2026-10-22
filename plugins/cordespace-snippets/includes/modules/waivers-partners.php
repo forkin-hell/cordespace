@@ -893,3 +893,108 @@ function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 	echo '</div>';
 }
 add_action( 'cordespace_teacher_presence_after_student', 'cordespace_waivers_partners_render_teacher_lines', 10, 2 );
+
+// ─── Rappel 48 h : places vides (hôte) et partenaires non signés ─────────────
+
+/** Nombre de places partenaire encore sans courriel pour une réservation. */
+function cordespace_waivers_partners_empty_slots_for_booking( int $booking_id, int $event_id, int $host_user_id ): int {
+	$n = 0;
+	foreach ( cordespace_waivers_partner_slots( $booking_id, $event_id, $host_user_id ) as $slot ) {
+		if ( $slot['partner_email'] === '' ) {
+			$n++;
+		}
+	}
+	return $n;
+}
+
+/** Places vides sur toutes les réservations à venir d'un compte (banderoles). */
+function cordespace_waivers_partners_empty_slots_for_user( int $user_id ): int {
+	$n = 0;
+	foreach ( cordespace_waivers_host_upcoming_multi_bookings( $user_id ) as $bk ) {
+		$n += cordespace_waivers_partners_empty_slots_for_booking( $bk['booking_id'], $bk['event_id'], $user_id );
+	}
+	return $n;
+}
+
+/**
+ * Relance des partenaires d'une réservation de la fenêtre 48 h (cours à waiver) : pour chaque place avec
+ * courriel, non déclinée, jamais relancée et avec au moins un document manquant, renvoie l'invitation
+ * et pose reminded_at (une seule relance par place). Retourne le nombre de courriels envoyés.
+ */
+function cordespace_waivers_partners_remind( array $booking_row ): int {
+	global $wpdb;
+	$booking_id = (int) ( $booking_row['booking_id'] ?? 0 );
+	$event_id   = (int) ( $booking_row['event_id'] ?? 0 );
+	$host       = (int) ( $booking_row['wp_user_id'] ?? 0 );
+	if ( $booking_id <= 0 || $event_id <= 0 || ! function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' ) || ! cordespace_waivers_applicable_defaults_for_amelia_event( $event_id ) ) {
+		return 0;
+	}
+	$sent = 0;
+	foreach ( cordespace_waivers_partner_slots( $booking_id, $event_id, $host ) as $slot ) {
+		if ( $slot['partner_email'] === '' || $slot['declined_at'] !== null || $slot['reminded_at'] !== null || ! cordespace_waivers_partner_missing_waivers( $slot ) ) {
+			continue;
+		}
+		$n = cordespace_waivers_partner_invite( (int) $slot['id'], true );
+		if ( $n > 0 ) {
+			$wpdb->update( cordespace_waivers_partners_table_name(), [ 'reminded_at' => gmdate( 'Y-m-d H:i:s' ) ], [ 'id' => (int) $slot['id'] ] );
+			$sent += $n;
+		}
+	}
+	return $sent;
+}
+
+/** Phrase « Il manque encore le nom de N personne(s)… » + lien vers la section Mon espace. */
+function cordespace_waivers_partners_missing_names_sentence( int $empty_slots ): string {
+	return sprintf(
+		_n( 'Il manque encore le nom de %d personne qui vient avec toi : indique-le dans Mon espace pour qu\'elle reçoive son document à signer.', 'Il manque encore le nom de %d personnes qui viennent avec toi : indique-les dans Mon espace pour qu\'elles reçoivent leur document à signer.', $empty_slots, 'cordespace-snippets' ),
+		$empty_slots
+	);
+}
+
+function cordespace_waivers_partners_section_url(): string {
+	return cordespace_waivers_partners_mon_espace_url() . '#section-partenaires';
+}
+
+/**
+ * Adapte le rappel 48 h de l'hôte quand des places sont vides : si l'hôte n'a pas signé, ajoute la phrase
+ * au courriel habituel ; si l'hôte a déjà signé, remplace le courriel par un message dédié aux places vides.
+ * $ctx : first_name, event_name, event_date, signed (bool).
+ */
+function cordespace_waivers_partners_host_reminder( array $mail, int $empty_slots, array $ctx ): array {
+	if ( $empty_slots <= 0 ) {
+		return $mail;
+	}
+	$url      = cordespace_waivers_partners_section_url();
+	$sentence = cordespace_waivers_partners_missing_names_sentence( $empty_slots );
+	$button   = '<p style="margin:1.2rem 0;"><a href="' . esc_url( $url ) . '" style="display:inline-block;padding:0.8rem 1.5rem;background:#1a1a2e;color:#fff;text-decoration:none;border-radius:5px;font-weight:700;">👥 ' . esc_html__( 'Indiquer qui vient avec moi', 'cordespace-snippets' ) . '</a></p>';
+	if ( empty( $ctx['signed'] ) ) {
+		$block = '<div style="margin:1.2rem 0;padding:1rem 1.2rem;background:#eef3fb;border-left:6px solid #1d4d7e;border-radius:6px;"><p style="margin:0;">👥 ' . esc_html( $sentence ) . '</p>' . $button . '</div>';
+		$body  = (string) $mail['body'];
+		if ( str_contains( $body, '<hr' ) ) {
+			$body = preg_replace( '/<hr/', $block . '<hr', $body, 1 );
+		} elseif ( str_contains( $body, '</body>' ) ) {
+			$body = str_replace( '</body>', $block . '</body>', $body );
+		} else {
+			$body .= $block;
+		}
+		return [ 'subject' => $mail['subject'], 'body' => $body ];
+	}
+	$first = trim( (string) ( $ctx['first_name'] ?? '' ) );
+	$event = (string) ( $ctx['event_name'] ?? '' );
+	$date  = (string) ( $ctx['event_date'] ?? '' );
+	$esc   = static fn( string $t ): string => htmlspecialchars( $t, ENT_NOQUOTES, 'UTF-8' );
+	$body  = '<!DOCTYPE html><html lang="fr"><head><meta charset="utf-8"><title>' . $esc( __( 'Qui vient avec toi ?', 'cordespace-snippets' ) ) . '</title></head>'
+		. '<body style="font-family: -apple-system, BlinkMacSystemFont, \'Segoe UI\', Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color:#222; line-height:1.5;">'
+		. '<p style="margin:0 0 1rem;">' . $esc( sprintf( __( 'Bonjour %s,', 'cordespace-snippets' ), $first !== '' ? $first : __( 'à toi', 'cordespace-snippets' ) ) ) . '</p>'
+		. '<p style="margin:0 0 1rem;">' . $esc( sprintf( __( 'Ton cours « %s » est dans environ 48 h%s.', 'cordespace-snippets' ), $event, $date !== '' ? ' (' . $date . ')' : '' ) ) . '</p>'
+		. '<p style="margin:0 0 1rem;">👥 ' . $esc( $sentence ) . '</p>'
+		. $button
+		. '<hr style="border:none;border-top:1px solid #eee;margin:2rem 0 1rem;">'
+		. '<p style="font-size:0.85em;color:#999;margin:0.5rem 0;">' . $esc( __( 'Si tu as déjà complété l\'information entre temps, tu peux ignorer ce courriel.', 'cordespace-snippets' ) ) . '</p>'
+		. '<p style="font-size:0.85em;color:#999;margin:0.5rem 0;">' . $esc( __( 'À bientôt sur les cordes ! — L\'équipe Cordespace', 'cordespace-snippets' ) ) . '</p>'
+		. '</body></html>';
+	return [
+		'subject' => sprintf( __( '👥 Qui vient avec toi au cours « %s » ?', 'cordespace-snippets' ), $event !== '' ? $event : __( 'à venir', 'cordespace-snippets' ) ),
+		'body'    => $body,
+	];
+}
