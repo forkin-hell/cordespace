@@ -37,7 +37,105 @@ function cordespace_waivers_has_signed_version( int $user_id, int $waiver_id, st
  */
 function cordespace_waivers_has_signed_current( int $user_id, int $waiver_id ): bool {
 	$version = cordespace_waivers_get_version( $waiver_id );
-	return cordespace_waivers_has_signed_version( $user_id, $waiver_id, $version );
+	if ( cordespace_waivers_has_signed_version( $user_id, $waiver_id, $version ) ) {
+		return true;
+	}
+	// Signature faite comme partenaire, sans compte, avec le courriel de ce compte (créé après coup).
+	$user = $user_id > 0 ? get_userdata( $user_id ) : false;
+	if ( $user && ! empty( $user->user_email ) ) {
+		return cordespace_waivers_email_has_signed_version_guest( (string) $user->user_email, $waiver_id, $version );
+	}
+	return false;
+}
+
+/**
+ * Courriel normalisé : minuscules, sans espaces.
+ */
+function cordespace_waivers_normalize_email( string $email ): string {
+	return strtolower( trim( $email ) );
+}
+
+/**
+ * Une signature SANS compte (user_id = 0) porte-t-elle ce courriel pour ce waiver et cette version ?
+ */
+function cordespace_waivers_email_has_signed_version_guest( string $email, int $waiver_id, string $version ): bool {
+	global $wpdb;
+	$email = cordespace_waivers_normalize_email( $email );
+	if ( $email === '' ) {
+		return false;
+	}
+	$table = cordespace_waivers_table_name();
+	$count = (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT COUNT(*) FROM {$table} WHERE user_id = 0 AND LOWER(email) = %s AND waiver_id = %d AND waiver_version = %s",
+		$email,
+		$waiver_id,
+		$version
+	) );
+	return $count > 0;
+}
+
+/**
+ * Ce courriel a-t-il signé ce waiver dans cette version ? Signature sans compte à ce courriel,
+ * OU signature d'un compte WordPress dont l'adresse est ce courriel.
+ */
+function cordespace_waivers_email_has_signed_version( string $email, int $waiver_id, string $version ): bool {
+	$email = cordespace_waivers_normalize_email( $email );
+	if ( $email === '' ) {
+		return false;
+	}
+	if ( cordespace_waivers_email_has_signed_version_guest( $email, $waiver_id, $version ) ) {
+		return true;
+	}
+	$user = get_user_by( 'email', $email );
+	return $user && cordespace_waivers_has_signed_version( (int) $user->ID, $waiver_id, $version );
+}
+
+function cordespace_waivers_email_has_signed_current( string $email, int $waiver_id ): bool {
+	return cordespace_waivers_email_has_signed_version( $email, $waiver_id, cordespace_waivers_get_version( $waiver_id ) );
+}
+
+/**
+ * Signature d'une personne SANS compte (partenaire invitée). Si un compte WordPress existe avec
+ * ce courriel, la signature lui est rattachée (user_id du compte).
+ *
+ * @param array $extra  'ip', 'user_agent', 'invited_by_user_id', 'partner_id'
+ * @return int|WP_Error  id de la ligne
+ */
+function cordespace_waivers_sign_guest( string $email, int $waiver_id, string $signed_name, array $extra = [] ) {
+	global $wpdb;
+	$email = cordespace_waivers_normalize_email( $email );
+	if ( $waiver_id <= 0 || ! is_email( $email ) ) {
+		return new WP_Error( 'cordespace_waiver_invalid', __( 'Courriel ou waiver invalide.', 'cordespace-snippets' ) );
+	}
+	if ( trim( $signed_name ) === '' ) {
+		return new WP_Error( 'cordespace_waiver_no_name', __( 'Le nom signataire est requis.', 'cordespace-snippets' ) );
+	}
+	$user    = get_user_by( 'email', $email );
+	$user_id = $user ? (int) $user->ID : 0;
+	$data    = [
+		'user_id'        => $user_id,
+		'waiver_id'      => $waiver_id,
+		'waiver_version' => cordespace_waivers_get_version( $waiver_id ),
+		'signed_name'    => trim( $signed_name ),
+		'signed_at'      => current_time( 'mysql', true ),
+		'ip'             => isset( $extra['ip'] ) ? mb_substr( (string) $extra['ip'], 0, 45 ) : null,
+		'user_agent'     => isset( $extra['user_agent'] ) ? mb_substr( (string) $extra['user_agent'], 0, 255 ) : null,
+		'email'          => $email,
+	];
+	$format = [ '%d', '%d', '%s', '%s', '%s', '%s', '%s', '%s' ];
+	if ( (int) ( $extra['invited_by_user_id'] ?? 0 ) > 0 ) {
+		$data['invited_by_user_id'] = (int) $extra['invited_by_user_id'];
+		$format[]                   = '%d';
+	}
+	if ( (int) ( $extra['partner_id'] ?? 0 ) > 0 ) {
+		$data['partner_id'] = (int) $extra['partner_id'];
+		$format[]           = '%d';
+	}
+	$ok = $wpdb->insert( cordespace_waivers_table_name(), $data, $format );
+	if ( $ok === false ) {
+		return new WP_Error( 'cordespace_waiver_db_error', $wpdb->last_error !== '' ? $wpdb->last_error : 'DB insert failed' );
+	}
+	return (int) $wpdb->insert_id;
 }
 
 /**
@@ -159,7 +257,7 @@ function cordespace_waivers_signatures_for_waiver( int $waiver_id, int $limit = 
 	global $wpdb;
 	$table = cordespace_waivers_table_name();
 	$rows  = $wpdb->get_results( $wpdb->prepare(
-		"SELECT id, user_id, waiver_version, signed_name, email, signed_at
+		"SELECT id, user_id, waiver_version, signed_name, email, signed_at, invited_by_user_id, partner_id
 		   FROM {$table}
 		  WHERE waiver_id = %d
 		  ORDER BY signed_at DESC, id DESC
@@ -176,6 +274,8 @@ function cordespace_waivers_signatures_for_waiver( int $waiver_id, int $limit = 
 			'signed_name'    => (string) $r['signed_name'],
 			'email'          => (string) ( $r['email'] ?? '' ),
 			'signed_at'      => (string) $r['signed_at'],
+			'invited_by_user_id' => (int) ( $r['invited_by_user_id'] ?? 0 ),
+			'partner_id'     => isset( $r['partner_id'] ) && $r['partner_id'] !== null ? (int) $r['partner_id'] : null,
 		];
 	}
 	return $out;
