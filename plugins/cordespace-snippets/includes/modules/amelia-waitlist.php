@@ -415,3 +415,101 @@ function cordespace_waitlist_compose_email( array $person, array $event, array $
 
 	return [ 'subject' => $subject, 'body' => $body ];
 }
+
+// ─── Retrait d'une inscription en attente ───────────────────────────────────
+
+/**
+ * Efface une inscription en attente (statut `waiting` seulement) et ses lignes liées
+ * (billets, périodes, paiement à 0), dans une transaction. Faux si la réservation n'existe
+ * pas ou n'est pas en attente.
+ */
+function cordespace_waitlist_delete_waiting_booking( int $booking_id ): bool {
+	global $wpdb;
+	$p      = $wpdb->prefix;
+	$status = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$p}amelia_customer_bookings WHERE id = %d", $booking_id ) );
+	if ( $status !== 'waiting' ) {
+		return false;
+	}
+	$wpdb->query( 'START TRANSACTION' );
+	$ok = true;
+	foreach ( [
+		"DELETE FROM {$p}amelia_customer_bookings_to_events_tickets WHERE customerBookingId = %d",
+		"DELETE FROM {$p}amelia_customer_bookings_to_events_periods WHERE customerBookingId = %d",
+		"DELETE FROM {$p}amelia_payments WHERE customerBookingId = %d",
+		"DELETE FROM {$p}amelia_customer_bookings WHERE id = %d AND status = 'waiting'",
+	] as $sql ) {
+		if ( $wpdb->query( $wpdb->prepare( $sql, $booking_id ) ) === false ) {
+			$ok = false;
+			break;
+		}
+	}
+	$wpdb->query( $ok ? 'COMMIT' : 'ROLLBACK' );
+	return $ok;
+}
+
+/**
+ * Redirection : en production on arrête l'exécution ; dans les tests (CS_TESTING) on continue.
+ */
+function cordespace_waitlist_redirect( string $url ): void {
+	wp_safe_redirect( $url );
+	if ( ! defined( 'CS_TESTING' ) ) {
+		exit;
+	}
+}
+
+/**
+ * Lien « Je ne veux plus être sur la liste d'attente » : ?cordespace_waitlist_leave={id}&k={signature}.
+ * Vérifie la signature contre le jeton Amelia de l'inscription, efface, journalise, redirige.
+ */
+function cordespace_waitlist_handle_leave(): void {
+	if ( ! isset( $_GET['cordespace_waitlist_leave'] ) ) {
+		return;
+	}
+	$booking_id = absint( wp_unslash( $_GET['cordespace_waitlist_leave'] ) );
+	$k          = isset( $_GET['k'] ) ? sanitize_text_field( wp_unslash( $_GET['k'] ) ) : '';
+	global $wpdb;
+	$p   = $wpdb->prefix;
+	$row = $booking_id > 0 ? $wpdb->get_row( $wpdb->prepare(
+		"SELECT b.token, b.status, u.email,
+		        (SELECT ep.eventId FROM {$p}amelia_customer_bookings_to_events_periods bp
+		           JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		          WHERE bp.customerBookingId = b.id LIMIT 1) AS eventId
+		 FROM {$p}amelia_customer_bookings b
+		 LEFT JOIN {$p}amelia_users u ON u.id = b.customerId
+		 WHERE b.id = %d",
+		$booking_id
+	), ARRAY_A ) : null;
+	$valid = $row && $row['status'] === 'waiting' && $k !== ''
+		&& hash_equals( cordespace_waitlist_leave_signature( $booking_id, (string) $row['token'] ), $k );
+	if ( $valid && cordespace_waitlist_delete_waiting_booking( $booking_id ) ) {
+		cordespace_waitlist_log( (int) ( $row['eventId'] ?? 0 ), '', $booking_id, (string) ( $row['email'] ?? '' ), 'leave' );
+		cordespace_waitlist_redirect( home_url( '/?cordespace_waitlist_left=ok' ) );
+		return;
+	}
+	cordespace_waitlist_redirect( home_url( '/?cordespace_waitlist_left=invalid' ) );
+}
+
+/**
+ * Bandeau après un retrait (?cordespace_waitlist_left=ok|invalid), une seule fois par page.
+ */
+function cordespace_waitlist_render_notice( $content ) {
+	static $done = false;
+	if ( $done || ! isset( $_GET['cordespace_waitlist_left'] ) || ! is_string( $content ) ) {
+		return $content;
+	}
+	$state = sanitize_text_field( wp_unslash( $_GET['cordespace_waitlist_left'] ) );
+	if ( $state === 'ok' ) {
+		$html = '<div role="status" style="margin:0 0 1.5rem; padding:1rem 1.2rem; background:#e9f7ec; border:2px solid #2e8b57; border-left:6px solid #2e8b57; border-radius:6px; color:#1c3c2a;">'
+			. '<strong>✅ C\'est noté : tu n\'es plus sur la liste d\'attente.</strong></div>';
+	} elseif ( $state === 'invalid' ) {
+		$html = '<div role="alert" style="margin:0 0 1.5rem; padding:1rem 1.2rem; background:#fdecea; border:2px solid #d63638; border-left:6px solid #d63638; border-radius:6px; color:#3c1c1c;">'
+			. '<strong>⚠️ Ce lien n\'est plus valide : l\'inscription en attente n\'existe plus.</strong></div>';
+	} else {
+		return $content;
+	}
+	$done = true;
+	return $html . $content;
+}
+
+add_action( 'template_redirect', 'cordespace_waitlist_handle_leave', 1 );
+add_filter( 'the_content', 'cordespace_waitlist_render_notice' );
