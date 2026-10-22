@@ -459,6 +459,13 @@ function cordespace_render_today_students( $atts ) {
 						<div>
 							<div style="font-size:1.1em;font-weight:700;color:#1d4d7e;"><?php echo esc_html( $event['name'] ); ?></div>
 							<div style="font-size:0.9em;color:#666;margin-top:0.2rem;">📅 <?php echo esc_html( $when ); ?> → <?php echo esc_html( $end ); ?></div>
+							<?php
+							// Liste d'attente (module amelia.waitlist-annonces, s'il est actif) : « X en attente ».
+							$cs_waiting = function_exists( 'cordespace_waitlist_count_for_event' ) ? cordespace_waitlist_count_for_event( (int) $event['event_id'] ) : 0;
+							if ( $cs_waiting > 0 ) :
+								?>
+								<div style="font-size:0.9em;color:#8a5a00;margin-top:0.2rem;">⏳ <?php echo (int) $cs_waiting; ?> en attente</div>
+							<?php endif; ?>
 						</div>
 					</div>
 					<div class="cordespace-counter" style="background:#5b2c8f;color:#fff;padding:0.4rem 0.9rem;border-radius:99px;font-size:0.9em;font-weight:600;white-space:nowrap;">

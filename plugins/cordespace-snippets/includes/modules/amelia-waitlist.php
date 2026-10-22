@@ -751,6 +751,21 @@ function cordespace_waitlist_run_check( $event_id ): array {
 	return $result;
 }
 
+/**
+ * Nombre d'inscriptions en attente d'un cours (vue de présence des profs).
+ */
+function cordespace_waitlist_count_for_event( int $event_id ): int {
+	global $wpdb;
+	$p = $wpdb->prefix;
+	return (int) $wpdb->get_var( $wpdb->prepare(
+		"SELECT COUNT(DISTINCT b.id) FROM {$p}amelia_customer_bookings b
+		 JOIN {$p}amelia_customer_bookings_to_events_periods bp ON bp.customerBookingId = b.id
+		 JOIN {$p}amelia_events_periods ep ON ep.id = bp.eventPeriodId
+		 WHERE ep.eventId = %d AND b.status = 'waiting'",
+		$event_id
+	) );
+}
+
 add_action( 'template_redirect', 'cordespace_waitlist_handle_leave', 1 );
 add_filter( 'the_content', 'cordespace_waitlist_render_notice' );
 add_action( 'amelia_after_event_booking_updated', 'cordespace_waitlist_on_amelia_booking_hook', 10, 2 );
