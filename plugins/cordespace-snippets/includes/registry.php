@@ -386,5 +386,15 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/includes/modules/amelia-waitlist.php',
 			'default_active'  => false,
 		],
+		'amelia.waitlist-affichage' => [
+			'label'           => 'Formulaire : réservation possible malgré la liste d\'attente',
+			'description'     => 'Amelia affiche un cours comme complet dès qu\'une personne est en liste d\'attente, même si une place s\'est libérée. Ce module corrige ce que le formulaire public reçoit : tant qu\'une place est vraiment libre, le cours redevient réservable ; dès qu\'il est complet, la liste d\'attente réapparaît. Ne touche ni à l\'admin ni aux cabinets. À re-tester après chaque mise à jour d\'Amelia.',
+			'category'        => 'amelia',
+			'type'            => 'php',
+			'file'            => 'includes/modules/amelia-waitlist-display.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/amelia-waitlist-display.php',
+			'default_active'  => false,
+		],
 	],
 ];
