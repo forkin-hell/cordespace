@@ -813,7 +813,9 @@ function cordespace_waivers_partners_handle_post(): void {
 	}
 	$t      = cordespace_waivers_partners_texts();
 	$name   = isset( $_POST['partner_name'] ) ? sanitize_text_field( wp_unslash( $_POST['partner_name'] ) ) : '';
-	$email  = isset( $_POST['partner_email'] ) ? sanitize_email( wp_unslash( $_POST['partner_email'] ) ) : '';
+	// Pas sanitize_email() ici : il renvoie '' sur une faute de frappe (« camille@test ») et la place serait vidée
+	// en silence ; partner_set() valide avec is_email() et renvoie une erreur affichée.
+	$email  = isset( $_POST['partner_email'] ) ? sanitize_text_field( wp_unslash( $_POST['partner_email'] ) ) : '';
 	$resend = ! empty( $_POST['resend'] );
 	$before = cordespace_waivers_partner_get( $pid );
 	$res    = cordespace_waivers_partner_set( $pid, $name, $email, $user_id );
