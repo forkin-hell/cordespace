@@ -427,23 +427,31 @@ function cordespace_waitlist_compose_email( array $person, array $event, array $
  */
 function cordespace_waitlist_delete_waiting_booking( int $booking_id ): bool {
 	global $wpdb;
-	$p      = $wpdb->prefix;
-	$status = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$p}amelia_customer_bookings WHERE id = %d", $booking_id ) );
-	if ( $status !== 'waiting' ) {
+	$p = $wpdb->prefix;
+	if ( $booking_id <= 0 ) {
 		return false;
 	}
 	$wpdb->query( 'START TRANSACTION' );
+	// Statut vérifié DANS la transaction, ligne verrouillée : une approbation faite à la main dans
+	// Amelia au même instant ne peut pas se glisser entre le contrôle et l'effacement.
+	$status = $wpdb->get_var( $wpdb->prepare( "SELECT status FROM {$p}amelia_customer_bookings WHERE id = %d FOR UPDATE", $booking_id ) );
+	if ( $status !== 'waiting' ) {
+		$wpdb->query( 'ROLLBACK' );
+		return false;
+	}
 	$ok = true;
 	foreach ( [
 		"DELETE FROM {$p}amelia_customer_bookings_to_events_tickets WHERE customerBookingId = %d",
 		"DELETE FROM {$p}amelia_customer_bookings_to_events_periods WHERE customerBookingId = %d",
 		"DELETE FROM {$p}amelia_payments WHERE customerBookingId = %d",
-		"DELETE FROM {$p}amelia_customer_bookings WHERE id = %d AND status = 'waiting'",
 	] as $sql ) {
 		if ( $wpdb->query( $wpdb->prepare( $sql, $booking_id ) ) === false ) {
 			$ok = false;
 			break;
 		}
+	}
+	if ( $ok ) {
+		$ok = (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$p}amelia_customer_bookings WHERE id = %d AND status = 'waiting'", $booking_id ) ) === 1;
 	}
 	$wpdb->query( $ok ? 'COMMIT' : 'ROLLBACK' );
 	return $ok;
@@ -464,11 +472,15 @@ function cordespace_waitlist_redirect( string $url ): void {
  * Vérifie la signature contre le jeton Amelia de l'inscription, efface, journalise, redirige.
  */
 function cordespace_waitlist_handle_leave(): void {
-	if ( ! isset( $_GET['cordespace_waitlist_leave'] ) ) {
+	// GET (lien du courriel) : page de confirmation, pour qu'un scanner de liens qui suit l'URL ne
+	// retire personne à son insu. POST (bouton de cette page) : le retrait.
+	$is_post = strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) === 'POST';
+	$src     = $is_post ? $_POST : $_GET;
+	if ( ! isset( $src['cordespace_waitlist_leave'] ) ) {
 		return;
 	}
-	$booking_id = absint( wp_unslash( $_GET['cordespace_waitlist_leave'] ) );
-	$k          = isset( $_GET['k'] ) ? sanitize_text_field( wp_unslash( $_GET['k'] ) ) : '';
+	$booking_id = absint( wp_unslash( $src['cordespace_waitlist_leave'] ) );
+	$k          = isset( $src['k'] ) ? sanitize_text_field( wp_unslash( $src['k'] ) ) : '';
 	global $wpdb;
 	$p   = $wpdb->prefix;
 	$row = $booking_id > 0 ? $wpdb->get_row( $wpdb->prepare(
@@ -483,12 +495,47 @@ function cordespace_waitlist_handle_leave(): void {
 	), ARRAY_A ) : null;
 	$valid = $row && $row['status'] === 'waiting' && $k !== ''
 		&& hash_equals( cordespace_waitlist_leave_signature( $booking_id, (string) $row['token'] ), $k );
-	if ( $valid && cordespace_waitlist_delete_waiting_booking( $booking_id ) ) {
+	if ( ! $valid ) {
+		cordespace_waitlist_redirect( home_url( '/?cordespace_waitlist_left=invalid' ) );
+		return;
+	}
+	if ( ! $is_post ) {
+		cordespace_waitlist_render_confirm_page( $booking_id, $k, (int) ( $row['eventId'] ?? 0 ) );
+		return;
+	}
+	if ( cordespace_waitlist_delete_waiting_booking( $booking_id ) ) {
 		cordespace_waitlist_log( (int) ( $row['eventId'] ?? 0 ), '', $booking_id, (string) ( $row['email'] ?? '' ), 'leave' );
 		cordespace_waitlist_redirect( home_url( '/?cordespace_waitlist_left=ok' ) );
 		return;
 	}
 	cordespace_waitlist_redirect( home_url( '/?cordespace_waitlist_left=invalid' ) );
+}
+
+/**
+ * Page « Quitter la liste d'attente ? » (sans thème, non mise en cache) avec le bouton de confirmation.
+ */
+function cordespace_waitlist_render_confirm_page( int $booking_id, string $k, int $event_id ): void {
+	if ( function_exists( 'nocache_headers' ) ) {
+		nocache_headers();
+	}
+	$event  = $event_id > 0 ? cordespace_waitlist_event_row( $event_id ) : null;
+	$name   = $event ? $event['name'] : '';
+	$date   = $event ? cordespace_waitlist_format_date( $event['periodStart'] ) : '';
+	$action = home_url( '/?cordespace_waitlist_leave=' . $booking_id . '&k=' . rawurlencode( $k ) );
+	$esc    = static fn( string $s ): string => htmlspecialchars( $s, ENT_NOQUOTES, 'UTF-8' );
+	echo '<!doctype html><html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">'
+		. '<title>Quitter la liste d\'attente</title>'
+		. '<style>body{font-family:Helvetica,Arial,sans-serif;background:#f5f3f8;color:#222;margin:0;padding:24px}main{max-width:520px;margin:40px auto;background:#fff;border-radius:10px;padding:28px 32px;box-shadow:0 2px 12px rgba(0,0,0,.08)}h1{font-size:1.4em;margin:0 0 12px}p{line-height:1.5}button{background:#5b3ea6;color:#fff;border:0;border-radius:6px;padding:12px 22px;font-size:1em;font-weight:700;cursor:pointer}a{color:#5b3ea6;margin-left:16px}</style></head><body><main>'
+		. '<h1>Quitter la liste d\'attente ?</h1>'
+		. '<p>' . ( $name !== '' ? 'Tu es sur la liste d\'attente pour <strong>' . $esc( $name ) . '</strong>' . ( $date !== '' ? ', ' . $esc( $date ) : '' ) . '.' : 'Tu es sur une liste d\'attente.' ) . ' Veux-tu te retirer de cette liste ? Tu ne recevras plus d\'annonce pour ce cours.</p>'
+		. '<form method="post" action="' . esc_url( $action ) . '">'
+		. '<input type="hidden" name="cordespace_waitlist_leave" value="' . (int) $booking_id . '">'
+		. '<input type="hidden" name="k" value="' . esc_attr( $k ) . '">'
+		. '<button type="submit">Oui, me retirer</button><a href="' . esc_url( home_url( '/' ) ) . '">Non, je reste sur la liste</a>'
+		. '</form></main></body></html>';
+	if ( ! defined( 'CS_TESTING' ) ) {
+		exit;
+	}
 }
 
 /**
@@ -722,11 +769,14 @@ function cordespace_waitlist_run_check( $event_id ): array {
 	$pools       = cordespace_waitlist_compute_pools( $event, cordespace_waitlist_tickets( $event_id ), $bookings );
 	$has_waiting = false;
 	$event_url   = null;
+	// Sans le module Affichage, Amelia montrerait le cours « complet » aux personnes prévenues :
+	// on n'envoie rien (l'état des bassins est quand même mémorisé).
+	$display_on = function_exists( 'cordespace_waitlist_override_event_array' );
 	foreach ( $pools as $pool ) {
 		$has_waiting = $has_waiting || ! empty( $pool['waiting'] );
 		$decision    = cordespace_waitlist_decide( $pool, cordespace_waitlist_state_get( $event_id, $pool['key'] ) );
 		$announced   = 0;
-		if ( $decision['announce'] ) {
+		if ( $decision['announce'] && $display_on ) {
 			$event_url = $event_url ?? cordespace_waitlist_event_url( $event );
 			foreach ( $pool['waiting'] as $person ) {
 				$pid = (int) $person['id'];
@@ -745,7 +795,9 @@ function cordespace_waitlist_run_check( $event_id ): array {
 		cordespace_waitlist_state_set( $event_id, $pool['key'], $decision['free_spots'], $announced > 0 );
 		$result['announced'] += $announced;
 	}
-	if ( ! $has_waiting ) {
+	if ( ! $display_on ) {
+		$result['skipped'] = 'display_off';
+	} elseif ( ! $has_waiting ) {
 		$result['skipped'] = 'no_waiting';
 	}
 	return $result;

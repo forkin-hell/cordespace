@@ -378,7 +378,7 @@ return [
 		],
 		'amelia.waitlist-annonces' => [
 			'label'           => 'Annonces de places libérées',
-			'description'     => 'Quand une réservation est annulée ou supprimée sur un cours complet qui a des personnes en liste d\'attente Amelia, envoie 10 minutes plus tard un courriel « une place s\'est libérée » à toutes les personnes en attente pour ce billet (premier·ère arrivé·e, premier·ère servi·e, lien de retrait). Retire de la liste les personnes qui ont réservé, efface les inscriptions en attente des cours passés. Nécessite Action Scheduler (WooCommerce) et le module Tables liste d\'attente.',
+			'description'     => 'Quand une réservation est annulée ou supprimée sur un cours complet qui a des personnes en liste d\'attente Amelia, envoie 10 minutes plus tard un courriel « une place s\'est libérée » à toutes les personnes en attente pour ce billet (premier·ère arrivé·e, premier·ère servi·e, lien de retrait). Retire de la liste les personnes qui ont réservé, efface les inscriptions en attente des cours passés. Nécessite Action Scheduler (WooCommerce), le module Tables liste d\'attente ET le module « Formulaire : réservation possible malgré la liste d\'attente » : sans ce dernier, aucune annonce n\'est envoyée (Amelia montrerait le cours complet aux personnes prévenues). Activer ou désactiver les deux ensemble.',
 			'category'        => 'amelia',
 			'type'            => 'php',
 			'file'            => 'includes/modules/amelia-waitlist.php',
