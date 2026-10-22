@@ -22,7 +22,11 @@ if ( ! function_exists( 'cordespace_mail_from' ) ) {
 		if ( $name === '' ) {
 			$name = (string) get_option( 'blogname', '' );
 		}
-		return (array) apply_filters( 'cordespace_mail_from', [ 'email' => $email, 'name' => $name ] );
+		$from = (array) apply_filters( 'cordespace_mail_from', [ 'email' => $email, 'name' => $name ] );
+		// Durcissement après filtre : rien ne doit pouvoir injecter un en-tête (CR/LF) ni une adresse invalide.
+		$from['name']  = str_replace( [ "\r", "\n" ], '', (string) ( $from['name'] ?? '' ) );
+		$from['email'] = is_email( (string) ( $from['email'] ?? '' ) ) ? (string) $from['email'] : '';
+		return $from;
 	}
 }
 
