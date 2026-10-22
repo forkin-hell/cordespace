@@ -226,15 +226,30 @@ function cordespace_waivers_render_signatures_metabox( $post ): void {
 	foreach ( $rows as $r ) {
 		$name    = esc_html( $r['signed_name'] );
 		$name    = $r['user_id'] > 0 ? '<a href="' . esc_url( get_edit_user_link( $r['user_id'] ) ) . '">' . $name . '</a>' : $name;
+		$note    = cordespace_waivers_signature_origin_note( $r );
 		$is_cur  = $r['waiver_version'] === $version;
 		echo '<tr>'
-			. '<td>' . $name . '</td>'
+			. '<td>' . $name . ( $note !== '' ? '<br><span style="color:#777;font-size:0.92em;">' . esc_html( $note ) . '</span>' : '' ) . '</td>'
 			. '<td>' . esc_html( $r['email'] ) . '</td>'
 			. '<td' . ( $is_cur ? '' : ' style="color:#8a5a00;" title="Version antérieure : cette personne devra re-signer la version en vigueur."' ) . '>' . esc_html( $r['waiver_version'] ) . '</td>'
 			. '<td>' . esc_html( cordespace_waivers_format_signed_at( $r['signed_at'] ) ) . '</td>'
 			. '</tr>';
 	}
 	echo '</tbody></table>';
+}
+
+/**
+ * Mention d'origine d'une signature : « invité·e par {hôte} » pour une signature de partenaire
+ * (module Partenaires), « sans compte » pour une signature sans compte ni hôte connu.
+ */
+function cordespace_waivers_signature_origin_note( array $row ): string {
+	$host_id = (int) ( $row['invited_by_user_id'] ?? 0 );
+	if ( $host_id > 0 ) {
+		$host = get_userdata( $host_id );
+		$who  = $host && ! empty( $host->display_name ) ? (string) $host->display_name : sprintf( __( 'compte #%d', 'cordespace-snippets' ), $host_id );
+		return sprintf( __( 'invité·e par %s', 'cordespace-snippets' ), $who );
+	}
+	return (int) ( $row['user_id'] ?? 0 ) > 0 ? '' : __( 'sans compte', 'cordespace-snippets' );
 }
 
 // ─── Colonne « Signatures » dans la liste des waivers ───────────────────────
