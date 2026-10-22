@@ -14,6 +14,8 @@ defined( 'ABSPATH' ) || exit;
 
 // Tables d'état et de journal (ne dépend pas de l'ordre de chargement des modules).
 require_once __DIR__ . '/amelia-waitlist-schema.php';
+// Helper courriel partagé (chargé par le plugin ; ici pour que le module se suffise à lui-même).
+require_once dirname( __DIR__ ) . '/core/mail.php';
 
 /**
  * Le cours (événement Amelia) et ce que le module a besoin d'en savoir. null si inconnu.
@@ -662,6 +664,91 @@ function cordespace_waitlist_daily_cleanup(): int {
 	}
 	cordespace_waitlist_log_purge( 90 );
 	return $n;
+}
+
+// ─── La vérification ─────────────────────────────────────────────────────────
+
+/**
+ * Efface les inscriptions en attente des personnes qui ont désormais une réservation
+ * approved/pending sur ce cours, tous billets confondus. Retourne le nombre effacé.
+ */
+function cordespace_waitlist_remove_booked( int $event_id, array $bookings ): int {
+	$booked = [];
+	foreach ( $bookings as $b ) {
+		if ( ( $b['status'] === 'approved' || $b['status'] === 'pending' ) && (int) $b['customerId'] > 0 ) {
+			$booked[ (int) $b['customerId'] ] = true;
+		}
+	}
+	$seen = [];
+	$n    = 0;
+	foreach ( $bookings as $b ) {
+		$bid = (int) $b['id'];
+		if ( $b['status'] !== 'waiting' || ! isset( $booked[ (int) $b['customerId'] ] ) || isset( $seen[ $bid ] ) ) {
+			continue;
+		}
+		$seen[ $bid ] = true; // une inscription peut avoir plusieurs lignes (un par billet)
+		if ( cordespace_waitlist_delete_waiting_booking( $bid ) ) {
+			cordespace_waitlist_log( $event_id, '', $bid, (string) $b['email'], 'removed' );
+			$n++;
+		}
+	}
+	return $n;
+}
+
+/**
+ * La vérification différée d'un cours : retrait des personnes qui ont réservé, puis, bassin
+ * par bassin, annonce aux personnes en attente quand une place vient de se libérer.
+ *
+ * @return array{skipped:?string,removed:int,announced:int}  skipped : unknown | not_announceable | no_waiting
+ */
+function cordespace_waitlist_run_check( $event_id ): array {
+	$event_id = (int) $event_id;
+	$result   = [ 'skipped' => null, 'removed' => 0, 'announced' => 0 ];
+	$event    = cordespace_waitlist_event_row( $event_id );
+	if ( $event === null ) {
+		$result['skipped'] = 'unknown';
+		return $result;
+	}
+	$bookings          = cordespace_waitlist_bookings( $event_id );
+	$result['removed'] = cordespace_waitlist_remove_booked( $event_id, $bookings );
+	if ( $result['removed'] > 0 ) {
+		$bookings = cordespace_waitlist_bookings( $event_id );
+	}
+	$now = new DateTimeImmutable( 'now', new DateTimeZone( 'UTC' ) );
+	if ( ! cordespace_waitlist_event_is_announceable( $event, $now ) ) {
+		$result['skipped'] = 'not_announceable';
+		return $result;
+	}
+	$pools       = cordespace_waitlist_compute_pools( $event, cordespace_waitlist_tickets( $event_id ), $bookings );
+	$has_waiting = false;
+	$event_url   = null;
+	foreach ( $pools as $pool ) {
+		$has_waiting = $has_waiting || ! empty( $pool['waiting'] );
+		$decision    = cordespace_waitlist_decide( $pool, cordespace_waitlist_state_get( $event_id, $pool['key'] ) );
+		$announced   = 0;
+		if ( $decision['announce'] ) {
+			$event_url = $event_url ?? cordespace_waitlist_event_url( $event );
+			foreach ( $pool['waiting'] as $person ) {
+				$pid = (int) $person['id'];
+				if ( ! is_email( (string) $person['email'] ) || (int) $person['ticketPersons'] > (int) $pool['free'] || cordespace_waitlist_recently_announced( $pid, $pool['key'] ) ) {
+					continue;
+				}
+				$mail = cordespace_waitlist_compose_email( $person, $event, $pool, $event_url, cordespace_waitlist_leave_url( $pid, (string) $person['token'] ) );
+				if ( cordespace_mail( (string) $person['email'], $mail['subject'], $mail['body'] ) ) {
+					cordespace_waitlist_log( $event_id, $pool['key'], $pid, (string) $person['email'], 'announce' );
+					$announced++;
+				}
+			}
+		}
+		// L'état est mémorisé même sans personne en attente : il doit refléter « complet / libre »
+		// pour que la prochaine libération soit bien vue comme un passage de 0 à 1.
+		cordespace_waitlist_state_set( $event_id, $pool['key'], $decision['free_spots'], $announced > 0 );
+		$result['announced'] += $announced;
+	}
+	if ( ! $has_waiting ) {
+		$result['skipped'] = 'no_waiting';
+	}
+	return $result;
 }
 
 add_action( 'template_redirect', 'cordespace_waitlist_handle_leave', 1 );
