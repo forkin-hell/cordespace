@@ -613,3 +613,201 @@ function cordespace_waivers_partners_handle_decline(): void {
 	cordespace_waivers_partner_render_decline_page( cordespace_waivers_partner_get( $id ) ?? $partner, true );
 }
 add_action( 'template_redirect', 'cordespace_waivers_partners_handle_decline', 1 );
+
+// ─── Mon espace : section « Mes réservations à plusieurs » ──────────────────
+
+/** Textes de la section (filtre cordespace_waivers_partners_texts). */
+function cordespace_waivers_partners_texts(): array {
+	$t = [
+		'title'       => '👥 Mes réservations à plusieurs',
+		'intro'       => 'Tu as réservé pour plusieurs personnes : indique qui vient avec toi. Si le cours demande un document à signer, chaque personne recevra un courriel pour le signer elle-même, sans avoir besoin d\'un compte.',
+		'people'      => '%d personnes',
+		'empty'       => 'Non renseigné·e',
+		'invited'     => 'Invitation envoyée le %s',
+		'signed'      => 'A signé le %s',
+		'declined'    => 'A décliné le %s',
+		'pending'     => 'Invitation en attente d\'envoi',
+		'no_waiver'   => 'Pas de document à signer pour ce cours',
+		'save'        => 'Enregistrer',
+		'resend'      => 'Renvoyer l\'invitation',
+		'name'        => 'Nom',
+		'email'       => 'Courriel',
+		'slot'        => 'Personne %d',
+		'saved'       => 'C\'est enregistré.',
+		'saved_sent'  => 'C\'est enregistré. Un courriel vient d\'être envoyé à %s pour signer le document.',
+		'resend_wait' => 'Une invitation a déjà été envoyée il y a moins d\'une heure. Réessaie un peu plus tard.',
+		'resend_ok'   => 'Invitation renvoyée à %s.',
+	];
+	return (array) apply_filters( 'cordespace_waivers_partners_texts', $t );
+}
+
+/**
+ * Réservations à venir d'un compte pour plus d'une personne :
+ * [ booking_id, event_id, event_name, period_start (UTC), people ], triées par date.
+ */
+function cordespace_waivers_host_upcoming_multi_bookings( int $user_id ): array {
+	global $wpdb;
+	$p    = $wpdb->prefix;
+	$rows = $wpdb->get_results( $wpdb->prepare(
+		"SELECT b.id AS booking_id, e.id AS event_id, e.name AS event_name, MIN(ep.periodStart) AS period_start
+		   FROM {$p}amelia_users u
+		   JOIN {$p}amelia_customer_bookings b ON b.customerId = u.id
+		   JOIN {$p}amelia_customer_bookings_to_events_periods bep ON bep.customerBookingId = b.id
+		   JOIN {$p}amelia_events_periods ep ON ep.id = bep.eventPeriodId
+		   JOIN {$p}amelia_events e ON e.id = ep.eventId
+		  WHERE u.externalId = %d AND b.status IN ('approved', 'pending')
+		  GROUP BY b.id, e.id, e.name
+		 HAVING MAX(ep.periodEnd) > UTC_TIMESTAMP()
+		  ORDER BY period_start ASC",
+		$user_id
+	), ARRAY_A );
+	$out = [];
+	foreach ( is_array( $rows ) ? $rows : [] as $r ) {
+		$people = cordespace_waivers_booking_people( (int) $r['booking_id'] );
+		if ( $people < 2 ) {
+			continue;
+		}
+		$out[] = [
+			'booking_id'   => (int) $r['booking_id'],
+			'event_id'     => (int) $r['event_id'],
+			'event_name'   => (string) $r['event_name'],
+			'period_start' => (string) $r['period_start'],
+			'people'       => $people,
+		];
+	}
+	return $out;
+}
+
+/** État d'une place : empty | no_waiver | declined | signed | invited | pending. */
+function cordespace_waivers_partner_status( array $partner, array $applicable ): string {
+	if ( $partner['partner_email'] === '' ) {
+		return 'empty';
+	}
+	if ( ! $applicable ) {
+		return 'no_waiver';
+	}
+	if ( $partner['declined_at'] !== null ) {
+		return 'declined';
+	}
+	if ( ! cordespace_waivers_partner_missing_waivers( $partner ) ) {
+		return 'signed';
+	}
+	return $partner['invited_at'] !== null ? 'invited' : 'pending';
+}
+
+/** Date UTC → texte lisible (heure du site), repli brut. */
+function cordespace_waivers_partners_date( ?string $utc ): string {
+	if ( $utc === null || $utc === '' ) {
+		return '';
+	}
+	return function_exists( 'cordespace_waivers_format_signed_at' ) ? cordespace_waivers_format_signed_at( $utc ) : $utc;
+}
+
+function cordespace_waivers_partners_mon_espace_url(): string {
+	return function_exists( 'cordespace_get_mon_espace_url' ) ? (string) cordespace_get_mon_espace_url() : home_url( '/' );
+}
+
+/** La section dans Mon espace (slot cordespace_mon_espace_section_client_waivers, priorité 20). */
+function cordespace_waivers_render_partners_section( $user ): void {
+	if ( ! $user || ! isset( $user->ID ) || (int) $user->ID <= 0 ) {
+		return;
+	}
+	$user_id  = (int) $user->ID;
+	$bookings = cordespace_waivers_host_upcoming_multi_bookings( $user_id );
+	if ( ! $bookings ) {
+		return;
+	}
+	$t   = cordespace_waivers_partners_texts();
+	$msg = (string) get_transient( 'cordespace_partners_msg_' . $user_id );
+	if ( $msg !== '' ) {
+		delete_transient( 'cordespace_partners_msg_' . $user_id );
+	}
+	?>
+	<section id="section-partenaires" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
+		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;"><?php echo esc_html( $t['title'] ); ?></h2>
+		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;"><?php echo esc_html( $t['intro'] ); ?></p>
+		<?php if ( $msg !== '' ) : ?>
+			<p role="status" style="padding:0.8rem 1rem;background:#eef5ee;border-left:4px solid #3a7a3a;border-radius:0 4px 4px 0;margin:0 0 1.2rem;"><?php echo esc_html( $msg ); ?></p>
+		<?php endif; ?>
+		<?php foreach ( $bookings as $bk ) :
+			$applicable = function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' ) ? cordespace_waivers_applicable_defaults_for_amelia_event( $bk['event_id'] ) : [];
+			$slots      = cordespace_waivers_partner_slots( $bk['booking_id'], $bk['event_id'], $user_id );
+			?>
+			<div style="padding:1rem 1.2rem;border:1px solid #eee;border-radius:8px;margin-bottom:1rem;">
+				<div style="font-weight:700;color:#1d4d7e;"><?php echo esc_html( $bk['event_name'] ); ?></div>
+				<div style="font-size:0.9em;color:#666;margin:0.2rem 0 0.8rem;">📅 <?php echo esc_html( cordespace_waivers_partners_date( $bk['period_start'] ) ); ?> · <?php echo esc_html( sprintf( $t['people'], $bk['people'] ) ); ?></div>
+				<?php foreach ( $slots as $slot ) :
+					$status = cordespace_waivers_partner_status( $slot, $applicable );
+					$last   = $status === 'signed' && $applicable ? cordespace_waivers_partner_last_signature( $slot['partner_email'], (int) $applicable[0] ) : null;
+					switch ( $status ) {
+						case 'empty':     $label = $t['empty']; $color = '#8a5a00'; break;
+						case 'no_waiver': $label = $t['no_waiver']; $color = '#666'; break;
+						case 'declined':  $label = sprintf( $t['declined'], cordespace_waivers_partners_date( $slot['declined_at'] ) ); $color = '#b32d2e'; break;
+						case 'signed':    $label = sprintf( $t['signed'], cordespace_waivers_partners_date( $last['signed_at'] ?? null ) ); $color = '#1b5e20'; break;
+						case 'invited':   $label = sprintf( $t['invited'], cordespace_waivers_partners_date( $slot['invited_at'] ) ); $color = '#0d47a1'; break;
+						default:          $label = $t['pending']; $color = '#666';
+					}
+					?>
+					<form method="post" action="<?php echo esc_url( cordespace_waivers_partners_mon_espace_url() ); ?>" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end;padding:0.6rem 0;border-top:1px solid #f0f0f0;">
+						<?php wp_nonce_field( 'cordespace_partner_' . (int) $slot['id'] ); ?>
+						<input type="hidden" name="cordespace_partner_id" value="<?php echo (int) $slot['id']; ?>">
+						<span style="min-width:90px;font-weight:600;color:#444;"><?php echo esc_html( sprintf( $t['slot'], $slot['slot_no'] ) ); ?></span>
+						<label style="display:flex;flex-direction:column;font-size:0.85em;color:#666;flex:1 1 160px;"><?php echo esc_html( $t['name'] ); ?>
+							<input type="text" name="partner_name" value="<?php echo esc_attr( $slot['partner_name'] ); ?>" style="padding:0.45rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;"></label>
+						<label style="display:flex;flex-direction:column;font-size:0.85em;color:#666;flex:1 1 200px;"><?php echo esc_html( $t['email'] ); ?>
+							<input type="email" name="partner_email" value="<?php echo esc_attr( $slot['partner_email'] ); ?>" style="padding:0.45rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;"></label>
+						<button type="submit" style="padding:0.5rem 1rem;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;"><?php echo esc_html( $t['save'] ); ?></button>
+						<span style="flex-basis:100%;font-size:0.9em;color:<?php echo esc_attr( $color ); ?>;"><?php echo esc_html( $label ); ?>
+							<?php if ( $status === 'invited' ) : ?>
+								<button type="submit" name="resend" value="1" style="margin-left:0.6rem;padding:0.25rem 0.7rem;background:#eee;color:#333;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.9em;"><?php echo esc_html( $t['resend'] ); ?></button>
+							<?php endif; ?>
+						</span>
+					</form>
+				<?php endforeach; ?>
+			</div>
+		<?php endforeach; ?>
+	</section>
+	<?php
+}
+add_action( 'cordespace_mon_espace_section_client_waivers', 'cordespace_waivers_render_partners_section', 20 );
+
+/** Traitement du formulaire d'une place (personne connectée = hôte), puis retour à la section. */
+function cordespace_waivers_partners_handle_post(): void {
+	if ( strtoupper( (string) ( $_SERVER['REQUEST_METHOD'] ?? 'GET' ) ) !== 'POST' || ! isset( $_POST['cordespace_partner_id'] ) ) {
+		return;
+	}
+	$user_id = get_current_user_id();
+	if ( $user_id <= 0 ) {
+		return;
+	}
+	$pid = absint( wp_unslash( $_POST['cordespace_partner_id'] ) );
+	if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( (string) wp_unslash( $_POST['_wpnonce'] ), 'cordespace_partner_' . $pid ) ) {
+		return;
+	}
+	$t      = cordespace_waivers_partners_texts();
+	$name   = isset( $_POST['partner_name'] ) ? sanitize_text_field( wp_unslash( $_POST['partner_name'] ) ) : '';
+	$email  = isset( $_POST['partner_email'] ) ? sanitize_email( wp_unslash( $_POST['partner_email'] ) ) : '';
+	$resend = ! empty( $_POST['resend'] );
+	$before = cordespace_waivers_partner_get( $pid );
+	$res    = cordespace_waivers_partner_set( $pid, $name, $email, $user_id );
+	if ( is_wp_error( $res ) ) {
+		$msg = $res->get_error_message();
+	} else {
+		$changed = $before !== null && $before['partner_email'] !== $res['partner_email'];
+		$msg     = $t['saved'];
+		if ( $res['partner_email'] !== '' && ( $changed || $res['invited_at'] === null ) ) {
+			$sent = cordespace_waivers_partner_invite( $pid, true );
+			if ( $sent > 0 ) {
+				$msg = sprintf( $t['saved_sent'], $res['partner_email'] );
+			}
+		} elseif ( $resend && $res['partner_email'] !== '' ) {
+			$msg = cordespace_waivers_partner_invite( $pid, false ) > 0 ? sprintf( $t['resend_ok'], $res['partner_email'] ) : $t['resend_wait'];
+		}
+	}
+	set_transient( 'cordespace_partners_msg_' . $user_id, $msg, 60 );
+	wp_safe_redirect( cordespace_waivers_partners_mon_espace_url() . '#section-partenaires' );
+	if ( ! defined( 'CS_TESTING' ) ) {
+		exit;
+	}
+}
+add_action( 'template_redirect', 'cordespace_waivers_partners_handle_post', 2 );
