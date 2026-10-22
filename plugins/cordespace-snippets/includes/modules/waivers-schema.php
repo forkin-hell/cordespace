@@ -13,7 +13,7 @@
 defined( 'ABSPATH' ) || exit;
 
 const CORDESPACE_WAIVERS_TABLE_SUFFIX    = 'cordespace_waiver_signatures';
-const CORDESPACE_WAIVERS_SCHEMA_VERSION  = 1;
+const CORDESPACE_WAIVERS_SCHEMA_VERSION  = 2; // v2 : partner_id (signatures des partenaires sans compte)
 
 /**
  * Nom complet (avec préfixe wp_) de la table de signatures.
@@ -44,11 +44,13 @@ function cordespace_waivers_install_table(): void {
 		email VARCHAR(255) DEFAULT NULL,
 		invited_by_user_id BIGINT UNSIGNED DEFAULT NULL,
 		invited_by_order_id BIGINT UNSIGNED DEFAULT NULL,
+		partner_id BIGINT UNSIGNED DEFAULT NULL,
 		PRIMARY KEY  (id),
 		KEY idx_user (user_id),
 		KEY idx_waiver (waiver_id),
 		KEY idx_user_waiver_version (user_id, waiver_id, waiver_version),
-		KEY idx_invited_by_order (invited_by_order_id)
+		KEY idx_invited_by_order (invited_by_order_id),
+		KEY idx_partner (partner_id)
 	) {$charset_collate};";
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';

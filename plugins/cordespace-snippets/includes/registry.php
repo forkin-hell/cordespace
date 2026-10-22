@@ -365,5 +365,15 @@ return [
 			'github_path'     => 'plugins/cordespace-snippets/assets/css/footer-links.css',
 			'default_active'  => true,
 		],
+		'waivers.partners' => [
+			'label'           => 'Partenaires (réservations à plusieurs)',
+			'description'     => 'Pour toute réservation à venir de plus d\'une personne : places partenaire à remplir dans Mon espace (nom + courriel) ; sur les cours à waiver, invitation par courriel et signature sans compte par chaque partenaire ; noms et états dans la vue prof ; rappel 48 h étendu. Nécessite les modules Tables, CRUD signatures, Page de signature et Application par étiquettes.',
+			'category'        => 'waivers',
+			'type'            => 'php',
+			'file'            => 'includes/modules/waivers-partners.php',
+			'requires_plugin' => [ 'ameliabooking/ameliabooking.php' => 'Amelia' ],
+			'github_path'     => 'plugins/cordespace-snippets/includes/modules/waivers-partners.php',
+			'default_active'  => false,
+		],
 	],
 ];
