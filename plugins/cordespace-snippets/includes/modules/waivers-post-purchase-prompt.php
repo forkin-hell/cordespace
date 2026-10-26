@@ -272,7 +272,7 @@ function cordespace_waivers_post_purchase_render_partners_only_banner( int $empt
 			👥 <?php esc_html_e( 'Tu as réservé pour plusieurs personnes : indique qui vient avec toi.', 'cordespace-snippets' ); ?>
 		</p>
 		<p style="margin:0 0 0.8rem; font-size:0.92em;">
-			<?php echo esc_html( sprintf( _n( 'Il manque encore le nom de %d personne. Si le cours demande un document à signer, elle recevra un courriel pour le signer elle-même.', 'Il manque encore le nom de %d personnes. Si le cours demande un document à signer, elles recevront un courriel pour le signer elles-mêmes.', $empty_slots, 'cordespace-snippets' ), $empty_slots ) ); ?>
+			<?php echo esc_html( sprintf( _n( 'Il manque encore le nom ou le courriel de %d personne. Si le cours demande un document à signer, elle recevra un courriel pour le signer elle-même.', 'Il manque encore le nom ou le courriel de %d personnes. Si le cours demande un document à signer, elles recevront un courriel pour le signer elles-mêmes.', $empty_slots, 'cordespace-snippets' ), $empty_slots ) ); ?>
 		</p>
 		<p style="margin:0;">
 			<a href="<?php echo esc_url( cordespace_waivers_post_purchase_partners_url() ); ?>" class="button" style="background:#1a1a2e; color:#fff; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block;">

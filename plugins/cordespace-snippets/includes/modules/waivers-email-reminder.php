@@ -160,21 +160,30 @@ function cordespace_waivers_email_reminder_run(): int {
 		$empty = $applicable && function_exists( 'cordespace_waivers_partners_empty_slots_for_booking' )
 			? cordespace_waivers_partners_empty_slots_for_booking( $booking_id, $event_id, $user_id )
 			: 0;
+		$partners_mail_done = false; // le courriel dédié « Qui vient avec toi ? » part une seule fois par réservation
 		foreach ( $applicable as $waiver_id ) {
 			$waiver_id = (int) $waiver_id;
 			if ( $waiver_id <= 0 ) {
 				continue;
 			}
-			if ( $empty <= 0 && cordespace_waivers_has_signed_current( $user_id, $waiver_id ) ) {
+			$signed = cordespace_waivers_has_signed_current( $user_id, $waiver_id );
+			if ( $empty <= 0 && $signed ) {
 				continue;
 			}
 			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id ) ) {
+				continue;
+			}
+			if ( $signed && $partners_mail_done ) {
+				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
 				continue;
 			}
 			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id, $empty );
 			if ( $ok ) {
 				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
 				$sent_count++;
+				if ( $signed ) {
+					$partners_mail_done = true;
+				}
 			}
 		}
 		// Partenaires invité·es qui n'ont pas encore signé : une relance, une seule fois par place.
@@ -543,7 +552,7 @@ function cordespace_waivers_build_reminder_email_html( string $first_name, strin
 
 	<hr style="border:none; border-top:1px solid #eee; margin:2rem 0 1rem;">
 
-	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'Si tu as déjà signé entre temps, tu peux ignorer ce courriel.', 'cordespace-snippets' ); ?></p>
+	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'Si tu as déjà signé entre-temps, tu peux ignorer ce courriel.', 'cordespace-snippets' ); ?></p>
 	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'À bientôt sur les cordes ! — L\'équipe Cordespace', 'cordespace-snippets' ); ?></p>
 </body>
 </html>

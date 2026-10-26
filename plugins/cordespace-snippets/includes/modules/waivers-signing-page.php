@@ -65,14 +65,16 @@ function cordespace_waivers_signing_page_handle(): void {
 	// Mode partenaire (lien signé reçu par courriel, module waivers.partners) : pas de compte requis.
 	$partner = function_exists( 'cordespace_waivers_partner_from_request' ) ? cordespace_waivers_partner_from_request( $_GET ) : null;
 
-	// Non connecté·e (et pas de lien partenaire valide) → redirige vers login avec retour ici ;
-	// sauf lien partenaire périmé vers une place qui existe (courriel changé, déclinée, séance passée) : page explicative.
+	// Lien partenaire périmé vers une place qui existe (courriel changé, déclinée, séance passée) : page explicative,
+	// connecté·e ou non (l'hôte qui clique l'ancien lien d'une partenaire ne doit pas signer à sa place).
+	if ( $partner === null && function_exists( 'cordespace_waivers_partner_dead_link_requested' ) && cordespace_waivers_partner_dead_link_requested( $_GET ) ) {
+		cordespace_waivers_render_partner_dead_link();
+		cordespace_waivers_signing_exit();
+		return;
+	}
+
+	// Non connecté·e (et pas de lien partenaire valide) → redirige vers login avec retour ici
 	if ( ! is_user_logged_in() && $partner === null ) {
-		if ( function_exists( 'cordespace_waivers_partner_dead_link_requested' ) && cordespace_waivers_partner_dead_link_requested( $_GET ) ) {
-			cordespace_waivers_render_partner_dead_link();
-			cordespace_waivers_signing_exit();
-			return;
-		}
 		wp_safe_redirect( wp_login_url( home_url( add_query_arg( null, null ) ) ) );
 		cordespace_waivers_signing_exit();
 		return;
@@ -152,8 +154,22 @@ function cordespace_waivers_signing_page_handle_account( WP_Post $waiver, array 
 	if ( ! isset( $_POST['_wpnonce'] ) || ! wp_verify_nonce( (string) $_POST['_wpnonce'], 'cordespace_partner_account_' . (int) $partner['id'] ) ) {
 		wp_die( esc_html__( 'Sécurité : nonce invalide ou expiré. Recharge la page et réessaie.', 'cordespace-snippets' ) );
 	}
-	$res = cordespace_waivers_partner_create_account( $partner );
-	$url = add_query_arg( [ 'done' => '1', 'account' => is_wp_error( $res ) ? 'error' : 'created' ], cordespace_waivers_partner_sign_url( $partner, (int) $waiver->ID ) );
+	$email = (string) $partner['partner_email'];
+	$base  = cordespace_waivers_partner_sign_url( $partner, (int) $waiver->ID );
+	// Un compte seulement après la signature, et jamais en double.
+	if ( ! cordespace_waivers_email_has_signed_current( $email, (int) $waiver->ID ) ) {
+		wp_safe_redirect( add_query_arg( [ 'done' => '1', 'account' => 'error' ], $base ) );
+		cordespace_waivers_signing_exit();
+		return;
+	}
+	if ( email_exists( $email ) ) {
+		wp_safe_redirect( add_query_arg( [ 'done' => '1', 'account' => 'exists' ], $base ) );
+		cordespace_waivers_signing_exit();
+		return;
+	}
+	$last = function_exists( 'cordespace_waivers_partner_last_signature' ) ? cordespace_waivers_partner_last_signature( $email, (int) $waiver->ID ) : null;
+	$res  = cordespace_waivers_partner_create_account( $partner, (string) ( $last['signed_name'] ?? '' ) );
+	$url  = add_query_arg( [ 'done' => '1', 'account' => is_wp_error( $res ) ? 'error' : 'created' ], $base );
 	wp_safe_redirect( $url );
 	cordespace_waivers_signing_exit();
 }
@@ -382,11 +398,16 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 		$default_name = $user->display_name ?: trim( $user->first_name . ' ' . $user->last_name );
 		$already      = cordespace_waivers_has_signed_current( (int) $user->ID, (int) $waiver->ID );
 		$last_sig     = $already ? cordespace_waivers_history_for_user_and_waiver( (int) $user->ID, (int) $waiver->ID, 1 ) : [];
+		if ( $already && ! $last_sig && function_exists( 'cordespace_waivers_partner_last_signature' ) ) {
+			// Signature faite sans compte (partenaire), rattachée ensuite au compte par le courriel.
+			$row      = cordespace_waivers_partner_last_signature( (string) $user->user_email, (int) $waiver->ID );
+			$last_sig = $row ? [ $row ] : [];
+		}
 		$host_first   = '';
 	}
 	$back         = $redirect_to !== ''
 		? $redirect_to
-		: ( function_exists( 'wc_get_page_permalink' ) ? (string) wc_get_page_permalink( 'myaccount' ) : home_url() );
+		: ( $partner === null && function_exists( 'wc_get_page_permalink' ) ? (string) wc_get_page_permalink( 'myaccount' ) : home_url( '/' ) ); // partenaire sans compte : pas vers Mon compte
 	$version      = cordespace_waivers_get_version( (int) $waiver->ID );
 
 	status_header( 200 );

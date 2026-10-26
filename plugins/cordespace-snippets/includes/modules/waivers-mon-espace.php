@@ -72,6 +72,11 @@ function cordespace_waivers_render_mon_espace_section( $user ): void {
 							$signed   = cordespace_waivers_has_signed_current( $user_id, $wid );
 							$history  = $signed ? cordespace_waivers_history_for_user_and_waiver( $user_id, $wid, 1 ) : [];
 							$last     = ! empty( $history ) ? $history[0] : null;
+							if ( $signed && $last === null && function_exists( 'cordespace_waivers_partner_last_signature' ) ) {
+								// Signature faite sans compte (partenaire), rattachée ensuite au compte par le courriel.
+								$u    = get_userdata( $user_id );
+								$last = $u ? cordespace_waivers_partner_last_signature( (string) $u->user_email, $wid ) : null;
+							}
 							$view_url = cordespace_waivers_get_sign_url( $wid, $mon_espace_url );
 							?>
 							<tr style="border-bottom:1px solid #f0f0f0;">
