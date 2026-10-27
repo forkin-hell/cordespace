@@ -700,6 +700,10 @@ function cordespace_waivers_partners_texts(): array {
 		'pending'     => 'Invitation en attente d\'envoi',
 		'no_waiver'   => 'Pas de document à signer pour ce cours',
 		'no_email'    => 'Courriel manquant pour l\'invitation à signer',
+		'chip_signed'   => '%s a signé',
+		'chip_todo'     => 'À compléter',
+		'chip_invited'  => 'Invitation envoyée',
+		'chip_declined' => 'Ne vient pas',
 		'saved_capped' => 'C\'est enregistré, mais trop de courriels sont partis pour cette place dans la dernière heure : réessaie plus tard pour envoyer l\'invitation.',
 		'save'        => 'Enregistrer',
 		'resend'      => 'Renvoyer l\'invitation',
@@ -783,6 +787,75 @@ function cordespace_waivers_partners_mon_espace_url(): string {
 	return function_exists( 'cordespace_get_mon_espace_url' ) ? (string) cordespace_get_mon_espace_url() : home_url( '/' );
 }
 
+/** Feuille de style de la section Mon espace (une fois par page) : cartes repliables, champs alignés, téléphone. */
+function cordespace_waivers_partners_styles_once(): void {
+	static $done = false;
+	if ( $done ) {
+		return;
+	}
+	$done = true;
+	echo '<style>'
+		. '#section-partenaires{margin-bottom:2.5rem;padding:1.3rem 1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px}'
+		. '#section-partenaires summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:0.4rem 0.7rem;flex-wrap:wrap}'
+		. '#section-partenaires .cordespace-partner-title{flex:1 1 240px;display:flex;align-items:flex-start;gap:0.5rem;min-width:0}'
+		. '#section-partenaires .cordespace-partner-title > .cordespace-partner-chev{flex:none;margin-top:0.35em}'
+		. '#section-partenaires summary::-webkit-details-marker{display:none}'
+		. '#section-partenaires .cordespace-partner-chev{display:inline-block;color:#888;font-size:0.85em;transition:transform .2s}'
+		. '#section-partenaires details[open] > summary .cordespace-partner-chev{transform:rotate(90deg)}'
+		. '#section-partenaires h2{margin:0;font-size:1.4rem;display:inline}'
+		. '#section-partenaires .cordespace-partners-intro{color:#666;margin:0.7rem 0 1.2rem;font-size:0.95em}'
+		. '#section-partenaires .cordespace-partners-msg{padding:0.8rem 1rem;background:#eef5ee;border-left:4px solid #3a7a3a;border-radius:0 4px 4px 0;margin:0 0 1.2rem}'
+		. '.cordespace-partner-card{border:1px solid #eee;border-radius:8px;margin-bottom:0.8rem;padding:0.7rem 1.1rem}'
+		. '.cordespace-partner-card > summary strong{color:#1d4d7e}'
+		. '.cordespace-partner-card .cordespace-partner-meta{font-size:0.9em;color:#666}'
+		. '.cordespace-partner-chip{font-size:0.8em;padding:0.15rem 0.6rem;border-radius:999px;font-weight:600;margin-left:auto;white-space:nowrap}'
+		. '.cordespace-partner-form{display:grid;grid-template-columns:auto minmax(140px,1fr) minmax(200px,1.4fr) auto;gap:0.5rem 0.8rem;align-items:end;padding:0.8rem 0 0.3rem;margin-top:0.6rem;border-top:1px solid #f0f0f0}'
+		. '.cordespace-partner-form .cordespace-partner-slot{font-weight:600;color:#444;line-height:2.6rem}'
+		. '.cordespace-partner-field{display:flex;flex-direction:column;margin:0;font-size:0.85em;color:#666;font-weight:normal}'
+		. '.cordespace-partner-field > span{margin:0 0 0.3rem;line-height:1.2}'
+		. '.cordespace-partner-form input.cordespace-partner-input{width:100% !important;box-sizing:border-box !important;height:2.6rem !important;margin:0 !important;padding:0 0.6rem !important;border:1px solid #ccc !important;border-radius:4px !important;font-size:1rem !important;line-height:2.6rem !important;background:#fff !important}'
+		. '.cordespace-partner-form button.cordespace-partner-save{height:2.6rem;padding:0 1rem;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;font-size:0.95em;white-space:nowrap}'
+		. '.cordespace-partner-state{grid-column:1 / -1;font-size:0.9em;margin:0}'
+		. '.cordespace-partner-state button{margin-left:0.6rem;padding:0.25rem 0.7rem;background:#eee;color:#333;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.9em}'
+		. '@media (max-width:600px){#section-partenaires{padding:1rem 1.1rem}.cordespace-partner-form{grid-template-columns:1fr;gap:0.4rem}.cordespace-partner-form .cordespace-partner-slot{line-height:1.4}.cordespace-partner-form button.cordespace-partner-save{width:100%}.cordespace-partner-chip{margin-left:0}}'
+		. '</style>';
+}
+
+/**
+ * État d'une carte (une réservation) d'après ses places : la carte reste ouverte tant qu'une place demande
+ * quelque chose à l'hôte ; sinon elle se replie sur une ligne « ✓ … ».
+ * Retourne [ 'open' => bool, 'chip' => texte, 'color' => fond, 'ink' => texte ].
+ */
+function cordespace_waivers_partner_card_summary( array $slots, array $applicable, array $t ): array {
+	$done  = [];
+	$chip  = null;
+	foreach ( $slots as $slot ) {
+		$status = cordespace_waivers_partner_status( $slot, $applicable );
+		$name   = trim( $slot['partner_name'] ) !== '' ? trim( $slot['partner_name'] ) : $slot['partner_email'];
+		switch ( $status ) {
+			case 'signed':
+				$done[] = sprintf( $t['chip_signed'], $name );
+				break;
+			case 'no_waiver':
+				$done[] = $name;
+				break;
+			case 'declined':
+				$chip = $chip ?? [ $t['chip_declined'], '#fdecea', '#b32d2e' ];
+				break;
+			case 'invited':
+			case 'pending':
+				$chip = $chip ?? [ $t['chip_invited'], '#e3f2fd', '#0d47a1' ];
+				break;
+			default: // empty, no_email
+				$chip = [ $t['chip_todo'], '#fff3cd', '#8a5a00' ];
+		}
+	}
+	if ( $chip !== null ) {
+		return [ 'open' => true, 'chip' => $chip[0], 'color' => $chip[1], 'ink' => $chip[2] ];
+	}
+	return [ 'open' => false, 'chip' => "✓\u{00A0}" . implode( ', ', $done ), 'color' => '#e8f5e9', 'ink' => '#1b5e20' ];
+}
+
 /** La section dans Mon espace (slot cordespace_mon_espace_section_client_waivers, priorité 20). */
 function cordespace_waivers_render_partners_section( $user ): void {
 	if ( ! $user || ! isset( $user->ID ) || (int) $user->ID <= 0 ) {
@@ -798,51 +871,59 @@ function cordespace_waivers_render_partners_section( $user ): void {
 	if ( $msg !== '' ) {
 		delete_transient( 'cordespace_partners_msg_' . $user_id );
 	}
+	cordespace_waivers_partners_styles_once();
 	?>
-	<section id="section-partenaires" style="margin-bottom:2.5rem;padding:1.8rem;background:#fff;border:1px solid #e5e5e5;border-radius:10px;">
-		<h2 style="margin:0 0 0.4rem;font-size:1.4rem;"><?php echo esc_html( $t['title'] ); ?></h2>
-		<p style="color:#666;margin:0 0 1.2rem;font-size:0.95em;"><?php echo esc_html( $t['intro'] ); ?></p>
-		<?php if ( $msg !== '' ) : ?>
-			<p role="status" style="padding:0.8rem 1rem;background:#eef5ee;border-left:4px solid #3a7a3a;border-radius:0 4px 4px 0;margin:0 0 1.2rem;"><?php echo esc_html( $msg ); ?></p>
-		<?php endif; ?>
-		<?php foreach ( $bookings as $bk ) :
-			$applicable = function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' ) ? cordespace_waivers_applicable_defaults_for_amelia_event( $bk['event_id'] ) : [];
-			$slots      = cordespace_waivers_partner_slots( $bk['booking_id'], $bk['event_id'], $user_id );
-			?>
-			<div style="padding:1rem 1.2rem;border:1px solid #eee;border-radius:8px;margin-bottom:1rem;">
-				<div style="font-weight:700;color:#1d4d7e;"><?php echo esc_html( $bk['event_name'] ); ?></div>
-				<div style="font-size:0.9em;color:#666;margin:0.2rem 0 0.8rem;">📅 <?php echo esc_html( cordespace_waivers_partners_date( $bk['period_start'] ) ); ?> · <?php echo esc_html( sprintf( $t['people'], $bk['people'] ) ); ?></div>
-				<?php foreach ( $slots as $slot ) :
-					$status = cordespace_waivers_partner_status( $slot, $applicable );
-					$last   = $status === 'signed' && $applicable ? cordespace_waivers_partner_last_signature( $slot['partner_email'], (int) $applicable[0] ) : null;
-					switch ( $status ) {
-						case 'empty':     $label = $t['empty']; $color = '#8a5a00'; break;
-						case 'no_waiver': $label = $t['no_waiver']; $color = '#666'; break;
-						case 'no_email':  $label = $t['no_email']; $color = '#8a5a00'; break;
-						case 'declined':  $label = sprintf( $t['declined'], cordespace_waivers_partners_date( $slot['declined_at'] ) ); $color = '#b32d2e'; break;
-						case 'signed':    $label = sprintf( $t['signed'], cordespace_waivers_partners_date( $last['signed_at'] ?? null ) ); $color = '#1b5e20'; break;
-						case 'invited':   $label = sprintf( $t['invited'], cordespace_waivers_partners_date( $slot['invited_at'] ) ); $color = '#0d47a1'; break;
-						default:          $label = $t['pending']; $color = '#666';
-					}
-					?>
-					<form method="post" action="<?php echo esc_url( cordespace_waivers_partners_mon_espace_url() ); ?>" style="display:flex;flex-wrap:wrap;gap:0.6rem;align-items:flex-end;padding:0.6rem 0;border-top:1px solid #f0f0f0;">
-						<?php wp_nonce_field( 'cordespace_partner_' . (int) $slot['id'] ); ?>
-						<input type="hidden" name="cordespace_partner_id" value="<?php echo (int) $slot['id']; ?>">
-						<span style="min-width:90px;font-weight:600;color:#444;"><?php echo esc_html( sprintf( $t['slot'], $slot['slot_no'] ) ); ?></span>
-						<label style="display:flex;flex-direction:column;font-size:0.85em;color:#666;flex:1 1 160px;"><?php echo esc_html( $t['name'] ); ?>
-							<input type="text" name="partner_name" value="<?php echo esc_attr( $slot['partner_name'] ); ?>" style="padding:0.45rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;"></label>
-						<label style="display:flex;flex-direction:column;font-size:0.85em;color:#666;flex:1 1 200px;"><?php echo esc_html( $t['email'] ); ?>
-							<input type="email" name="partner_email" value="<?php echo esc_attr( $slot['partner_email'] ); ?>" style="padding:0.45rem 0.6rem;border:1px solid #ccc;border-radius:4px;font-size:1rem;"></label>
-						<button type="submit" style="padding:0.5rem 1rem;background:#1a1a2e;color:#fff;border:none;border-radius:4px;cursor:pointer;font-weight:600;"><?php echo esc_html( $t['save'] ); ?></button>
-						<span style="flex-basis:100%;font-size:0.9em;color:<?php echo esc_attr( $color ); ?>;"><?php echo esc_html( $label ); ?>
-							<?php if ( $status === 'invited' ) : ?>
-								<button type="submit" name="resend" value="1" style="margin-left:0.6rem;padding:0.25rem 0.7rem;background:#eee;color:#333;border:1px solid #ccc;border-radius:4px;cursor:pointer;font-size:0.9em;"><?php echo esc_html( $t['resend'] ); ?></button>
+	<section id="section-partenaires">
+		<details class="cordespace-partners" open>
+			<summary><span class="cordespace-partner-title"><span class="cordespace-partner-chev" aria-hidden="true">▶</span><h2><?php echo esc_html( $t['title'] ); ?></h2></span></summary>
+			<p class="cordespace-partners-intro"><?php echo esc_html( $t['intro'] ); ?></p>
+			<?php if ( $msg !== '' ) : ?>
+				<p role="status" class="cordespace-partners-msg"><?php echo esc_html( $msg ); ?></p>
+			<?php endif; ?>
+			<?php foreach ( $bookings as $bk ) :
+				$applicable = function_exists( 'cordespace_waivers_applicable_defaults_for_amelia_event' ) ? cordespace_waivers_applicable_defaults_for_amelia_event( $bk['event_id'] ) : [];
+				$slots      = cordespace_waivers_partner_slots( $bk['booking_id'], $bk['event_id'], $user_id );
+				$card       = cordespace_waivers_partner_card_summary( $slots, $applicable, $t );
+				?>
+				<details class="cordespace-partner-card"<?php echo $card['open'] ? ' open' : ''; ?>>
+					<summary>
+						<span class="cordespace-partner-title"><span class="cordespace-partner-chev" aria-hidden="true">▶</span><strong><?php echo esc_html( $bk['event_name'] ); ?></strong></span>
+						<span class="cordespace-partner-meta">📅 <?php echo esc_html( cordespace_waivers_partners_date( $bk['period_start'] ) ); ?> · <?php echo esc_html( sprintf( $t['people'], $bk['people'] ) ); ?></span>
+						<span class="cordespace-partner-chip" style="background:<?php echo esc_attr( $card['color'] ); ?>;color:<?php echo esc_attr( $card['ink'] ); ?>;"><?php echo esc_html( $card['chip'] ); ?></span>
+					</summary>
+					<?php foreach ( $slots as $slot ) :
+						$status = cordespace_waivers_partner_status( $slot, $applicable );
+						// Rien sous le formulaire quand tout est en ordre (signé, ou pas de document pour ce cours) : l'en-tête le dit déjà.
+						switch ( $status ) {
+							case 'empty':    $label = $t['empty']; $color = '#8a5a00'; break;
+							case 'no_email': $label = $t['no_email']; $color = '#8a5a00'; break;
+							case 'declined': $label = sprintf( $t['declined'], cordespace_waivers_partners_date( $slot['declined_at'] ) ); $color = '#b32d2e'; break;
+							case 'invited':  $label = sprintf( $t['invited'], cordespace_waivers_partners_date( $slot['invited_at'] ) ); $color = '#0d47a1'; break;
+							case 'pending':  $label = $t['pending']; $color = '#666'; break;
+							default:         $label = ''; $color = '';
+						}
+						?>
+						<form method="post" action="<?php echo esc_url( cordespace_waivers_partners_mon_espace_url() ); ?>" class="cordespace-partner-form">
+							<?php wp_nonce_field( 'cordespace_partner_' . (int) $slot['id'] ); ?>
+							<input type="hidden" name="cordespace_partner_id" value="<?php echo (int) $slot['id']; ?>">
+							<span class="cordespace-partner-slot"><?php echo esc_html( sprintf( $t['slot'], $slot['slot_no'] ) ); ?></span>
+							<label class="cordespace-partner-field"><span><?php echo esc_html( $t['name'] ); ?></span>
+								<input type="text" name="partner_name" class="cordespace-partner-input" value="<?php echo esc_attr( $slot['partner_name'] ); ?>"></label>
+							<label class="cordespace-partner-field"><span><?php echo esc_html( $t['email'] ); ?></span>
+								<input type="email" name="partner_email" class="cordespace-partner-input" value="<?php echo esc_attr( $slot['partner_email'] ); ?>"></label>
+							<button type="submit" class="cordespace-partner-save"><?php echo esc_html( $t['save'] ); ?></button>
+							<?php if ( $label !== '' ) : ?>
+								<p class="cordespace-partner-state" style="color:<?php echo esc_attr( $color ); ?>;"><?php echo esc_html( $label ); ?>
+									<?php if ( $status === 'invited' ) : ?>
+										<button type="submit" name="resend" value="1"><?php echo esc_html( $t['resend'] ); ?></button>
+									<?php endif; ?>
+								</p>
 							<?php endif; ?>
-						</span>
-					</form>
-				<?php endforeach; ?>
-			</div>
-		<?php endforeach; ?>
+						</form>
+					<?php endforeach; ?>
+				</details>
+			<?php endforeach; ?>
+		</details>
 	</section>
 	<?php
 }
