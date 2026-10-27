@@ -974,9 +974,10 @@ function cordespace_waivers_partners_handle_post(): void {
 // ─── Vue prof : lignes partenaires sous l'hôte ──────────────────────────────
 
 /**
- * Sous chaque hôte d'une réservation à plusieurs : une ligne par place partenaire
- * (« + Camille ✓ a signé », « + Yann ✍️ Waiver à signer », « + 1 place : partenaire non renseigné·e »,
- * « + Yann · ne vient pas »). Rien pour une réservation d'une personne. Cours sans waiver : le nom seul.
+ * Sous chaque hôte d'une réservation à plusieurs : une ligne par place partenaire. Seul ce qui manque est
+ * signalé, comme dans Mon espace : « + Yann ✍️ Waiver à signer », « + 1 place : partenaire non renseigné·e
+ * ✍️ Waiver à signer » (cours à waiver), « + Yann · ne vient pas » ; une partenaire qui a signé (ou un cours
+ * sans waiver) n'a que son nom. Rien pour une réservation d'une personne.
  */
 function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 	if ( ! is_array( $b ) || ! is_array( $event ) ) {
@@ -997,12 +998,22 @@ function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 	if ( ! $slots ) {
 		return;
 	}
+	$badge = static function ( string $title ): void {
+		if ( function_exists( 'cordespace_waivers_prof_badge_print' ) ) {
+			cordespace_waivers_prof_badge_print( __( 'Waiver à signer', 'cordespace-snippets' ), $title );
+		} else {
+			echo '<span style="color:#b32d2e;">✍️ ' . esc_html__( 'Waiver à signer', 'cordespace-snippets' ) . '</span>';
+		}
+	};
 	echo '<div class="cordespace-partner-lines">';
 	foreach ( $slots as $slot ) {
 		echo '<div>';
 		$name_empty = trim( $slot['partner_name'] ) === '';
 		if ( $slot['partner_email'] === '' && $name_empty ) {
 			echo '<span style="color:#8a5a00;">+ ' . esc_html__( '1 place : partenaire non renseigné·e', 'cordespace-snippets' ) . '</span>';
+			if ( $applicable ) {
+				$badge( __( 'Place sans nom ni courriel : cette personne n\'a pas pu être invitée à signer le document requis.', 'cordespace-snippets' ) );
+			}
 			echo '</div>';
 			continue;
 		}
@@ -1010,24 +1021,16 @@ function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 		echo '<span style="font-weight:600;color:#333;">+ ' . esc_html( $name ) . '</span>';
 		if ( $slot['declined_at'] !== null ) {
 			echo '<span style="color:#888;">· ' . esc_html__( 'ne vient pas', 'cordespace-snippets' ) . '</span>';
-		} elseif ( $applicable ) {
-			// Sans courriel, missing_waivers() ne peut rien vérifier : le nom seul ne signe rien, donc « à signer ».
-			if ( $slot['partner_email'] === '' || cordespace_waivers_partner_missing_waivers( $slot ) ) {
-				if ( $slot['partner_email'] === '' ) {
-					$title = __( 'Cette personne n\'a pas signé le document requis : il manque son courriel pour l\'inviter.', 'cordespace-snippets' );
-				} elseif ( $slot['invited_at'] !== null ) {
-					$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation envoyée par courriel).', 'cordespace-snippets' );
-				} else {
-					$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation à venir).', 'cordespace-snippets' );
-				}
-				if ( function_exists( 'cordespace_waivers_prof_badge_print' ) ) {
-					cordespace_waivers_prof_badge_print( __( 'Waiver à signer', 'cordespace-snippets' ), $title );
-				} else {
-					echo '<span style="color:#b32d2e;">✍️ ' . esc_html__( 'Waiver à signer', 'cordespace-snippets' ) . '</span>';
-				}
+		} elseif ( $applicable && ( $slot['partner_email'] === '' || cordespace_waivers_partner_missing_waivers( $slot ) ) ) {
+			// Sans courriel, rien n'a pu être signé ; avec courriel, missing_waivers() dit ce qui manque.
+			if ( $slot['partner_email'] === '' ) {
+				$title = __( 'Cette personne n\'a pas signé le document requis : il manque son courriel pour l\'inviter.', 'cordespace-snippets' );
+			} elseif ( $slot['invited_at'] !== null ) {
+				$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation envoyée par courriel).', 'cordespace-snippets' );
 			} else {
-				echo '<span style="display:inline-block;background:#e8f5e9;color:#1b5e20;font-size:0.85em;padding:0.1rem 0.5rem;border-radius:999px;">✓ ' . esc_html__( 'a signé', 'cordespace-snippets' ) . '</span>';
+				$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation à venir).', 'cordespace-snippets' );
 			}
+			$badge( $title );
 		}
 		echo '</div>';
 	}

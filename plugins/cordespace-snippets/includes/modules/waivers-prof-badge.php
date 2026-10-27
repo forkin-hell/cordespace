@@ -67,7 +67,9 @@ function cordespace_waivers_prof_badge_render( $booking, $event ): void {
 	}
 
 	if ( $missing_count === 0 ) {
-		return; // tout est signé, pas de badge
+		// Tout est signé : pastille verte discrète, pour que la prof le voie d'un coup d'œil.
+		cordespace_waivers_prof_badge_print( 'Waiver signé', 'Le ou les documents requis sont signés (version en vigueur).', 'ok' );
+		return;
 	}
 
 	$label = $missing_count > 1
@@ -77,14 +79,18 @@ function cordespace_waivers_prof_badge_render( $booking, $event ): void {
 }
 
 /**
- * Le badge lui-même : pastille rouge pâle, sans majuscules. Sur téléphone, il passe sur sa
- * propre ligne sous le nom, pour ne pas se perdre parmi les autres badges.
+ * Le badge lui-même : pastille pâle, sans majuscules. Variante 'todo' (rouge : à signer) ou 'ok' (vert : signé).
+ * Sur téléphone, il passe sur sa propre ligne sous le nom, pour ne pas se perdre parmi les autres badges.
  */
-function cordespace_waivers_prof_badge_print( string $label, string $title ): void {
+function cordespace_waivers_prof_badge_print( string $label, string $title, string $variant = 'todo' ): void {
 	cordespace_waivers_prof_badge_styles_once();
+	$colors = $variant === 'ok'
+		? 'background:#e8f5e9;color:#1b5e20;border:1px solid #b7dfb9;'
+		: 'background:#fdecea;color:#b32d2e;border:1px solid #f1b3b3;';
+	$icon   = $variant === 'ok' ? '✓ ' : '✍️ ';
 	echo '<span class="cordespace-waiver-badge" title="' . esc_attr( $title ) . '"'
-		. ' style="display:inline-block;background:#fdecea;color:#b32d2e;border:1px solid #f1b3b3;font-size:0.78em;padding:0.15rem 0.6rem;border-radius:999px;margin-left:0.35rem;font-weight:600;letter-spacing:0;vertical-align:middle;">'
-		. '✍️ ' . esc_html( $label ) . '</span>';
+		. ' style="display:inline-block;' . $colors . 'font-size:0.78em;padding:0.15rem 0.6rem;border-radius:999px;margin-left:0.35rem;font-weight:600;letter-spacing:0;vertical-align:middle;">'
+		. $icon . esc_html( $label ) . '</span>';
 }
 
 /**
