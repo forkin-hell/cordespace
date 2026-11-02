@@ -248,6 +248,38 @@ function cordespace_waivers_history_for_user_and_waiver( int $user_id, int $waiv
 }
 
 /**
+ * Historique des signatures d'une personne pour un waiver : par compte, et par courriel pour les
+ * signatures faites sans compte (partenaire) puis rattachées. Les plus récentes en premier.
+ *
+ * @return list<array{id:int,waiver_version:string,signed_name:string,signed_at:string,email:string}>
+ */
+function cordespace_waivers_history_for_account( int $user_id, string $email, int $waiver_id, int $limit = 20 ): array {
+	global $wpdb;
+	$email = cordespace_waivers_normalize_email( $email );
+	$rows  = $wpdb->get_results( $wpdb->prepare(
+		'SELECT id, waiver_version, signed_name, signed_at, email FROM ' . cordespace_waivers_table_name()
+		. ' WHERE waiver_id = %d AND ( ( user_id > 0 AND user_id = %d ) OR ( %s <> \'\' AND LOWER(email) = %s ) )'
+		. ' ORDER BY signed_at DESC, id DESC LIMIT %d',
+		$waiver_id,
+		$user_id,
+		$email,
+		$email,
+		max( 1, min( $limit, 500 ) )
+	), ARRAY_A );
+	$out = [];
+	foreach ( is_array( $rows ) ? $rows : [] as $r ) {
+		$out[] = [
+			'id'             => (int) $r['id'],
+			'waiver_version' => (string) $r['waiver_version'],
+			'signed_name'    => (string) $r['signed_name'],
+			'signed_at'      => (string) $r['signed_at'],
+			'email'          => (string) $r['email'],
+		];
+	}
+	return $out;
+}
+
+/**
  * Toutes les signatures d'un waiver (toutes versions), les plus récentes en premier.
  * Pour la boîte « Signatures » de l'écran d'édition.
  *

@@ -70,12 +70,21 @@ function cordespace_waivers_render_mon_espace_section( $user ): void {
 							$wid      = (int) $waiver->ID;
 							$version  = cordespace_waivers_get_version( $wid );
 							$signed   = cordespace_waivers_has_signed_current( $user_id, $wid );
-							$history  = $signed ? cordespace_waivers_history_for_user_and_waiver( $user_id, $wid, 1 ) : [];
-							$last     = ! empty( $history ) ? $history[0] : null;
-							if ( $signed && $last === null && function_exists( 'cordespace_waivers_partner_last_signature' ) ) {
-								// Signature faite sans compte (partenaire), rattachée ensuite au compte par le courriel.
-								$u    = get_userdata( $user_id );
-								$last = $u ? cordespace_waivers_partner_last_signature( (string) $u->user_email, $wid ) : null;
+							// Historique complet (compte + courriel) : la signature de la version en vigueur, et les versions
+							// précédentes signées, pour savoir ce qu'on a signé même après un changement de version.
+							$history  = function_exists( 'cordespace_waivers_history_for_account' )
+								? cordespace_waivers_history_for_account( $user_id, (string) ( $user->user_email ?? '' ), $wid, 20 )
+								: ( $signed ? cordespace_waivers_history_for_user_and_waiver( $user_id, $wid, 1 ) : [] );
+							$last     = null;
+							$previous = []; // version => signed_at (la plus récente par version)
+							foreach ( $history as $row ) {
+								if ( $signed && $last === null && (string) $row['waiver_version'] === (string) $version ) {
+									$last = $row;
+									continue;
+								}
+								if ( (string) $row['waiver_version'] !== (string) $version && ! isset( $previous[ $row['waiver_version'] ] ) ) {
+									$previous[ $row['waiver_version'] ] = (string) $row['signed_at'];
+								}
 							}
 							$view_url = cordespace_waivers_get_sign_url( $wid, $mon_espace_url );
 							?>
@@ -83,6 +92,17 @@ function cordespace_waivers_render_mon_espace_section( $user ): void {
 								<td style="padding:12px 8px;">
 									<strong><?php echo esc_html( (string) $waiver->post_title ); ?></strong><br>
 									<span style="color:#999; font-size:0.85em;">v<?php echo esc_html( (string) $version ); ?></span>
+									<?php if ( $previous ) : ?>
+										<div style="color:#777; font-size:0.82em; margin-top:0.3rem;" class="cordespace-waiver-previous">
+											<?php
+											$parts = [];
+											foreach ( $previous as $v => $at ) {
+												$parts[] = sprintf( 'v%s (%s)', $v, mysql2date( 'j F Y', $at ) );
+											}
+											echo esc_html( ( $signed ? 'Aussi signé : ' : 'Versions précédentes signées : ' ) . implode( ' · ', $parts ) );
+											?>
+										</div>
+									<?php endif; ?>
 								</td>
 								<?php if ( $signed ) : ?>
 									<td style="padding:12px 8px; color:#2a7a2a; font-weight:600;">✓ Signée</td>
