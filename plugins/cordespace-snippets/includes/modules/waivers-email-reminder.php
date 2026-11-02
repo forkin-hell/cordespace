@@ -147,6 +147,7 @@ function cordespace_waivers_email_reminder_run(): int {
 	}
 
 	$sent_count = 0;
+	$sent_keys  = []; // personne:waiver:cours déjà servis dans ce passage (plusieurs réservations = un seul courriel)
 	foreach ( $bookings as $booking ) {
 		$user_id    = (int) $booking['wp_user_id'];
 		$booking_id = (int) $booking['booking_id'];
@@ -173,7 +174,9 @@ function cordespace_waivers_email_reminder_run(): int {
 			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id ) ) {
 				continue;
 			}
-			if ( $signed && $partners_mail_done ) {
+			$key = $user_id . ':' . $waiver_id . ':' . $event_id;
+			if ( ( $signed && $partners_mail_done ) || isset( $sent_keys[ $key ] ) ) {
+				// Déjà couvert par un courriel de ce passage (autre réservation de la même personne sur le même cours).
 				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
 				continue;
 			}
@@ -181,6 +184,7 @@ function cordespace_waivers_email_reminder_run(): int {
 			if ( $ok ) {
 				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
 				$sent_count++;
+				$sent_keys[ $key ] = true;
 				if ( $signed ) {
 					$partners_mail_done = true;
 				}
