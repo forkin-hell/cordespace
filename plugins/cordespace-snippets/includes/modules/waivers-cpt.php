@@ -173,3 +173,106 @@ function cordespace_waivers_get_version( int $waiver_id ): string {
 	$v = (string) get_post_meta( $waiver_id, CORDESPACE_WAIVER_META_VERSION, true );
 	return $v !== '' ? $v : '1';
 }
+
+// ─── Boîte « Signatures » (qui a consenti, quand, quelle version) ───────────
+
+function cordespace_waivers_add_signatures_metabox(): void {
+	add_meta_box(
+		'cordespace_waiver_signatures',
+		'✍️ Signatures',
+		'cordespace_waivers_render_signatures_metabox',
+		CORDESPACE_WAIVER_POST_TYPE,
+		'normal',
+		'default'
+	);
+}
+add_action( 'add_meta_boxes_' . CORDESPACE_WAIVER_POST_TYPE, 'cordespace_waivers_add_signatures_metabox' );
+
+/**
+ * Date de signature (stockée en UTC) → « 21 octobre 2026 à 9 h 15 » en heure du site.
+ */
+function cordespace_waivers_format_signed_at( string $signed_at_utc ): string {
+	$ts = strtotime( $signed_at_utc . ' UTC' );
+	if ( ! $ts ) {
+		return $signed_at_utc;
+	}
+	return wp_date( 'j F Y à G \h i', $ts, wp_timezone() );
+}
+
+function cordespace_waivers_render_signatures_metabox( $post ): void {
+	if ( ! function_exists( 'cordespace_waivers_signatures_for_waiver' ) ) {
+		echo '<p>' . esc_html__( 'Le module « CRUD signatures (helpers) » doit être actif pour afficher les signatures.', 'cordespace-snippets' ) . '</p>';
+		return;
+	}
+	$waiver_id = (int) $post->ID;
+	$rows      = cordespace_waivers_signatures_for_waiver( $waiver_id );
+	if ( ! $rows ) {
+		echo '<p style="color:#555;margin:0;">' . esc_html__( 'Aucune signature pour l’instant.', 'cordespace-snippets' ) . '</p>';
+		return;
+	}
+	$version = cordespace_waivers_get_version( $waiver_id );
+	$total   = cordespace_waivers_signatures_count( $waiver_id );
+	$current = cordespace_waivers_signatures_count( $waiver_id, $version );
+	echo '<p style="margin:0 0 0.8rem;">'
+		. '<strong>' . esc_html( sprintf( _n( '%d signature', '%d signatures', $total, 'cordespace-snippets' ), $total ) ) . '</strong>, '
+		. esc_html( sprintf( __( 'dont %1$d pour la version en vigueur (%2$s).', 'cordespace-snippets' ), $current, $version ) )
+		. '</p>';
+	echo '<table class="widefat striped" style="max-width:900px;"><thead><tr>'
+		. '<th>' . esc_html__( 'Nom', 'cordespace-snippets' ) . '</th>'
+		. '<th>' . esc_html__( 'Courriel', 'cordespace-snippets' ) . '</th>'
+		. '<th>' . esc_html__( 'Version signée', 'cordespace-snippets' ) . '</th>'
+		. '<th>' . esc_html__( 'Date', 'cordespace-snippets' ) . '</th>'
+		. '</tr></thead><tbody>';
+	foreach ( $rows as $r ) {
+		$name    = esc_html( $r['signed_name'] );
+		$name    = $r['user_id'] > 0 ? '<a href="' . esc_url( get_edit_user_link( $r['user_id'] ) ) . '">' . $name . '</a>' : $name;
+		$note    = cordespace_waivers_signature_origin_note( $r );
+		$is_cur  = $r['waiver_version'] === $version;
+		echo '<tr>'
+			. '<td>' . $name . ( $note !== '' ? '<br><span style="color:#777;font-size:0.92em;">' . esc_html( $note ) . '</span>' : '' ) . '</td>'
+			. '<td>' . esc_html( $r['email'] ) . '</td>'
+			. '<td' . ( $is_cur ? '' : ' style="color:#8a5a00;" title="Version antérieure : cette personne devra re-signer la version en vigueur."' ) . '>' . esc_html( $r['waiver_version'] ) . '</td>'
+			. '<td>' . esc_html( cordespace_waivers_format_signed_at( $r['signed_at'] ) ) . '</td>'
+			. '</tr>';
+	}
+	echo '</tbody></table>';
+}
+
+/**
+ * Mention d'origine d'une signature : « invité·e par {hôte} » pour une signature de partenaire
+ * (module Partenaires), « sans compte » pour une signature sans compte ni hôte connu.
+ */
+function cordespace_waivers_signature_origin_note( array $row ): string {
+	$host_id = (int) ( $row['invited_by_user_id'] ?? 0 );
+	if ( $host_id > 0 ) {
+		$host = get_userdata( $host_id );
+		$who  = $host && ! empty( $host->display_name ) ? (string) $host->display_name : sprintf( __( 'compte #%d', 'cordespace-snippets' ), $host_id );
+		return sprintf( __( 'invité·e par %s', 'cordespace-snippets' ), $who );
+	}
+	return (int) ( $row['user_id'] ?? 0 ) > 0 ? '' : __( 'sans compte', 'cordespace-snippets' );
+}
+
+// ─── Colonne « Signatures » dans la liste des waivers ───────────────────────
+
+function cordespace_waivers_signatures_columns( array $columns ): array {
+	$out = [];
+	foreach ( $columns as $key => $label ) {
+		if ( $key === 'date' ) {
+			$out['cordespace_signatures'] = __( 'Signatures', 'cordespace-snippets' );
+		}
+		$out[ $key ] = $label;
+	}
+	if ( ! isset( $out['cordespace_signatures'] ) ) {
+		$out['cordespace_signatures'] = __( 'Signatures', 'cordespace-snippets' );
+	}
+	return $out;
+}
+add_filter( 'manage_' . CORDESPACE_WAIVER_POST_TYPE . '_posts_columns', 'cordespace_waivers_signatures_columns' );
+
+function cordespace_waivers_signatures_column( string $column, int $post_id ): void {
+	if ( $column !== 'cordespace_signatures' ) {
+		return;
+	}
+	echo function_exists( 'cordespace_waivers_signatures_count' ) ? (int) cordespace_waivers_signatures_count( $post_id ) : '—';
+}
+add_action( 'manage_' . CORDESPACE_WAIVER_POST_TYPE . '_posts_custom_column', 'cordespace_waivers_signatures_column', 10, 2 );

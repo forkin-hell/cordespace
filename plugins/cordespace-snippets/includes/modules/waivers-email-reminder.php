@@ -39,7 +39,7 @@
 defined( 'ABSPATH' ) || exit;
 
 const CORDESPACE_WAIVERS_REMINDERS_TABLE_SUFFIX   = 'cordespace_waiver_reminders_sent';
-const CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION = 1;
+const CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION = 2; // v2 : waiver_version (un rappel par version du document)
 const CORDESPACE_WAIVERS_REMINDER_CRON_HOOK       = 'cordespace_waivers_email_reminder_cron';
 
 // ============================================================================
@@ -56,22 +56,29 @@ function cordespace_waivers_reminders_install_table(): void {
 	$table   = cordespace_waivers_reminders_table_name();
 	$charset = $wpdb->get_charset_collate();
 
-	// UNIQUE KEY (booking_id, waiver_id) = garantie qu'on n'enverra jamais
-	// deux fois le même email, même en cas de course condition entre runs.
+	// UNIQUE KEY (booking_id, waiver_id, waiver_version) = jamais deux fois le même email pour une version
+	// du document, même en cas de course condition entre runs ; une nouvelle version = un nouveau rappel.
 	$sql = "CREATE TABLE {$table} (
 		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 		booking_id BIGINT UNSIGNED NOT NULL,
 		waiver_id BIGINT UNSIGNED NOT NULL,
+		waiver_version VARCHAR(32) NOT NULL DEFAULT '',
 		user_id BIGINT UNSIGNED NOT NULL,
 		sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY  (id),
-		UNIQUE KEY uniq_booking_waiver (booking_id, waiver_id),
+		UNIQUE KEY uniq_booking_waiver_version (booking_id, waiver_id, waiver_version),
 		KEY idx_user_id (user_id),
 		KEY idx_sent_at (sent_at)
 	) {$charset};";
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 	dbDelta( $sql );
+
+	// dbDelta ajoute les colonnes et index, mais ne retire pas l'ancienne clé unique (v1), qui bloquerait
+	// le second rappel d'une réservation après un changement de version.
+	if ( $wpdb->get_var( $wpdb->prepare( "SHOW INDEX FROM {$table} WHERE Key_name = %s", 'uniq_booking_waiver' ) ) ) {
+		$wpdb->query( "ALTER TABLE {$table} DROP INDEX uniq_booking_waiver" ); // phpcs:ignore
+	}
 
 	update_option( 'cordespace_waivers_reminders_schema_version', CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION );
 }
@@ -147,6 +154,7 @@ function cordespace_waivers_email_reminder_run(): int {
 	}
 
 	$sent_count = 0;
+	$sent_keys  = []; // personne:waiver:cours déjà servis dans ce passage (plusieurs réservations = un seul courriel)
 	foreach ( $bookings as $booking ) {
 		$user_id    = (int) $booking['wp_user_id'];
 		$booking_id = (int) $booking['booking_id'];
@@ -156,22 +164,43 @@ function cordespace_waivers_email_reminder_run(): int {
 		}
 
 		$applicable = cordespace_waivers_applicable_defaults_for_amelia_event( $event_id );
+		// Places partenaire encore vides (module Partenaires) : l'hôte est relancé·e même si son waiver est signé.
+		$empty = $applicable && function_exists( 'cordespace_waivers_partners_empty_slots_for_booking' )
+			? cordespace_waivers_partners_empty_slots_for_booking( $booking_id, $event_id, $user_id )
+			: 0;
+		$partners_mail_done = false; // le courriel dédié « Qui vient avec toi ? » part une seule fois par réservation
 		foreach ( $applicable as $waiver_id ) {
 			$waiver_id = (int) $waiver_id;
 			if ( $waiver_id <= 0 ) {
 				continue;
 			}
-			if ( cordespace_waivers_has_signed_current( $user_id, $waiver_id ) ) {
+			$signed  = cordespace_waivers_has_signed_current( $user_id, $waiver_id );
+			$version = cordespace_waivers_get_version( $waiver_id );
+			if ( $empty <= 0 && $signed ) {
 				continue;
 			}
-			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id ) ) {
+			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id, $version ) ) {
 				continue;
 			}
-			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id );
+			$key = $user_id . ':' . $waiver_id . ':' . $event_id;
+			if ( ( $signed && $partners_mail_done ) || isset( $sent_keys[ $key ] ) ) {
+				// Déjà couvert par un courriel de ce passage (autre réservation de la même personne sur le même cours).
+				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id, $version );
+				continue;
+			}
+			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id, $empty );
 			if ( $ok ) {
-				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
+				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id, $version );
 				$sent_count++;
+				$sent_keys[ $key ] = true;
+				if ( $signed ) {
+					$partners_mail_done = true;
+				}
 			}
+		}
+		// Partenaires invité·es qui n'ont pas encore signé : une relance, une seule fois par place.
+		if ( $applicable && function_exists( 'cordespace_waivers_partners_remind' ) ) {
+			$sent_count += cordespace_waivers_partners_remind( $booking );
 		}
 	}
 
@@ -182,29 +211,32 @@ function cordespace_waivers_email_reminder_run(): int {
 // 4) Helpers tracking : already_sent / mark_sent
 // ============================================================================
 
-function cordespace_waivers_reminder_already_sent( int $booking_id, int $waiver_id ): bool {
+/** Déjà rappelé pour cette version du document ? Les lignes d'avant la v2 (version vide) comptent pour toute version. */
+function cordespace_waivers_reminder_already_sent( int $booking_id, int $waiver_id, string $version = '' ): bool {
 	global $wpdb;
 	$table = cordespace_waivers_reminders_table_name();
 	$row   = $wpdb->get_var( $wpdb->prepare(
-		"SELECT id FROM {$table} WHERE booking_id = %d AND waiver_id = %d LIMIT 1",
+		"SELECT id FROM {$table} WHERE booking_id = %d AND waiver_id = %d AND ( waiver_version = %s OR waiver_version = '' ) LIMIT 1",
 		$booking_id,
-		$waiver_id
+		$waiver_id,
+		$version
 	) );
 	return $row !== null;
 }
 
-function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id, int $user_id ): bool {
+function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id, int $user_id, string $version = '' ): bool {
 	global $wpdb;
 	$table  = cordespace_waivers_reminders_table_name();
 	$result = $wpdb->insert(
 		$table,
 		[
-			'booking_id' => $booking_id,
-			'waiver_id'  => $waiver_id,
-			'user_id'    => $user_id,
-			'sent_at'    => current_time( 'mysql', true ),
+			'booking_id'     => $booking_id,
+			'waiver_id'      => $waiver_id,
+			'waiver_version' => $version,
+			'user_id'        => $user_id,
+			'sent_at'        => current_time( 'mysql', true ),
 		],
-		[ '%d', '%d', '%d', '%s' ]
+		[ '%d', '%d', '%s', '%d', '%s' ]
 	);
 	return $result !== false;
 }
@@ -216,11 +248,13 @@ function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id,
 /**
  * Construit et envoie l'email reminder pour un booking + waiver donné.
  *
- * @param array $booking Row de la query reminder_run (booking_id, wp_user_id, etc.)
- * @param int   $waiver_id ID du post waiver à rappeler
+ * @param array $booking     Row de la query reminder_run (booking_id, wp_user_id, etc.)
+ * @param int   $waiver_id   ID du post waiver à rappeler
+ * @param int   $empty_slots Places partenaire encore vides (module Partenaires) : ajoute la phrase
+ *                           « Il manque encore le nom de… » ; si l'hôte a déjà signé, courriel dédié.
  * @return bool true si wp_mail a accepté l'envoi
  */
-function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id ): bool {
+function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id, int $empty_slots = 0 ): bool {
 	$waiver = get_post( $waiver_id );
 	if ( ! $waiver ) {
 		return false;
@@ -275,7 +309,33 @@ function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id 
 		'{lien_signature}' => $sign_url,
 	];
 
-	// Subject : custom du waiver (post_meta) OU template par défaut
+	$mail = cordespace_waivers_compose_reminder_email( $waiver_id, $placeholders );
+
+	if ( $empty_slots > 0 && function_exists( 'cordespace_waivers_partners_host_reminder' ) ) {
+		$mail = cordespace_waivers_partners_host_reminder( $mail, $empty_slots, [
+			'first_name' => $first_name,
+			'event_name' => $event_name,
+			'event_date' => $event_date_str,
+			'signed'     => $user_id > 0 && cordespace_waivers_has_signed_current( $user_id, $waiver_id ),
+		] );
+	}
+
+	return cordespace_waivers_mail( $email, $mail['subject'], $mail['body'] );
+}
+
+/**
+ * Sujet + corps du rappel pour un waiver, à partir des placeholders déjà
+ * résolus : objet/contenu personnalisés du waiver (post_meta) si renseignés,
+ * sinon les gabarits par défaut. Partagé par l'envoi réel et le courriel test.
+ *
+ * @param array<string,string> $placeholders '{prenom}' => …, '{nom_cours}' => …, etc.
+ * @return array{subject:string, body:string}
+ */
+function cordespace_waivers_compose_reminder_email( int $waiver_id, array $placeholders ): array {
+	$event_name   = (string) ( $placeholders['{nom_cours}'] ?? '' );
+	$first_name   = (string) ( $placeholders['{prenom}'] ?? '' );
+	$first_name   = $first_name === 'à toi' ? '' : $first_name;
+
 	$custom_subject = (string) get_post_meta( $waiver_id, '_cordespace_waiver_email_subject', true );
 	if ( $custom_subject !== '' ) {
 		$subject = strtr( $custom_subject, $placeholders );
@@ -287,24 +347,108 @@ function cordespace_waivers_send_reminder_email( array $booking, int $waiver_id 
 		);
 	}
 
-	// Body : custom du waiver (post_meta) OU template par défaut
 	$custom_body = (string) get_post_meta( $waiver_id, '_cordespace_waiver_email_body', true );
 	if ( $custom_body !== '' ) {
 		$body = cordespace_waivers_wrap_custom_email_body( strtr( $custom_body, $placeholders ) );
 	} else {
 		$body = cordespace_waivers_build_reminder_email_html(
 			$first_name,
-			$waiver_title,
+			(string) ( $placeholders['{titre_document}'] ?? '' ),
 			$event_name,
-			$event_date_str,
-			$sign_url
+			(string) ( $placeholders['{date_cours}'] ?? '' ),
+			(string) ( $placeholders['{lien_signature}'] ?? '' )
 		);
 	}
 
-	$headers = [ 'Content-Type: text/html; charset=UTF-8' ];
-
-	return wp_mail( $email, $subject, $body, $headers );
+	return [ 'subject' => $subject, 'body' => $body ];
 }
+
+/**
+ * Identité d'expédition des courriels waivers : celle des courriels
+ * WooCommerce (Réglages → Emails → adresse/nom d'expéditeur), sinon l'adresse
+ * admin et le nom du site. Filtre cordespace_waivers_email_from( array ).
+ *
+ * @return array{email:string, name:string}
+ */
+function cordespace_waivers_email_from(): array {
+	$email = (string) get_option( 'woocommerce_email_from_address', '' );
+	$name  = (string) get_option( 'woocommerce_email_from_name', '' );
+	if ( ! is_email( $email ) ) {
+		$email = (string) get_option( 'admin_email', '' );
+	}
+	if ( $name === '' ) {
+		$name = (string) get_option( 'blogname', '' );
+	}
+	return (array) apply_filters( 'cordespace_waivers_email_from', [ 'email' => $email, 'name' => $name ] );
+}
+
+/**
+ * wp_mail() HTML avec l'expéditeur Cordespace (From + Reply-To), le temps de
+ * cet envoi seulement. Sans ça, le rappel partirait en
+ * « WordPress <wordpress@cordespace.com> ».
+ */
+function cordespace_waivers_mail( string $to, string $subject, string $body ): bool {
+	$from       = cordespace_waivers_email_from();
+	$from_email = static fn() => $from['email'];
+	$from_name  = static fn() => $from['name'];
+	$headers    = [ 'Content-Type: text/html; charset=UTF-8' ];
+	$valid      = is_email( $from['email'] );
+	if ( $valid ) {
+		$headers[] = 'Reply-To: ' . ( $from['name'] !== '' ? $from['name'] . ' <' . $from['email'] . '>' : $from['email'] );
+		add_filter( 'wp_mail_from', $from_email, 99 );
+		add_filter( 'wp_mail_from_name', $from_name, 99 );
+	}
+	$sent = wp_mail( $to, $subject, $body, $headers );
+	if ( $valid ) {
+		remove_filter( 'wp_mail_from', $from_email, 99 );
+		remove_filter( 'wp_mail_from_name', $from_name, 99 );
+	}
+	return (bool) $sent;
+}
+
+/**
+ * Bouton « M'envoyer un courriel test » (metabox) : envoie le rappel à
+ * l'admin connecté·e avec des valeurs d'exemple, à partir de la dernière
+ * version ENREGISTRÉE de l'objet/du contenu.
+ */
+function cordespace_waivers_ajax_test_email(): void {
+	$post_id = isset( $_POST['post_id'] ) ? (int) $_POST['post_id'] : 0;
+	check_ajax_referer( 'cordespace_waiver_test_email_' . $post_id );
+	if ( $post_id <= 0 || get_post_type( $post_id ) !== CORDESPACE_WAIVER_POST_TYPE || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error( [ 'message' => __( 'Accès refusé.', 'cordespace-snippets' ) ] );
+	}
+	$user = wp_get_current_user();
+	$to   = (string) $user->user_email;
+	if ( ! is_email( $to ) ) {
+		wp_send_json_error( [ 'message' => __( 'Ton compte n\'a pas d\'adresse courriel valide.', 'cordespace-snippets' ) ] );
+	}
+	$first        = trim( (string) $user->first_name ) !== '' ? trim( (string) $user->first_name ) : trim( (string) $user->display_name );
+	$title        = trim( (string) get_the_title( $post_id ) );
+	// Valeurs fictives : il n'y a pas de réservation derrière un test. Date = après-demain 18 h 30.
+	$sample_date  = new DateTimeImmutable( 'today +2 days 18:30', wp_timezone() );
+	$placeholders = [
+		'{prenom}'         => $first !== '' ? $first : 'à toi',
+		'{nom_cours}'      => __( 'Initiation au ligotage (exemple)', 'cordespace-snippets' ),
+		'{date_cours}'     => wp_date( 'l j F Y à H\hi', $sample_date->getTimestamp() ),
+		'{titre_document}' => $title !== '' ? $title : __( 'Décharge de responsabilité (titre du waiver)', 'cordespace-snippets' ),
+		'{lien_signature}' => add_query_arg( 'preview', '1', cordespace_waivers_get_sign_url( $post_id, cordespace_waivers_get_mon_espace_url() ) ),
+	];
+	$mail = cordespace_waivers_compose_reminder_email( $post_id, $placeholders );
+	if ( ! cordespace_waivers_mail( $to, '[TEST] ' . $mail['subject'], $mail['body'] ) ) {
+		wp_send_json_error( [ 'message' => __( 'L\'envoi a été refusé par WordPress (wp_mail). Vérifie la configuration courriel du site.', 'cordespace-snippets' ) ] );
+	}
+	$from = cordespace_waivers_email_from();
+	wp_send_json_success( [
+		'message' => sprintf(
+			/* translators: 1 = destinataire, 2 = nom expéditeur, 3 = adresse expéditeur */
+			__( 'Envoyé à %1$s, expéditeur « %2$s <%3$s> ».', 'cordespace-snippets' ),
+			$to,
+			$from['name'],
+			$from['email']
+		),
+	] );
+}
+add_action( 'wp_ajax_cordespace_waiver_test_email', 'cordespace_waivers_ajax_test_email' );
 
 /**
  * Wrap le contenu HTML custom d'un email dans la structure complète
@@ -423,7 +567,7 @@ function cordespace_waivers_build_reminder_email_html( string $first_name, strin
 
 	<hr style="border:none; border-top:1px solid #eee; margin:2rem 0 1rem;">
 
-	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'Si tu as déjà signé entre temps, tu peux ignorer ce courriel.', 'cordespace-snippets' ); ?></p>
+	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'Si tu as déjà signé entre-temps, tu peux ignorer ce courriel.', 'cordespace-snippets' ); ?></p>
 	<p style="font-size:0.85em; color:#999; margin:0.5rem 0;"><?php esc_html_e( 'À bientôt sur les cordes ! — L\'équipe Cordespace', 'cordespace-snippets' ); ?></p>
 </body>
 </html>
@@ -514,6 +658,42 @@ function cordespace_waivers_email_reminder_render_metabox( WP_Post $post ): void
 			<li><code>{lien_signature}</code> — <?php esc_html_e( 'URL directe vers la page de signature (à utiliser dans un lien)', 'cordespace-snippets' ); ?></li>
 		</ul>
 	</div>
+
+	<?php $from = cordespace_waivers_email_from(); ?>
+	<p style="margin:1.4rem 0 0.3rem;">
+		<button type="button" class="button" id="cordespace-waiver-test-email"
+		        data-post="<?php echo (int) $post->ID; ?>"
+		        data-nonce="<?php echo esc_attr( wp_create_nonce( 'cordespace_waiver_test_email_' . $post->ID ) ); ?>"
+		        <?php disabled( $post->post_status === 'auto-draft' ); ?>>
+			✉️ <?php esc_html_e( 'M\'envoyer un courriel test', 'cordespace-snippets' ); ?>
+		</button>
+		<span id="cordespace-waiver-test-email-result" style="margin-left:0.6rem; color:#555;"></span>
+	</p>
+	<p style="font-size:0.9em; color:#666; margin:0;">
+		<?php printf(
+			/* translators: 1 = adresse de l'admin, 2 = nom expéditeur, 3 = adresse expéditeur */
+			esc_html__( 'Envoie ce rappel à %1$s avec des valeurs d\'exemple (cours fictif, date dans 2 jours), depuis « %2$s <%3$s> » — l\'expéditeur des courriels WooCommerce. Enregistre d\'abord tes modifications : le test utilise la dernière version enregistrée.', 'cordespace-snippets' ),
+			esc_html( wp_get_current_user()->user_email ),
+			esc_html( $from['name'] ),
+			esc_html( $from['email'] )
+		); ?>
+	</p>
+	<script>
+	( function () {
+		var btn = document.getElementById( 'cordespace-waiver-test-email' );
+		var out = document.getElementById( 'cordespace-waiver-test-email-result' );
+		if ( ! btn || ! out ) { return; }
+		btn.addEventListener( 'click', function () {
+			btn.disabled = true; out.textContent = '…';
+			var data = new URLSearchParams( { action: 'cordespace_waiver_test_email', post_id: btn.getAttribute( 'data-post' ), _ajax_nonce: btn.getAttribute( 'data-nonce' ) } );
+			fetch( ajaxurl, { method: 'POST', credentials: 'same-origin', body: data } )
+				.then( function ( r ) { return r.json(); } )
+				.then( function ( j ) { out.textContent = ( j && j.data && j.data.message ) ? j.data.message : ( j.success ? 'Envoyé.' : 'Échec.' ); out.style.color = j.success ? '#2a7a2a' : '#b32d2e'; } )
+				.catch( function () { out.textContent = 'Erreur réseau.'; out.style.color = '#b32d2e'; } )
+				.finally( function () { btn.disabled = false; } );
+		} );
+	} )();
+	</script>
 	<?php
 }
 
