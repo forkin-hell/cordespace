@@ -39,7 +39,7 @@
 defined( 'ABSPATH' ) || exit;
 
 const CORDESPACE_WAIVERS_REMINDERS_TABLE_SUFFIX   = 'cordespace_waiver_reminders_sent';
-const CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION = 1;
+const CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION = 2; // v2 : waiver_version (un rappel par version du document)
 const CORDESPACE_WAIVERS_REMINDER_CRON_HOOK       = 'cordespace_waivers_email_reminder_cron';
 
 // ============================================================================
@@ -56,22 +56,29 @@ function cordespace_waivers_reminders_install_table(): void {
 	$table   = cordespace_waivers_reminders_table_name();
 	$charset = $wpdb->get_charset_collate();
 
-	// UNIQUE KEY (booking_id, waiver_id) = garantie qu'on n'enverra jamais
-	// deux fois le même email, même en cas de course condition entre runs.
+	// UNIQUE KEY (booking_id, waiver_id, waiver_version) = jamais deux fois le même email pour une version
+	// du document, même en cas de course condition entre runs ; une nouvelle version = un nouveau rappel.
 	$sql = "CREATE TABLE {$table} (
 		id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 		booking_id BIGINT UNSIGNED NOT NULL,
 		waiver_id BIGINT UNSIGNED NOT NULL,
+		waiver_version VARCHAR(32) NOT NULL DEFAULT '',
 		user_id BIGINT UNSIGNED NOT NULL,
 		sent_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 		PRIMARY KEY  (id),
-		UNIQUE KEY uniq_booking_waiver (booking_id, waiver_id),
+		UNIQUE KEY uniq_booking_waiver_version (booking_id, waiver_id, waiver_version),
 		KEY idx_user_id (user_id),
 		KEY idx_sent_at (sent_at)
 	) {$charset};";
 
 	require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 	dbDelta( $sql );
+
+	// dbDelta ajoute les colonnes et index, mais ne retire pas l'ancienne clé unique (v1), qui bloquerait
+	// le second rappel d'une réservation après un changement de version.
+	if ( $wpdb->get_var( $wpdb->prepare( "SHOW INDEX FROM {$table} WHERE Key_name = %s", 'uniq_booking_waiver' ) ) ) {
+		$wpdb->query( "ALTER TABLE {$table} DROP INDEX uniq_booking_waiver" ); // phpcs:ignore
+	}
 
 	update_option( 'cordespace_waivers_reminders_schema_version', CORDESPACE_WAIVERS_REMINDERS_SCHEMA_VERSION );
 }
@@ -167,22 +174,23 @@ function cordespace_waivers_email_reminder_run(): int {
 			if ( $waiver_id <= 0 ) {
 				continue;
 			}
-			$signed = cordespace_waivers_has_signed_current( $user_id, $waiver_id );
+			$signed  = cordespace_waivers_has_signed_current( $user_id, $waiver_id );
+			$version = cordespace_waivers_get_version( $waiver_id );
 			if ( $empty <= 0 && $signed ) {
 				continue;
 			}
-			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id ) ) {
+			if ( cordespace_waivers_reminder_already_sent( $booking_id, $waiver_id, $version ) ) {
 				continue;
 			}
 			$key = $user_id . ':' . $waiver_id . ':' . $event_id;
 			if ( ( $signed && $partners_mail_done ) || isset( $sent_keys[ $key ] ) ) {
 				// Déjà couvert par un courriel de ce passage (autre réservation de la même personne sur le même cours).
-				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
+				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id, $version );
 				continue;
 			}
 			$ok = cordespace_waivers_send_reminder_email( $booking, $waiver_id, $empty );
 			if ( $ok ) {
-				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id );
+				cordespace_waivers_mark_reminder_sent( $booking_id, $waiver_id, $user_id, $version );
 				$sent_count++;
 				$sent_keys[ $key ] = true;
 				if ( $signed ) {
@@ -203,29 +211,32 @@ function cordespace_waivers_email_reminder_run(): int {
 // 4) Helpers tracking : already_sent / mark_sent
 // ============================================================================
 
-function cordespace_waivers_reminder_already_sent( int $booking_id, int $waiver_id ): bool {
+/** Déjà rappelé pour cette version du document ? Les lignes d'avant la v2 (version vide) comptent pour toute version. */
+function cordespace_waivers_reminder_already_sent( int $booking_id, int $waiver_id, string $version = '' ): bool {
 	global $wpdb;
 	$table = cordespace_waivers_reminders_table_name();
 	$row   = $wpdb->get_var( $wpdb->prepare(
-		"SELECT id FROM {$table} WHERE booking_id = %d AND waiver_id = %d LIMIT 1",
+		"SELECT id FROM {$table} WHERE booking_id = %d AND waiver_id = %d AND ( waiver_version = %s OR waiver_version = '' ) LIMIT 1",
 		$booking_id,
-		$waiver_id
+		$waiver_id,
+		$version
 	) );
 	return $row !== null;
 }
 
-function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id, int $user_id ): bool {
+function cordespace_waivers_mark_reminder_sent( int $booking_id, int $waiver_id, int $user_id, string $version = '' ): bool {
 	global $wpdb;
 	$table  = cordespace_waivers_reminders_table_name();
 	$result = $wpdb->insert(
 		$table,
 		[
-			'booking_id' => $booking_id,
-			'waiver_id'  => $waiver_id,
-			'user_id'    => $user_id,
-			'sent_at'    => current_time( 'mysql', true ),
+			'booking_id'     => $booking_id,
+			'waiver_id'      => $waiver_id,
+			'waiver_version' => $version,
+			'user_id'        => $user_id,
+			'sent_at'        => current_time( 'mysql', true ),
 		],
-		[ '%d', '%d', '%d', '%s' ]
+		[ '%d', '%d', '%s', '%d', '%s' ]
 	);
 	return $result !== false;
 }

@@ -145,6 +145,11 @@ function cordespace_waivers_signing_page_handle_post_partner( WP_Post $waiver, a
 	if ( is_wp_error( $res ) ) {
 		wp_die( esc_html( $res->get_error_message() ) );
 	}
+	// Signé : la relance 48 h (une par place) redevient disponible si une nouvelle version arrive plus tard.
+	global $wpdb;
+	if ( function_exists( 'cordespace_waivers_partners_table_name' ) ) {
+		$wpdb->update( cordespace_waivers_partners_table_name(), [ 'reminded_at' => null ], [ 'id' => (int) $partner['id'] ] );
+	}
 	wp_safe_redirect( add_query_arg( 'done', '1', cordespace_waivers_partner_sign_url( $partner, $waiver_id ) ) );
 	cordespace_waivers_signing_exit();
 }
