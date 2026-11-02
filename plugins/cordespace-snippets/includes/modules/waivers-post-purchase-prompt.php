@@ -213,7 +213,7 @@ function cordespace_waivers_post_purchase_render_banner( array $missing, string 
 
 	// Textes au SINGULIER : Cordespace n'aura quasi jamais plusieurs documents
 	// à signer en même temps. On simplifie pour gagner en lisibilité.
-	$intro = $context === 'thankyou'
+	$intro = in_array( $context, [ 'thankyou', 'amelia-return' ], true )
 		? __( 'Merci pour ton achat ! Avant ton prochain cours, prends 2 minutes pour signer le document ci-dessous :', 'cordespace-snippets' )
 		: __( 'Tu as encore un document à signer avant ton prochain cours :', 'cordespace-snippets' );
 	?>
@@ -240,7 +240,7 @@ function cordespace_waivers_post_purchase_render_banner( array $missing, string 
 					</p>
 				<?php endif; ?>
 				<p style="margin:0;">
-					<a href="<?php echo esc_url( $sign_url ); ?>" class="button" style="background:#1a1a2e; color:#fff; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block;">
+					<a href="<?php echo esc_url( $sign_url ); ?>"<?php echo $context === 'amelia-return' ? ' target="_blank" rel="noopener"' : ''; ?> class="button" style="background:#1a1a2e; color:#fff; padding:0.55rem 1.1rem; text-decoration:none; border-radius:4px; display:inline-block;">
 						✍️ <?php esc_html_e( 'Signer maintenant', 'cordespace-snippets' ); ?>
 					</a>
 				</p>
@@ -346,7 +346,7 @@ function cordespace_waivers_post_purchase_render_amelia_return(): void {
 	<div id="cordespace-waivers-after-payment" style="position:fixed; top:0; left:0; right:0; z-index:2147483000; padding:0.8rem 1rem 0; pointer-events:none;">
 		<div style="max-width:760px; margin:0 auto; pointer-events:auto; position:relative; box-shadow:0 6px 24px rgba(0,0,0,0.25); border-radius:6px;">
 			<button type="button" onclick="document.getElementById('cordespace-waivers-after-payment').remove();" aria-label="<?php esc_attr_e( 'Fermer', 'cordespace-snippets' ); ?>" style="position:absolute; top:0.5rem; right:0.6rem; background:transparent; border:none; font-size:1.3em; line-height:1; cursor:pointer; color:#3c2c00;">×</button>
-			<?php cordespace_waivers_post_purchase_render_banner( $missing, 'thankyou', $empty ); ?>
+			<?php cordespace_waivers_post_purchase_render_banner( $missing, 'amelia-return', $empty ); // lien de signature dans un nouvel onglet : la fenêtre « Félicitations » (calendrier) reste ouverte ?>
 		</div>
 	</div>
 	<?php
