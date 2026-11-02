@@ -312,39 +312,46 @@ add_action( 'woocommerce_thankyou', 'cordespace_waivers_post_purchase_render_tha
 /**
  * Hook 1b : avec le réglage Amelia « WooCommerce → redirection vers la page de paiement », Amelia court-circuite la
  * page « Merci » de WooCommerce (woocommerce_thankyou → wp_safe_redirect) et renvoie sur la page de réservation avec
- * ?ameliaWcCache={commande}_{jeton}_{type}, où son formulaire affiche « Félicitations ». La banderole est donc
- * injectée en tête du contenu de cette page, pour la personne à qui appartient la commande.
+ * ?ameliaWcCache={commande}_{jeton}_{type}, où son formulaire affiche « Félicitations » dans une fenêtre qui couvre
+ * la page. La banderole est donc fixée en haut de l'écran (wp_footer), pour la personne à qui appartient la commande.
  */
 function cordespace_waivers_post_purchase_amelia_return_order_id(): int {
 	$cache = isset( $_GET['ameliaWcCache'] ) ? sanitize_text_field( wp_unslash( $_GET['ameliaWcCache'] ) ) : '';
 	return $cache !== '' && preg_match( '/^(\d+)_/', $cache, $m ) ? (int) $m[1] : 0;
 }
 
-function cordespace_waivers_post_purchase_render_amelia_return( $content ) {
+function cordespace_waivers_post_purchase_render_amelia_return(): void {
 	static $done = false;
-	if ( $done || ! is_string( $content ) || ! is_singular() || ! in_the_loop() || ! is_main_query() ) {
-		return $content;
+	if ( $done ) {
+		return;
 	}
 	$order_id = cordespace_waivers_post_purchase_amelia_return_order_id();
 	$user_id  = get_current_user_id();
 	if ( $order_id <= 0 || $user_id <= 0 || ! function_exists( 'wc_get_order' ) ) {
-		return $content;
+		return;
 	}
 	$order = wc_get_order( $order_id );
 	if ( ! $order || (int) $order->get_user_id() !== $user_id ) {
-		return $content;
+		return;
 	}
 	$done    = true;
 	$missing = cordespace_waivers_post_purchase_missing_for_order( $order_id );
 	$empty   = cordespace_waivers_post_purchase_empty_slots( $user_id );
 	if ( empty( $missing ) && $empty <= 0 ) {
-		return $content;
+		return;
 	}
-	ob_start();
-	cordespace_waivers_post_purchase_render_banner( $missing, 'thankyou', $empty );
-	return (string) ob_get_clean() . $content;
+	// Amelia ouvre sa fenêtre « Félicitations » par-dessus la page (voile sombre) : la banderole est fixée en haut
+	// de l'écran, au-dessus de cette fenêtre, et se ferme d'un clic.
+	?>
+	<div id="cordespace-waivers-after-payment" style="position:fixed; top:0; left:0; right:0; z-index:2147483000; padding:0.8rem 1rem 0; pointer-events:none;">
+		<div style="max-width:760px; margin:0 auto; pointer-events:auto; position:relative; box-shadow:0 6px 24px rgba(0,0,0,0.25); border-radius:6px;">
+			<button type="button" onclick="document.getElementById('cordespace-waivers-after-payment').remove();" aria-label="<?php esc_attr_e( 'Fermer', 'cordespace-snippets' ); ?>" style="position:absolute; top:0.5rem; right:0.6rem; background:transparent; border:none; font-size:1.3em; line-height:1; cursor:pointer; color:#3c2c00;">×</button>
+			<?php cordespace_waivers_post_purchase_render_banner( $missing, 'thankyou', $empty ); ?>
+		</div>
+	</div>
+	<?php
 }
-add_filter( 'the_content', 'cordespace_waivers_post_purchase_render_amelia_return', 5 );
+add_action( 'wp_footer', 'cordespace_waivers_post_purchase_render_amelia_return', 5 );
 
 /**
  * Hook 2 : dashboard /mon-compte/ (WC).
