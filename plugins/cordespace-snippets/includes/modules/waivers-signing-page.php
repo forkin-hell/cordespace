@@ -212,16 +212,23 @@ function cordespace_waivers_render_partner_done( WP_Post $waiver, array $partner
 // acceptation) : c'est la forme retenue pour le consentement explicite (LCJTI).
 // ============================================================================
 
-const CORDESPACE_WAIVER_META_CONSENT_READ   = '_cordespace_waiver_consent_read';
-const CORDESPACE_WAIVER_META_CONSENT_ACCEPT = '_cordespace_waiver_consent_accept';
+const CORDESPACE_WAIVER_META_CONSENT_READ           = '_cordespace_waiver_consent_read';
+const CORDESPACE_WAIVER_META_CONSENT_ACCEPT         = '_cordespace_waiver_consent_accept';
+const CORDESPACE_WAIVER_META_CONSENT_NOTICE         = '_cordespace_waiver_consent_notice';
+const CORDESPACE_WAIVER_META_CONSENT_NOTICE_PARTNER = '_cordespace_waiver_consent_notice_partner';
 
 /**
- * @return array{read:string, accept:string}
+ * Phrases des cases et mention sous les cases (personne avec compte / partenaire sans compte).
+ * Mots-clés des mentions : {version} (ex. v1.3), {courriel} (partenaire).
+ *
+ * @return array{read:string, accept:string, notice:string, notice_partner:string}
  */
 function cordespace_waivers_default_consent_texts(): array {
 	return [
-		'read'   => __( "J'ai lu et compris l'intégralité du texte ci-dessus.", 'cordespace-snippets' ),
-		'accept' => __( "J'accepte expressément le contenu de ce document et j'adhère à toutes ses conditions.", 'cordespace-snippets' ),
+		'read'           => __( "J'ai lu et compris l'intégralité du texte ci-dessus.", 'cordespace-snippets' ),
+		'accept'         => __( "J'accepte expressément le contenu de ce document et j'adhère à toutes ses conditions.", 'cordespace-snippets' ),
+		'notice'         => __( 'En signant, vous acceptez que ces informations soient enregistrées et associées à votre compte Cordespace : votre identifiant utilisateur, la version de cette décharge ({version}), la date et l\'heure de signature, votre adresse IP, votre navigateur. Vous pouvez à tout moment consulter votre historique de documents signés dans votre espace personnel.', 'cordespace-snippets' ),
+		'notice_partner' => __( 'En signant, vous acceptez que ces informations soient enregistrées : votre nom, votre adresse courriel ({courriel}), la version de cette décharge ({version}), la date et l\'heure de signature, votre adresse IP, votre navigateur, et la personne qui vous a invité·e.', 'cordespace-snippets' ),
 	];
 }
 
@@ -233,13 +240,17 @@ function cordespace_waivers_default_consent_texts(): array {
  */
 function cordespace_waivers_get_consent_texts( int $waiver_id ): array {
 	$texts = cordespace_waivers_default_consent_texts();
-	$read   = trim( (string) get_post_meta( $waiver_id, CORDESPACE_WAIVER_META_CONSENT_READ, true ) );
-	$accept = trim( (string) get_post_meta( $waiver_id, CORDESPACE_WAIVER_META_CONSENT_ACCEPT, true ) );
-	if ( $read !== '' ) {
-		$texts['read'] = $read;
-	}
-	if ( $accept !== '' ) {
-		$texts['accept'] = $accept;
+	$metas = [
+		'read'           => CORDESPACE_WAIVER_META_CONSENT_READ,
+		'accept'         => CORDESPACE_WAIVER_META_CONSENT_ACCEPT,
+		'notice'         => CORDESPACE_WAIVER_META_CONSENT_NOTICE,
+		'notice_partner' => CORDESPACE_WAIVER_META_CONSENT_NOTICE_PARTNER,
+	];
+	foreach ( $metas as $key => $meta ) {
+		$value = trim( (string) get_post_meta( $waiver_id, $meta, true ) );
+		if ( $value !== '' ) {
+			$texts[ $key ] = $value;
+		}
 	}
 	return (array) apply_filters( 'cordespace_waivers_consent_texts', $texts, $waiver_id );
 }
@@ -273,6 +284,8 @@ function cordespace_waivers_render_consent_metabox( WP_Post $post ): void {
 	$defaults = cordespace_waivers_default_consent_texts();
 	$read     = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_READ, true );
 	$accept   = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_ACCEPT, true );
+	$notice   = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_NOTICE, true );
+	$notice_p = (string) get_post_meta( $post->ID, CORDESPACE_WAIVER_META_CONSENT_NOTICE_PARTNER, true );
 	?>
 	<p style="margin-top:0; color:#555;">
 		<?php esc_html_e( 'Sous le texte du document, la personne doit cocher ces deux cases avant de pouvoir cliquer « Je signe ». Laisse vide pour garder la phrase par défaut.', 'cordespace-snippets' ); ?>
@@ -285,8 +298,20 @@ function cordespace_waivers_render_consent_metabox( WP_Post $post ): void {
 		<label for="cordespace_waiver_consent_accept"><strong><?php esc_html_e( 'Case 2 — acceptation', 'cordespace-snippets' ); ?></strong></label><br>
 		<input type="text" id="cordespace_waiver_consent_accept" name="cordespace_waiver_consent_accept" class="widefat" value="<?php echo esc_attr( $accept ); ?>" placeholder="<?php echo esc_attr( $defaults['accept'] ); ?>">
 	</p>
-	<p style="font-size:0.9em; color:#666; margin-bottom:0;">
+	<p style="font-size:0.9em; color:#666;">
 		<?php esc_html_e( 'Garde deux affirmations distinctes (avoir lu / accepter) : c\'est la forme retenue pour un consentement explicite. Si tu changes le sens d\'une phrase, pense à changer aussi la version du document pour que tout le monde re-signe.', 'cordespace-snippets' ); ?>
+	</p>
+	<hr>
+	<p>
+		<label for="cordespace_waiver_consent_notice"><strong><?php esc_html_e( 'Mention sous les cases — personne avec compte', 'cordespace-snippets' ); ?></strong></label><br>
+		<textarea id="cordespace_waiver_consent_notice" name="cordespace_waiver_consent_notice" class="widefat" rows="4" placeholder="<?php echo esc_attr( $defaults['notice'] ); ?>"><?php echo esc_textarea( $notice ); ?></textarea>
+	</p>
+	<p>
+		<label for="cordespace_waiver_consent_notice_partner"><strong><?php esc_html_e( 'Mention sous les cases — partenaire sans compte', 'cordespace-snippets' ); ?></strong></label><br>
+		<textarea id="cordespace_waiver_consent_notice_partner" name="cordespace_waiver_consent_notice_partner" class="widefat" rows="4" placeholder="<?php echo esc_attr( $defaults['notice_partner'] ); ?>"><?php echo esc_textarea( $notice_p ); ?></textarea>
+	</p>
+	<p style="font-size:0.9em; color:#666; margin-bottom:0;">
+		<?php esc_html_e( 'Ces mentions s\'affichent sous les deux cases, avant le bouton « Je signe ». Laisse vide pour garder le texte par défaut. Mots-clés : {version} = version en vigueur (ex. v1.3), {courriel} = courriel de la personne partenaire.', 'cordespace-snippets' ); ?>
 	</p>
 	<?php
 }
@@ -320,8 +345,15 @@ function cordespace_waivers_save_consent_meta( int $post_id ): void {
 	     || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['cordespace_waiver_consent_nonce'] ) ), 'cordespace_waiver_consent_save' ) ) {
 		return;
 	}
-	foreach ( [ 'cordespace_waiver_consent_read' => CORDESPACE_WAIVER_META_CONSENT_READ, 'cordespace_waiver_consent_accept' => CORDESPACE_WAIVER_META_CONSENT_ACCEPT ] as $field => $meta ) {
-		$value = isset( $_POST[ $field ] ) ? sanitize_text_field( wp_unslash( $_POST[ $field ] ) ) : '';
+	$fields = [
+		'cordespace_waiver_consent_read'           => CORDESPACE_WAIVER_META_CONSENT_READ,
+		'cordespace_waiver_consent_accept'         => CORDESPACE_WAIVER_META_CONSENT_ACCEPT,
+		'cordespace_waiver_consent_notice'         => CORDESPACE_WAIVER_META_CONSENT_NOTICE,
+		'cordespace_waiver_consent_notice_partner' => CORDESPACE_WAIVER_META_CONSENT_NOTICE_PARTNER,
+	];
+	foreach ( $fields as $field => $meta ) {
+		$raw   = isset( $_POST[ $field ] ) ? wp_unslash( $_POST[ $field ] ) : '';
+		$value = str_starts_with( $field, 'cordespace_waiver_consent_notice' ) ? sanitize_textarea_field( $raw ) : sanitize_text_field( $raw );
 		if ( $value === '' ) {
 			delete_post_meta( $post_id, $meta );
 		} else {
@@ -488,28 +520,21 @@ function cordespace_waivers_signing_page_render( WP_Post $waiver, string $redire
 					</label>
 				</p>
 
+				<?php
+				// Mention légale sous les cases (modifiable par waiver, metabox « Cases à cocher »).
+				$notice = (string) ( $partner !== null ? $consent['notice_partner'] : $consent['notice'] );
+				$notice = strtr( $notice, [ '{version}' => 'v' . $version, '{courriel}' => (string) ( $partner['partner_email'] ?? '' ) ] );
+				?>
+				<p style="margin:0.6rem 0 1.2rem; padding:0.9rem 1.1rem; background:#f4f4f6; border-radius:4px; color:#555; font-size:0.9em; line-height:1.5;">
+					<?php echo nl2br( esc_html( $notice ) ); ?>
+				</p>
+
 				<p style="margin:1.2rem 0;">
 					<button type="submit" id="cordespace-waiver-submit" disabled data-preview="<?php echo $preview ? '1' : '0'; ?>" style="padding:0.7rem 1.6rem; background:#1a1a2e; color:#fff; border:none; border-radius:4px; cursor:pointer; font-size:1em; font-weight:600; opacity:0.4;">
 						<?php echo esc_html( $preview ? __( 'Je signe (désactivé en aperçu)', 'cordespace-snippets' ) : __( 'Je signe', 'cordespace-snippets' ) ); ?>
 					</button>
 				</p>
 
-				<p style="margin-top:1.2rem; padding:1rem 1.2rem; background:#f4f4f6; border-radius:4px; color:#555; font-size:0.92em; line-height:1.5;">
-					<?php
-					if ( $partner !== null ) {
-						printf(
-							esc_html__( 'En signant, ces informations sont enregistrées : ton nom, ton courriel (%1$s), la version de ce document (v%2$s), la date et l\'heure de signature, et la personne qui t\'a invité·e. Des métadonnées techniques sont également conservées dans nos journaux internes pour garantir la validité légale de ta signature.', 'cordespace-snippets' ),
-							esc_html( (string) $partner['partner_email'] ),
-							esc_html( $version )
-						);
-					} else {
-					printf(
-							esc_html__( 'En signant, ces informations sont enregistrées et associées à ton compte : ton identifiant Cordespace, la version de ce document (v%s), la date et l\'heure de signature. Des métadonnées techniques sont également conservées dans nos journaux internes pour garantir la validité légale de ta signature. Tu peux consulter l\'historique de tes signatures dans la rubrique « Mes waivers » du menu « Mon compte » à tout moment.', 'cordespace-snippets' ),
-							esc_html( $version )
-						);
-					}
-					?>
-				</p>
 			</form>
 
 			<script>
