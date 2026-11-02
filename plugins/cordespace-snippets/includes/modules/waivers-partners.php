@@ -596,6 +596,34 @@ function cordespace_waivers_partner_last_signature( string $email, int $waiver_i
 	return $row ?: null;
 }
 
+/** Fiche cliente Amelia liée au compte WordPress (créée si absente, rattachée si elle existe déjà par courriel). */
+function cordespace_waivers_partner_ensure_amelia_customer( int $user_id, string $email, string $first_name, string $last_name ): void {
+	global $wpdb;
+	$table = $wpdb->prefix . 'amelia_users';
+	if ( $user_id <= 0 || $email === '' || $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $table ) ) !== $table ) {
+		return;
+	}
+	$existing = $wpdb->get_row( $wpdb->prepare(
+		"SELECT id, externalId FROM {$table} WHERE type = 'customer' AND ( externalId = %d OR LOWER(email) = %s ) ORDER BY externalId DESC LIMIT 1",
+		$user_id,
+		cordespace_waivers_normalize_email( $email )
+	), ARRAY_A );
+	if ( $existing ) {
+		if ( (int) $existing['externalId'] <= 0 ) {
+			$wpdb->update( $table, [ 'externalId' => $user_id ], [ 'id' => (int) $existing['id'] ] );
+		}
+		return;
+	}
+	$wpdb->insert( $table, [
+		'type'       => 'customer',
+		'status'     => 'visible',
+		'firstName'  => $first_name !== '' ? $first_name : $email,
+		'lastName'   => $last_name,
+		'email'      => $email,
+		'externalId' => $user_id,
+	] );
+}
+
 /**
  * Crée un compte WordPress pour une personne partenaire (courriel de la place) et lui envoie
  * un lien pour choisir son mot de passe. Si un compte existe déjà avec ce courriel : son ID.
@@ -624,6 +652,19 @@ function cordespace_waivers_partner_create_account( array $partner, string $disp
 	if ( $name !== '' ) {
 		wp_update_user( [ 'ID' => (int) $user_id, 'display_name' => $name, 'first_name' => cordespace_waivers_first_name( $name, '' ) ] );
 	}
+	// Même profil qu'un compte créé par Amelia : rôles client (boutique + Amelia) et fiche cliente Amelia liée,
+	// sinon le cabinet Amelia de Mon espace affiche un formulaire de connexion au lieu des réservations.
+	$wp_user = get_userdata( (int) $user_id );
+	if ( $wp_user && method_exists( $wp_user, 'add_role' ) && function_exists( 'get_role' ) ) {
+		foreach ( [ 'customer', 'wpamelia-customer' ] as $role ) {
+			if ( get_role( $role ) ) {
+				$wp_user->add_role( $role );
+			}
+		}
+	}
+	$first = cordespace_waivers_first_name( $name, '' );
+	$last  = trim( (string) preg_replace( '/^\S+\s*/', '', $name ) );
+	cordespace_waivers_partner_ensure_amelia_customer( (int) $user_id, $email, $first, $last );
 	$user = get_userdata( (int) $user_id );
 	$key  = $user ? get_password_reset_key( $user ) : null;
 	if ( is_string( $key ) && $key !== '' ) {
