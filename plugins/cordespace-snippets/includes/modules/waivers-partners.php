@@ -1123,11 +1123,12 @@ function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 	if ( ! $slots ) {
 		return;
 	}
-	$badge = static function ( string $title ): void {
+	$badge = static function ( string $label, string $title, string $variant = 'todo' ): void {
 		if ( function_exists( 'cordespace_waivers_prof_badge_print' ) ) {
-			cordespace_waivers_prof_badge_print( __( 'Waiver à signer', 'cordespace-snippets' ), $title );
+			cordespace_waivers_prof_badge_print( $label, $title, $variant );
 		} else {
-			echo '<span style="color:#b32d2e;">✍️ ' . esc_html__( 'Waiver à signer', 'cordespace-snippets' ) . '</span>';
+			$color = $variant === 'ok' ? '#1b5e20' : ( $variant === 'old' ? '#8a5a00' : '#b32d2e' );
+			echo '<span style="color:' . $color . ';">' . ( $variant === 'ok' ? '✓ ' : '✍️ ' ) . esc_html( $label ) . '</span>';
 		}
 	};
 	echo '<div class="cordespace-partner-lines">';
@@ -1137,31 +1138,58 @@ function cordespace_waivers_partners_render_teacher_lines( $b, $event ): void {
 		if ( $slot['partner_email'] === '' && $name_empty ) {
 			echo '<span style="color:#8a5a00;">+ ' . esc_html__( '1 place : partenaire non renseigné·e', 'cordespace-snippets' ) . '</span>';
 			if ( $applicable ) {
-				$badge( __( 'Place sans nom ni courriel : cette personne n\'a pas pu être invitée à signer le document requis.', 'cordespace-snippets' ) );
+				$badge( __( 'Waiver à signer', 'cordespace-snippets' ), __( 'Place sans nom ni courriel : cette personne n\'a pas pu être invitée à signer le document requis.', 'cordespace-snippets' ) );
 			}
 			echo '</div>';
 			continue;
 		}
 		$name = ! $name_empty ? $slot['partner_name'] : $slot['partner_email'];
 		echo '<span style="font-weight:600;color:#333;">+ ' . esc_html( $name ) . '</span>';
+		// Avec courriel, missing_waivers() dit ce qui manque ; previous_versions() si tout le manquant est une ancienne version.
+		$missing  = $applicable && $slot['partner_email'] !== '' && $slot['declined_at'] === null ? cordespace_waivers_partner_missing_waivers( $slot ) : [];
+		$previous = $missing ? cordespace_waivers_partner_previous_versions( $slot, $missing ) : [];
 		if ( $slot['declined_at'] !== null ) {
 			echo '<span style="color:#888;">· ' . esc_html__( 'ne vient pas', 'cordespace-snippets' ) . '</span>';
-		} elseif ( $applicable && ( $slot['partner_email'] === '' || cordespace_waivers_partner_missing_waivers( $slot ) ) ) {
-			// Sans courriel, rien n'a pu être signé ; avec courriel, missing_waivers() dit ce qui manque.
-			if ( $slot['partner_email'] === '' ) {
-				$title = __( 'Cette personne n\'a pas signé le document requis : il manque son courriel pour l\'inviter.', 'cordespace-snippets' );
-			} elseif ( $slot['invited_at'] !== null ) {
-				$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation envoyée par courriel).', 'cordespace-snippets' );
-			} else {
-				$title = __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation à venir).', 'cordespace-snippets' );
-			}
-			$badge( $title );
-		} elseif ( $applicable && function_exists( 'cordespace_waivers_prof_badge_print' ) ) {
-			cordespace_waivers_prof_badge_print( __( 'Waiver signé', 'cordespace-snippets' ), __( 'Document requis signé (version en vigueur).', 'cordespace-snippets' ), 'ok' );
+		} elseif ( $applicable && $slot['partner_email'] === '' ) {
+			// Sans courriel, rien n'a pu être signé.
+			$badge( __( 'Waiver à signer', 'cordespace-snippets' ), __( 'Cette personne n\'a pas signé le document requis : il manque son courriel pour l\'inviter.', 'cordespace-snippets' ) );
+		} elseif ( $previous ) {
+			// Ancienne version signée seulement : orange ; l'invitation et le rappel 48 h font signer la nouvelle.
+			$versions = array_values( array_unique( $previous ) );
+			$badge(
+				( count( $versions ) > 1 ? 'Waivers v' : 'Waiver v' ) . implode( ', v', $versions ),
+				sprintf( __( 'Ancienne version signée (v%s) : cette personne doit signer la version en vigueur (invitation par courriel, rappel 48 h).', 'cordespace-snippets' ), implode( ', v', $versions ) ),
+				'old'
+			);
+		} elseif ( $missing ) {
+			$title = $slot['invited_at'] !== null
+				? __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation envoyée par courriel).', 'cordespace-snippets' )
+				: __( 'Cette personne n\'a pas encore signé le document requis pour ce cours (invitation à venir).', 'cordespace-snippets' );
+			$badge( __( 'Waiver à signer', 'cordespace-snippets' ), $title );
+		} elseif ( $applicable ) {
+			$badge( __( 'Waiver signé', 'cordespace-snippets' ), __( 'Document requis signé (version en vigueur).', 'cordespace-snippets' ), 'ok' );
 		}
 		echo '</div>';
 	}
 	echo '</div>';
+}
+
+/**
+ * Pour les documents manquants d'une place, la dernière version signée par ce courriel (waiver_id => version) ;
+ * [] dès qu'un document n'a jamais été signé (le manquant l'emporte : badge rouge).
+ *
+ * @return array<int,string>
+ */
+function cordespace_waivers_partner_previous_versions( array $slot, array $missing ): array {
+	$out = [];
+	foreach ( $missing as $wid ) {
+		$state = cordespace_waivers_signature_state( 0, (string) $slot['partner_email'], (int) $wid );
+		if ( $state['state'] !== 'previous' ) {
+			return [];
+		}
+		$out[ (int) $wid ] = (string) $state['version'];
+	}
+	return $out;
 }
 
 // ─── Rappel 48 h : places vides (hôte) et partenaires non signés ─────────────

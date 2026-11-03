@@ -239,10 +239,14 @@ function cordespace_waivers_render_signatures_metabox( $post ): void {
 }
 
 /**
- * Mention d'origine d'une signature : « invité·e par {hôte} » pour une signature de partenaire
- * (module Partenaires), « sans compte » pour une signature sans compte ni hôte connu.
+ * Mention d'origine d'une signature : « via le lien public (code QR) », « invité·e par {hôte} » pour une signature
+ * de partenaire (module Partenaires), « sans compte » pour une signature sans compte ni hôte connu.
  */
 function cordespace_waivers_signature_origin_note( array $row ): string {
+	if ( (string) ( $row['source'] ?? '' ) === 'public' ) {
+		$note = __( 'via le lien public (code QR)', 'cordespace-snippets' );
+		return (int) ( $row['user_id'] ?? 0 ) > 0 ? $note : $note . ', ' . __( 'sans compte', 'cordespace-snippets' );
+	}
 	$host_id = (int) ( $row['invited_by_user_id'] ?? 0 );
 	if ( $host_id > 0 ) {
 		$host = get_userdata( $host_id );

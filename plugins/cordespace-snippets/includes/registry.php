@@ -176,7 +176,7 @@ return [
 		],
 		'waivers.signing-page' => [
 			'label'           => 'Page de signature',
-			'description'     => 'URL /?cordespace_sign_waiver=1&waiver_id=X qui affiche le waiver + 2 cases d\'acceptation + bouton "Je signe". Sauvegarde la signature en DB. Indispensable pour que les gens puissent signer. Les phrases des 2 cases sont modifiables par waiver (metabox « Cases à cocher ») et la metabox « Aperçu » ouvre la page telle que la verra la personne (&preview=1, brouillons acceptés, rien n\'est enregistré).',
+			'description'     => 'URL /?cordespace_sign_waiver=1&waiver_id=X qui affiche le waiver + 2 cases d\'acceptation + bouton "Je signe". Sauvegarde la signature en DB. Indispensable pour que les gens puissent signer. Les phrases des 2 cases sont modifiables par waiver (metabox « Cases à cocher ») et la metabox « Aperçu » ouvre la page telle que la verra la personne (&preview=1, brouillons acceptés, rien n\'est enregistré). Boîte « Lien public et code QR » : lien à partager (affiche, courriel, QR au comptoir) pour signer sans compte avec nom et courriel ; la signature est rattachée au compte qui porte ce courriel ou reconnue par le courriel de la réservation ; trois mentions sous les cases (compte / partenaire / lien public).',
 			'category'        => 'waivers',
 			'type'            => 'php',
 			'file'            => 'includes/modules/waivers-signing-page.php',
@@ -185,8 +185,8 @@ return [
 			'default_active'  => true,
 		],
 		'waivers.prof-badge' => [
-			'label'           => 'Badge "WAIVER MANQUANT" (vue prof)',
-			'description'     => 'Affiche un badge rouge à côté du nom des élèves qui n\'ont pas signé tous les waivers requis pour l\'événement, dans la vue prof "Présence des élèves". Filet de sécurité pour les paiements onSite qui bypass le gating WC checkout.',
+			'label'           => 'Badge waiver (vue prof)',
+			'description'     => 'Badge à côté du nom des élèves dans la vue prof "Présence des élèves" : rouge « Waiver à signer » (jamais signé), orange « Waiver vX » (une ancienne version seulement ; rappels et banderoles inchangés), vert « Waiver signé ». Reconnaît aussi les signatures par courriel, sans compte WordPress (partenaire, lien public / code QR). Filet de sécurité pour les paiements onSite qui bypass le gating WC checkout.',
 			'category'        => 'waivers',
 			'type'            => 'php',
 			'file'            => 'includes/modules/waivers-prof-badge.php',

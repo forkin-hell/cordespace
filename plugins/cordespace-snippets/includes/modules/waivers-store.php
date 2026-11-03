@@ -95,6 +95,31 @@ function cordespace_waivers_email_has_signed_current( string $email, int $waiver
 }
 
 /**
+ * État de signature d'une personne pour un waiver : 'current' (version en vigueur signée), 'previous' (une version
+ * antérieure seulement ; 'version' = la dernière signée) ou 'none'. Identifiée par son compte WordPress et/ou son
+ * courriel (réservation Amelia sans compte, signature partenaire ou par le lien public).
+ *
+ * @return array{state:string, version:string}
+ */
+function cordespace_waivers_signature_state( int $user_id, string $email, int $waiver_id ): array {
+	$email = cordespace_waivers_normalize_email( $email );
+	if ( $user_id <= 0 && $email !== '' ) {
+		$user    = get_user_by( 'email', $email );
+		$user_id = $user ? (int) $user->ID : 0;
+	}
+	$version = cordespace_waivers_get_version( $waiver_id );
+	if ( ( $user_id > 0 && cordespace_waivers_has_signed_current( $user_id, $waiver_id ) )
+	     || ( $email !== '' && cordespace_waivers_email_has_signed_version( $email, $waiver_id, $version ) ) ) {
+		return [ 'state' => 'current', 'version' => $version ];
+	}
+	$history = cordespace_waivers_history_for_account( $user_id, $email, $waiver_id, 1 );
+	if ( $history ) {
+		return [ 'state' => 'previous', 'version' => (string) $history[0]['waiver_version'] ];
+	}
+	return [ 'state' => 'none', 'version' => '' ];
+}
+
+/**
  * Signature d'une personne SANS compte (partenaire invitée). Si un compte WordPress existe avec
  * ce courriel, la signature lui est rattachée (user_id du compte).
  *
@@ -130,6 +155,11 @@ function cordespace_waivers_sign_guest( string $email, int $waiver_id, string $s
 	if ( (int) ( $extra['partner_id'] ?? 0 ) > 0 ) {
 		$data['partner_id'] = (int) $extra['partner_id'];
 		$format[]           = '%d';
+	}
+	if ( ! empty( $extra['source'] ) ) {
+		// Origine de la signature quand ce n'est ni un compte ni une place partenaire : 'public' = lien public (code QR).
+		$data['source'] = mb_substr( (string) $extra['source'], 0, 20 );
+		$format[]       = '%s';
 	}
 	$ok = $wpdb->insert( cordespace_waivers_table_name(), $data, $format );
 	if ( $ok === false ) {
@@ -289,7 +319,7 @@ function cordespace_waivers_signatures_for_waiver( int $waiver_id, int $limit = 
 	global $wpdb;
 	$table = cordespace_waivers_table_name();
 	$rows  = $wpdb->get_results( $wpdb->prepare(
-		"SELECT id, user_id, waiver_version, signed_name, email, signed_at, invited_by_user_id, partner_id
+		"SELECT id, user_id, waiver_version, signed_name, email, signed_at, invited_by_user_id, partner_id, source
 		   FROM {$table}
 		  WHERE waiver_id = %d
 		  ORDER BY signed_at DESC, id DESC
@@ -308,6 +338,7 @@ function cordespace_waivers_signatures_for_waiver( int $waiver_id, int $limit = 
 			'signed_at'      => (string) $r['signed_at'],
 			'invited_by_user_id' => (int) ( $r['invited_by_user_id'] ?? 0 ),
 			'partner_id'     => isset( $r['partner_id'] ) && $r['partner_id'] !== null ? (int) $r['partner_id'] : null,
+			'source'         => isset( $r['source'] ) && (string) $r['source'] !== '' ? (string) $r['source'] : null,
 		];
 	}
 	return $out;

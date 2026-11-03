@@ -13,7 +13,7 @@
 defined( 'ABSPATH' ) || exit;
 
 const CORDESPACE_WAIVERS_TABLE_SUFFIX    = 'cordespace_waiver_signatures';
-const CORDESPACE_WAIVERS_SCHEMA_VERSION  = 2; // v2 : partner_id (signatures des partenaires sans compte)
+const CORDESPACE_WAIVERS_SCHEMA_VERSION  = 3; // v2 : partner_id (partenaires sans compte) ; v3 : source ('public' = lien public / code QR)
 
 /**
  * Nom complet (avec préfixe wp_) de la table de signatures.
@@ -45,6 +45,7 @@ function cordespace_waivers_install_table(): void {
 		invited_by_user_id BIGINT UNSIGNED DEFAULT NULL,
 		invited_by_order_id BIGINT UNSIGNED DEFAULT NULL,
 		partner_id BIGINT UNSIGNED DEFAULT NULL,
+		source VARCHAR(20) DEFAULT NULL,
 		PRIMARY KEY  (id),
 		KEY idx_user (user_id),
 		KEY idx_waiver (waiver_id),
