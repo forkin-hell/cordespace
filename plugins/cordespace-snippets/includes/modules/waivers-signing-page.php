@@ -244,9 +244,13 @@ function cordespace_waivers_signing_page_handle_post_public( WP_Post $waiver ): 
 	if ( ! is_email( $email ) ) {
 		wp_die( esc_html__( 'Indique un courriel valide : celui de ton compte Cordespace ou de ta réservation, pour que ta signature soit reconnue.', 'cordespace-snippets' ) );
 	}
+	$ip = isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '';
 	if ( ! cordespace_waivers_email_has_signed_current( $email, $waiver_id ) ) {
+		if ( cordespace_waivers_public_sign_capped( $ip ) ) {
+			wp_die( esc_html__( 'Trop de signatures depuis cette connexion pour le moment. Réessaie dans une heure, ou signe depuis ton compte Cordespace (Mon espace → Mes waivers).', 'cordespace-snippets' ) );
+		}
 		$res = cordespace_waivers_sign_guest( $email, $waiver_id, $name, [
-			'ip'         => isset( $_SERVER['REMOTE_ADDR'] ) ? (string) $_SERVER['REMOTE_ADDR'] : '',
+			'ip'         => $ip,
 			'user_agent' => isset( $_SERVER['HTTP_USER_AGENT'] ) ? (string) $_SERVER['HTTP_USER_AGENT'] : '',
 			'source'     => 'public',
 		] );
@@ -256,6 +260,24 @@ function cordespace_waivers_signing_page_handle_post_public( WP_Post $waiver ): 
 	}
 	wp_safe_redirect( $done_url );
 	cordespace_waivers_signing_exit();
+}
+
+/**
+ * Garde-fou du lien public : au plus 60 signatures enregistrées par heure et par adresse IP. Une classe entière
+ * qui scanne le QR sur le Wi-Fi du local passe ; un robot qui invente des courriels, non. Les re-signatures
+ * d'un courriel déjà en règle ne comptent pas (elles n'enregistrent rien).
+ */
+function cordespace_waivers_public_sign_capped( string $ip ): bool {
+	if ( $ip === '' ) {
+		return false;
+	}
+	$key = 'cordespace_pubsign_' . md5( $ip );
+	$n   = (int) get_transient( $key );
+	if ( $n >= 60 ) {
+		return true;
+	}
+	set_transient( $key, $n + 1, 3600 );
+	return false;
 }
 
 /** Page « c'est signé » du lien public : pas de nom ni de courriel dans l'URL, pas de création de compte. */
